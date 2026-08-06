@@ -1,0 +1,59 @@
+import { GeminiProvider, ModelRouter } from "@kan/ai-abstraction";
+import { InMemoryConversationRepository, SendMessageUseCase } from "@kan/core";
+import { NextResponse } from "next/server";
+
+/**
+ * Composition root: único lugar donde se instancian implementaciones concretas
+ * (ver docs/01-arquitectura-general.md, capas Clean Architecture). El resto de
+ * la app solo conoce los puertos definidos en @kan/core.
+ *
+ * El repositorio en memoria vive a nivel de módulo para persistir el historial
+ * de conversación mientras el proceso del servidor de desarrollo siga vivo
+ * (ADR-007 en docs/00: Supabase llega después, detrás del mismo puerto).
+ */
+const conversationRepository = new InMemoryConversationRepository();
+
+function buildUseCase(): SendMessageUseCase {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new MissingApiKeyError();
+  }
+  const model = process.env.GEMINI_MODEL || undefined;
+  const aiProvider = new ModelRouter(new GeminiProvider({ apiKey, model }));
+  return new SendMessageUseCase(aiProvider, conversationRepository);
+}
+
+class MissingApiKeyError extends Error {
+  constructor() {
+    super(
+      "Falta GEMINI_API_KEY. Copia apps/web/.env.example a apps/web/.env.local y agrega tu API key gratuita de Gemini (https://aistudio.google.com/apikey).",
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => null);
+  const userMessage = typeof body?.message === "string" ? body.message.trim() : "";
+
+  if (!userMessage) {
+    return NextResponse.json({ error: "El campo 'message' es requerido." }, { status: 400 });
+  }
+
+  try {
+    const useCase = buildUseCase();
+    const { conversation } = await useCase.execute({
+      conversationId: typeof body?.conversationId === "string" ? body.conversationId : undefined,
+      userMessage,
+    });
+    return NextResponse.json({ conversation });
+  } catch (error) {
+    if (error instanceof MissingApiKeyError) {
+      return NextResponse.json({ error: error.message }, { status: 412 });
+    }
+    console.error("[/api/chat] error inesperado:", error);
+    return NextResponse.json(
+      { error: "Error inesperado al hablar con el proveedor de IA. Revisa los logs del servidor." },
+      { status: 502 },
+    );
+  }
+}
