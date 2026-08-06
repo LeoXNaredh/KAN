@@ -2,9 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 
+type ChatRole = "user" | "assistant" | "tool";
+
 interface ChatMessage {
-  role: "user" | "assistant";
+  role: ChatRole;
   content: string;
+  toolCall?: { name: string; args: unknown };
 }
 
 export default function Home() {
@@ -19,6 +22,7 @@ export default function Home() {
     const userMessage = input.trim();
     if (!userMessage || isSending) return;
 
+    const preSubmitCount = messages.length;
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setInput("");
     setIsSending(true);
@@ -37,10 +41,18 @@ export default function Home() {
       }
 
       setConversationId(data.conversation.id);
-      const lastMessage = data.conversation.messages.at(-1);
-      if (lastMessage?.role === "assistant") {
-        setMessages((prev) => [...prev, { role: "assistant", content: lastMessage.content }]);
-      }
+
+      // El mensaje de usuario ya se mostró de forma optimista; el resto
+      // (rondas de herramientas + respuesta final) se añade tal cual llega,
+      // así el usuario ve con transparencia qué herramienta se llamó.
+      const newMessages: ChatMessage[] = data.conversation.messages
+        .slice(preSubmitCount + 1)
+        .map((m: { role: ChatRole; content: string; toolCall?: { name: string; args: unknown } }) => ({
+          role: m.role,
+          content: m.content,
+          toolCall: m.toolCall,
+        }));
+      setMessages((prev) => [...prev, ...newMessages]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
@@ -54,8 +66,8 @@ export default function Home() {
         <header>
           <h1 className="text-2xl font-semibold text-black dark:text-zinc-50">KAN</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Chat conectado a Gemini a través del Core (@kan/core → @kan/ai-abstraction). Aún sin
-            plugins ni control de dispositivos.
+            Chat conectado a Gemini a través del Core, con function-calling contra el Gateway y
+            los dispositivos del Edge Agent.
           </p>
         </header>
 
@@ -64,16 +76,7 @@ export default function Home() {
             <p className="text-sm text-zinc-500">Escribe un mensaje para empezar la conversación.</p>
           )}
           {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-                message.role === "user"
-                  ? "self-end bg-black text-white dark:bg-zinc-50 dark:text-black"
-                  : "self-start bg-zinc-100 text-black dark:bg-zinc-800 dark:text-zinc-50"
-              }`}
-            >
-              {message.content}
-            </div>
+            <MessageBubble key={index} message={message} />
           ))}
           {isSending && <p className="text-sm text-zinc-500">KAN está pensando…</p>}
         </div>
@@ -101,6 +104,31 @@ export default function Home() {
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message }: { message: ChatMessage }) {
+  if (message.role === "tool") {
+    return (
+      <div className="self-start rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-1.5 font-mono text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
+        {message.content}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+        message.role === "user"
+          ? "self-end bg-black text-white dark:bg-zinc-50 dark:text-black"
+          : "self-start bg-zinc-100 text-black dark:bg-zinc-800 dark:text-zinc-50"
+      }`}
+    >
+      {message.toolCall && (
+        <div className="mb-1 text-xs opacity-60">🔧 llamando a {message.toolCall.name}</div>
+      )}
+      {message.content}
     </div>
   );
 }

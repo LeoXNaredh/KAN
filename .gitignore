@@ -3,6 +3,7 @@ node_modules/
 dist/
 out/
 .turbo/
+apps/gateway/data/
 .env
 .env.local
 *.log

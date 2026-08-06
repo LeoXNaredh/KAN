@@ -1,10 +1,11 @@
+import { platform } from "node:os";
 import type { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
 import type { AgentTaskDispatchMessage } from "@kan/plugin-contract";
 import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
 import type { LoggerPort } from "./domain/ports/LoggerPort";
 import type { CoreConnectionPort } from "./domain/ports/CoreConnectionPort";
 import type { UpdaterPort } from "./domain/ports/UpdaterPort";
-import { EdgeAgentBus } from "./application/EdgeAgentBus";
+import type { EdgeAgentBus } from "./application/EdgeAgentBus";
 import { PluginManager } from "./application/PluginManager";
 import { DeviceManager } from "./application/DeviceManager";
 import { PermissionManager } from "./application/PermissionManager";
@@ -12,6 +13,7 @@ import { CapabilityRegistry, type CapabilityListing, type InvokeOutcome } from "
 
 export interface EdgeAgentDeps {
   edgeAgentId: string;
+  agentVersion: string;
   bus: EdgeAgentBus;
   logger: LoggerPort;
   configStore: ConfigStorePort;
@@ -59,9 +61,12 @@ export class EdgeAgent {
           type: "hello",
           protocolVersion: "1.0.0",
           edgeAgentId: this.deps.edgeAgentId,
+          os: platform(),
+          agentVersion: this.deps.agentVersion,
+          installedPlugins: this.pluginManager.list().map((instance) => instance.manifest),
           capabilities: this.capabilityRegistry
             .list()
-            .map((c) => ({ deviceId: c.deviceId, capability: c.capability })),
+            .map((c) => ({ deviceId: c.deviceId, deviceName: c.deviceName, capability: c.capability })),
         });
       }
     });
@@ -96,6 +101,7 @@ export class EdgeAgent {
 
   private async handleCoreMessage(message: AgentTaskDispatchMessage): Promise<void> {
     const outcome = await this.capabilityRegistry.invoke(message.deviceId, message.capability, message.payload);
+
     if (outcome.status === "executed") {
       this.deps.coreConnection.send({
         type: "telemetry",
@@ -105,9 +111,18 @@ export class EdgeAgent {
         error: outcome.result.error,
         at: new Date().toISOString(),
       });
+      return;
     }
-    // Si queda "pending_confirmation", la telemetría se envía cuando se
-    // resuelva desde la UI local — fuera de alcance de este incremento
-    // (no hay servidor de Core todavía que reciba ese follow-up).
+
+    // "pending_confirmation": se avisa de inmediato al Gateway para que no
+    // espere el timeout — la confirmación real ocurre en esta misma app
+    // (ver docs/12 §4: decisión de seguridad deliberada, no una limitación).
+    this.deps.coreConnection.send({
+      type: "telemetry",
+      taskId: message.taskId,
+      status: "pending_confirmation",
+      confirmationId: outcome.confirmationId,
+      at: new Date().toISOString(),
+    });
   }
 }

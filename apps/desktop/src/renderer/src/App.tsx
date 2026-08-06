@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Device, CapabilityListing, PendingConfirmation, CoreConnectionStatus } from "@kan/edge-agent-core";
+import type { BusEvent } from "../../preload/index";
 
 interface LogEntry {
   level: string;
   message: string;
   at: string;
-}
-
-interface BusEvent {
-  type: string;
-  payload: any;
 }
 
 const STATUS_LABEL: Record<CoreConnectionStatus, string> = {
@@ -53,7 +49,7 @@ export default function App() {
           setDevices((prev) => [...prev.filter((d) => d.id !== event.payload.device.id), event.payload.device]);
           setCapabilities((prev) => [
             ...prev.filter((c) => c.deviceId !== event.payload.device.id),
-            ...event.payload.device.capabilities.map((capability: any) => ({
+            ...event.payload.device.capabilities.map((capability) => ({
               deviceId: event.payload.device.id,
               deviceName: event.payload.device.name,
               capability,
@@ -84,7 +80,13 @@ export default function App() {
   }, []);
 
   function invoke(deviceId: string, capabilityName: string, input: unknown) {
-    void window.kan.invokeCapability(deviceId, capabilityName, input);
+    window.kan.invokeCapability(deviceId, capabilityName, input).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setLogs((prev) => [
+        ...prev.slice(-199),
+        { level: "error", message: `Invocación falló: ${message}`, at: new Date().toISOString() },
+      ]);
+    });
   }
 
   return (

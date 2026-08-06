@@ -1,6 +1,7 @@
 import { GeminiProvider, ModelRouter } from "@kan/ai-abstraction";
 import { InMemoryConversationRepository, SendMessageUseCase } from "@kan/core";
 import { NextResponse } from "next/server";
+import { GatewayToolProvider } from "@/lib/gateway/GatewayToolProvider";
 
 /**
  * Composition root: único lugar donde se instancian implementaciones concretas
@@ -13,6 +14,11 @@ import { NextResponse } from "next/server";
  */
 const conversationRepository = new InMemoryConversationRepository();
 
+const toolProvider = new GatewayToolProvider({
+  baseUrl: process.env.KAN_GATEWAY_URL ?? "http://localhost:8787",
+  internalToken: process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-token",
+});
+
 function buildUseCase(): SendMessageUseCase {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -20,7 +26,7 @@ function buildUseCase(): SendMessageUseCase {
   }
   const model = process.env.GEMINI_MODEL || undefined;
   const aiProvider = new ModelRouter(new GeminiProvider({ apiKey, model }));
-  return new SendMessageUseCase(aiProvider, conversationRepository);
+  return new SendMessageUseCase(aiProvider, conversationRepository, toolProvider);
 }
 
 class MissingApiKeyError extends Error {

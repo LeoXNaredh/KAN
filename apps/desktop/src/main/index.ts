@@ -13,7 +13,7 @@ import {
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
 
 let mainWindow: BrowserWindow | null = null;
-let edgeAgent: EdgeAgent;
+let edgeAgent: EdgeAgent | undefined;
 
 const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "plugin.loaded",
@@ -54,6 +54,7 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
 
   const agent = new EdgeAgent({
     edgeAgentId: getOrCreateEdgeAgentId(configStore),
+    agentVersion: app.getVersion(),
     bus,
     logger,
     configStore,
@@ -75,16 +76,25 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   return agent;
 }
 
+/**
+ * Se registra ANTES de crear la ventana (ver app.whenReady más abajo) para
+ * que el renderer nunca llame a un canal sin handler ("No handler
+ * registered", hallazgo A5 de docs/13). Mientras el Edge Agent todavía no
+ * terminó de arrancar, los handlers devuelven un estado vacío/"desconectado"
+ * en vez de fallar con un error críptico.
+ */
 function registerIpcHandlers(): void {
-  ipcMain.handle("kan:listDevices", () => edgeAgent.listDevices());
-  ipcMain.handle("kan:listCapabilities", () => edgeAgent.listCapabilities());
-  ipcMain.handle("kan:invokeCapability", (_event, deviceId: string, capabilityName: string, input: unknown) =>
-    edgeAgent.invokeCapability(deviceId, capabilityName, input),
-  );
-  ipcMain.handle("kan:resolveConfirmation", (_event, confirmationId: string, approved: boolean) =>
-    edgeAgent.resolveConfirmation(confirmationId, approved),
-  );
-  ipcMain.handle("kan:getCoreStatus", () => edgeAgent.getCoreConnectionStatus());
+  ipcMain.handle("kan:listDevices", () => edgeAgent?.listDevices() ?? []);
+  ipcMain.handle("kan:listCapabilities", () => edgeAgent?.listCapabilities() ?? []);
+  ipcMain.handle("kan:invokeCapability", (_event, deviceId: string, capabilityName: string, input: unknown) => {
+    if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+    return edgeAgent.invokeCapability(deviceId, capabilityName, input);
+  });
+  ipcMain.handle("kan:resolveConfirmation", (_event, confirmationId: string, approved: boolean) => {
+    if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+    return edgeAgent.resolveConfirmation(confirmationId, approved);
+  });
+  ipcMain.handle("kan:getCoreStatus", () => edgeAgent?.getCoreConnectionStatus() ?? "disconnected");
 }
 
 function createWindow(): void {
@@ -109,9 +119,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  registerIpcHandlers();
   createWindow();
   edgeAgent = await createEdgeAgent();
-  registerIpcHandlers();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

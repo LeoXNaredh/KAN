@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import type { CoreToEdgeMessage, EdgeToCoreMessage } from "@kan/plugin-contract";
-import type { CoreConnectionPort, CoreConnectionStatus } from "../domain/ports/CoreConnectionPort";
+import type { CoreConnectionPort, CoreConnectionStatus, Unsubscribe } from "../domain/ports/CoreConnectionPort";
 import type { LoggerPort } from "../domain/ports/LoggerPort";
 import type { EdgeAgentBus } from "../application/EdgeAgentBus";
 
@@ -55,12 +55,20 @@ export class CoreWebSocketClient implements CoreConnectionPort {
     }
   }
 
-  onMessage(handler: (message: CoreToEdgeMessage) => void): void {
+  onMessage(handler: (message: CoreToEdgeMessage) => void): Unsubscribe {
     this.messageHandlers.push(handler);
+    return () => {
+      const index = this.messageHandlers.indexOf(handler);
+      if (index !== -1) this.messageHandlers.splice(index, 1);
+    };
   }
 
-  onStatusChange(handler: (status: CoreConnectionStatus) => void): void {
+  onStatusChange(handler: (status: CoreConnectionStatus) => void): Unsubscribe {
     this.statusHandlers.push(handler);
+    return () => {
+      const index = this.statusHandlers.indexOf(handler);
+      if (index !== -1) this.statusHandlers.splice(index, 1);
+    };
   }
 
   private connect(): void {
@@ -96,15 +104,19 @@ export class CoreWebSocketClient implements CoreConnectionPort {
       if (!this.stopped) this.scheduleReconnect();
     });
 
-    this.ws.on("error", () => {
-      // El evento "close" se dispara justo después; evitamos loguear dos veces.
+    this.ws.on("error", (error) => {
+      // El evento "close" se dispara justo después y ya dispara el reconnect;
+      // esto solo deja constancia de la causa (antes se perdía en silencio).
+      this.logger.warn(`Error en la conexión al Core Cloud: ${error.message}`);
     });
   }
 
   private scheduleReconnect(): void {
     if (this.stopped) return;
     this.setStatus("reconnecting");
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempt, MAX_BACKOFF_MS);
+    const baseDelay = Math.min(1000 * 2 ** this.reconnectAttempt, MAX_BACKOFF_MS);
+    // Jitter: evita que múltiples Edge Agents reconecten todos en el mismo instante tras una caída del Gateway.
+    const delay = baseDelay / 2 + Math.random() * (baseDelay / 2);
     this.reconnectAttempt += 1;
     this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }

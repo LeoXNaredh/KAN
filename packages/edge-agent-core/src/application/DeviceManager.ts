@@ -19,27 +19,34 @@ export class DeviceManager {
   ) {}
 
   async discoverAll(drivers: KanDeviceDriverPlugin[]): Promise<Device[]> {
-    const discovered: Device[] = [];
-    for (const driver of drivers) {
-      const descriptors = await driver.discover();
-      for (const descriptor of descriptors) {
-        await driver.connect(descriptor.id);
-        const device: Device = {
-          id: descriptor.id,
-          name: descriptor.name,
-          kind: descriptor.kind,
-          pluginId: driver.id,
-          status: "connected",
-          capabilities: driver.getCapabilities(descriptor.id),
-        };
-        this.devices.set(device.id, device);
-        this.driverByDeviceId.set(device.id, driver);
-        discovered.push(device);
-        this.logger.info(`Dispositivo conectado: ${device.name} (${device.id})`);
-        this.bus.emit("device.connected", { device });
-      }
+    // El descubrimiento de cada driver es independiente — se paraleliza entre
+    // drivers (no entre dispositivos de un mismo driver, que sí pueden
+    // compartir recursos internos) para que arrancar con varios drivers
+    // reales no escale linealmente con su número (hallazgo M12 de docs/13).
+    const perDriver = await Promise.all(drivers.map((driver) => this.discoverDriver(driver)));
+    return perDriver.flat();
+  }
+
+  private async discoverDriver(driver: KanDeviceDriverPlugin): Promise<Device[]> {
+    const descriptors = await driver.discover();
+    const devices: Device[] = [];
+    for (const descriptor of descriptors) {
+      await driver.connect(descriptor.id);
+      const device: Device = {
+        id: descriptor.id,
+        name: descriptor.name,
+        kind: descriptor.kind,
+        pluginId: driver.id,
+        status: "connected",
+        capabilities: driver.getCapabilities(descriptor.id),
+      };
+      this.devices.set(device.id, device);
+      this.driverByDeviceId.set(device.id, driver);
+      devices.push(device);
+      this.logger.info(`Dispositivo conectado: ${device.name} (${device.id})`);
+      this.bus.emit("device.connected", { device });
     }
-    return discovered;
+    return devices;
   }
 
   async disconnect(deviceId: string): Promise<void> {

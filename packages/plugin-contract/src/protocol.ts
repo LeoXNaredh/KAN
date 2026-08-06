@@ -1,5 +1,6 @@
 import type { ActionSeverity } from "./severity";
 import type { CapabilityDescriptor } from "./capability";
+import type { PluginManifest } from "./manifest";
 
 /**
  * Protocolo Core Cloud <-> Edge Agent (docs/07-arquitectura-comunicacion.md).
@@ -12,7 +13,10 @@ export interface HelloMessage {
   type: "hello";
   protocolVersion: string;
   edgeAgentId: string;
-  capabilities: Array<{ deviceId: string; capability: CapabilityDescriptor }>;
+  os?: string;
+  agentVersion?: string;
+  installedPlugins: PluginManifest[];
+  capabilities: Array<{ deviceId: string; deviceName: string; capability: CapabilityDescriptor }>;
 }
 
 export interface HeartbeatMessage {
@@ -34,9 +38,10 @@ export interface AgentTaskDispatchMessage {
 export interface TelemetryMessage {
   type: "telemetry";
   taskId: string;
-  status: "progress" | "done" | "failed";
+  status: "progress" | "done" | "failed" | "pending_confirmation";
   data?: unknown;
   error?: string;
+  confirmationId?: string;
   at: string;
 }
 

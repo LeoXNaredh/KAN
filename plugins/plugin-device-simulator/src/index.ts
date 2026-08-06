@@ -78,13 +78,19 @@ export class DeviceSimulatorPlugin extends KanDeviceDriverPlugin {
         return { success: true, data: { temperatureC: 20 + Math.random() * 5 } };
 
       case "toggle_led": {
-        const on = Boolean((input as { on?: boolean } | undefined)?.on);
+        const on = (input as { on?: unknown } | undefined)?.on;
+        if (typeof on !== "boolean") {
+          return { success: false, error: "'on' debe ser boolean" };
+        }
         this.state.ledOn = on;
         return { success: true, data: { ledOn: this.state.ledOn } };
       }
 
       case "move_axis": {
-        const distanceMm = Number((input as { distanceMm?: number } | undefined)?.distanceMm ?? 0);
+        const distanceMm = (input as { distanceMm?: unknown } | undefined)?.distanceMm;
+        if (typeof distanceMm !== "number" || !Number.isFinite(distanceMm)) {
+          return { success: false, error: "'distanceMm' debe ser un número finito" };
+        }
         this.state.axisPositionMm += distanceMm;
         return { success: true, data: { axisPositionMm: this.state.axisPositionMm } };
       }

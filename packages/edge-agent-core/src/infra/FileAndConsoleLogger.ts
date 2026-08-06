@@ -37,7 +37,6 @@ export class FileAndConsoleLogger implements LoggerPort {
     const at = new Date().toISOString();
     const line = `[${at}] [${level.toUpperCase()}] ${message}${meta ? " " + JSON.stringify(meta) : ""}`;
 
-    // eslint-disable-next-line no-console
     console[level === "debug" ? "log" : level](line);
 
     try {

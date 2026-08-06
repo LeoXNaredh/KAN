@@ -1,4 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { EdgeAgentEvents } from "@kan/edge-agent-core";
+
+export type BusEvent = {
+  [K in keyof EdgeAgentEvents]: { type: K; payload: EdgeAgentEvents[K] };
+}[keyof EdgeAgentEvents];
 
 const kanApi = {
   listDevices: () => ipcRenderer.invoke("kan:listDevices"),
@@ -8,9 +13,8 @@ const kanApi = {
   resolveConfirmation: (confirmationId: string, approved: boolean) =>
     ipcRenderer.invoke("kan:resolveConfirmation", confirmationId, approved),
   getCoreStatus: () => ipcRenderer.invoke("kan:getCoreStatus"),
-  onEvent: (handler: (event: { type: string; payload: unknown }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { type: string; payload: unknown }) =>
-      handler(data);
+  onEvent: (handler: (event: BusEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: BusEvent) => handler(data);
     ipcRenderer.on("kan:event", listener);
     return () => {
       ipcRenderer.off("kan:event", listener);

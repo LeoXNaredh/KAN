@@ -20,6 +20,7 @@ Análisis arquitectónico completo derivado del [KAN Master Prompt](../README.md
 | [09 — Roadmap](09-roadmap.md) | Mes 1 (MVP) semana a semana, 6 meses, estrategia a 5 años |
 | [10 — Backlog y primeras 50 tareas](10-backlog-y-tareas.md) | 18 epics + tabla priorizada de 50 tareas |
 | [11 — Riesgos](11-riesgos.md) | Técnicos, de negocio y legales — con foco en seguridad física |
+| [12 — Arquitectura del Gateway](12-arquitectura-gateway.md) | Los 10 módulos del plano de control: Connection Manager, Agent Registry, Capability Registry, Task Orchestrator, Function Calling Engine, Audit Service, Event Bus, Scheduler, Notification Service, API Pública |
 
 ## La decisión más importante de todo el documento
 
