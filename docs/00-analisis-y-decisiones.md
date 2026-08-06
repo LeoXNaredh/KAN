@@ -117,6 +117,20 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 ---
 
+### ADR-009: Core Gateway — servicio Node separado para el WebSocket del Core, no una API route de Next.js
+
+**Contexto.** El Edge Agent (`packages/edge-agent-core`) ya implementa el lado cliente del protocolo Core↔Edge Agent (`CoreWebSocketClient`, ver docs/07): conecta saliente, heartbeat, reconexión con backoff. Falta el lado servidor. Por ADR-001, ese servidor **no puede vivir en las API routes de `apps/web` sobre Vercel**: son funciones serverless sin estado ni conexiones persistentes, exactamente el problema que motivó la existencia del Edge Agent.
+
+**Decisión.** El servidor WebSocket del Core (el "Core Gateway") es un **servicio Node independiente**, deployado aparte de `apps/web` (no en Vercel — en cualquier entorno con proceso persistente: un contenedor, una VM pequeña, Fly.io/Render, etc.). Expone:
+- Un endpoint WebSocket (`/edge`) donde los Edge Agents se conectan, hablando el protocolo de `packages/plugin-contract/src/protocol.ts`.
+- Una API interna (HTTP simple) que `apps/web` sí puede llamar de forma normal (una función serverless haciendo un `fetch` saliente no tiene ningún problema — lo que no puede hacer es *ser* el servidor persistente) para despachar `AgentTaskDispatchMessage` y consultar qué Edge Agents/capabilities están conectados ahora mismo.
+
+**Alternativas descartadas:**
+- Forzar `apps/web` a un servidor Node custom (Next.js permite esto) desplegado fuera de Vercel: viable pero acopla el ciclo de release del Core Gateway al de la app web sin necesidad; son responsabilidades distintas (una es BFF/UI, la otra es infraestructura de tiempo real).
+- Usar Supabase Realtime como transporte en vez de WebSocket propio: se reevalúa en el futuro si simplifica operaciones, pero el protocolo ya definido (heartbeat, hello con sync de capabilities, dispatch/telemetría) es más específico de lo que Realtime ofrece out-of-the-box.
+
+**Consecuencia.** Este incremento (Edge Agent + Simulador) se valida standalone, sin este servidor — ver plan de este incremento. Construir el Core Gateway y el function-calling del orquestador (para que el chat realmente dispare capabilities) es el siguiente incremento.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

@@ -1,0 +1,32 @@
+{
+  "name": "desktop",
+  "private": true,
+  "version": "0.1.0",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "@kan/edge-agent-core": "workspace:*",
+    "@kan/plugin-contract": "workspace:*",
+    "@kan/plugin-device-simulator": "workspace:*",
+    "@kan/plugin-sdk-ts": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-vite": "^2.3.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

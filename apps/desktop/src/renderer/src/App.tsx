@@ -1,0 +1,224 @@
+import { useEffect, useState } from "react";
+import type { Device, CapabilityListing, PendingConfirmation, CoreConnectionStatus } from "@kan/edge-agent-core";
+
+interface LogEntry {
+  level: string;
+  message: string;
+  at: string;
+}
+
+interface BusEvent {
+  type: string;
+  payload: any;
+}
+
+const STATUS_LABEL: Record<CoreConnectionStatus, string> = {
+  connected: "Conectado al Core",
+  connecting: "Conectando al Core…",
+  reconnecting: "Reconectando al Core…",
+  disconnected: "Desconectado del Core",
+};
+
+const STATUS_COLOR: Record<CoreConnectionStatus, string> = {
+  connected: "bg-emerald-500",
+  connecting: "bg-amber-500",
+  reconnecting: "bg-amber-500",
+  disconnected: "bg-zinc-500",
+};
+
+const SEVERITY_COLOR: Record<string, string> = {
+  "read-only": "bg-sky-900 text-sky-200",
+  reversible: "bg-emerald-900 text-emerald-200",
+  "irreversible-material": "bg-amber-900 text-amber-200",
+  "safety-critical": "bg-red-900 text-red-200",
+};
+
+export default function App() {
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [capabilities, setCapabilities] = useState<CapabilityListing[]>([]);
+  const [pending, setPending] = useState<PendingConfirmation[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [coreStatus, setCoreStatus] = useState<CoreConnectionStatus>("disconnected");
+
+  useEffect(() => {
+    (async () => {
+      setDevices(await window.kan.listDevices());
+      setCapabilities(await window.kan.listCapabilities());
+      setCoreStatus(await window.kan.getCoreStatus());
+    })();
+
+    const unsubscribe = window.kan.onEvent((event: BusEvent) => {
+      switch (event.type) {
+        case "device.connected":
+          setDevices((prev) => [...prev.filter((d) => d.id !== event.payload.device.id), event.payload.device]);
+          setCapabilities((prev) => [
+            ...prev.filter((c) => c.deviceId !== event.payload.device.id),
+            ...event.payload.device.capabilities.map((capability: any) => ({
+              deviceId: event.payload.device.id,
+              deviceName: event.payload.device.name,
+              capability,
+            })),
+          ]);
+          break;
+        case "device.disconnected":
+          setDevices((prev) =>
+            prev.map((d) => (d.id === event.payload.deviceId ? { ...d, status: "disconnected" } : d)),
+          );
+          break;
+        case "permission.pending":
+          setPending((prev) => [...prev, event.payload.confirmation]);
+          break;
+        case "permission.resolved":
+          setPending((prev) => prev.filter((c) => c.id !== event.payload.confirmationId));
+          break;
+        case "core.status":
+          setCoreStatus(event.payload.status);
+          break;
+        case "log":
+          setLogs((prev) => [...prev.slice(-199), event.payload]);
+          break;
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  function invoke(deviceId: string, capabilityName: string, input: unknown) {
+    void window.kan.invokeCapability(deviceId, capabilityName, input);
+  }
+
+  return (
+    <div className="flex h-screen flex-col gap-4 bg-zinc-950 p-4 text-zinc-50">
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">KAN Edge Agent</h1>
+          <p className="text-sm text-zinc-400">Infraestructura local — dispositivos, plugins y permisos.</p>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-zinc-800 px-3 py-1 text-sm">
+          <span className={`h-2 w-2 rounded-full ${STATUS_COLOR[coreStatus]}`} />
+          {STATUS_LABEL[coreStatus]}
+        </div>
+      </header>
+
+      <div className="grid flex-1 grid-cols-[1.4fr_1fr] gap-4 overflow-hidden">
+        <section className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-zinc-800 p-4">
+          <h2 className="text-sm font-medium text-zinc-400">Dispositivos</h2>
+          {devices.length === 0 && <p className="text-sm text-zinc-500">Descubriendo dispositivos…</p>}
+          {devices.map((device) => (
+            <div key={device.id} className="rounded-md border border-zinc-800 bg-zinc-900 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-medium">{device.name}</span>
+                <span className="text-xs text-zinc-500">
+                  {device.kind} · {device.status}
+                </span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {capabilities
+                  .filter((c) => c.deviceId === device.id)
+                  .map((c) => (
+                    <div
+                      key={c.capability.name}
+                      className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{c.capability.name}</span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] ${SEVERITY_COLOR[c.capability.severity]}`}>
+                            {c.capability.severity}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500">{c.capability.description}</p>
+                      </div>
+                      <CapabilityControls
+                        onInvoke={(input) => invoke(device.id, c.capability.name, input)}
+                        capabilityName={c.capability.name}
+                      />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <section className="flex flex-col overflow-hidden rounded-lg border border-zinc-800 p-4">
+          <h2 className="mb-2 text-sm font-medium text-zinc-400">Logs</h2>
+          <div className="flex-1 overflow-y-auto font-mono text-xs">
+            {logs.map((log, index) => (
+              <div key={index} className="whitespace-pre-wrap text-zinc-400">
+                <span className="text-zinc-600">{log.at.slice(11, 19)}</span> [{log.level}] {log.message}
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      {pending[0] && <ConfirmationModal confirmation={pending[0]} />}
+    </div>
+  );
+}
+
+function CapabilityControls({
+  capabilityName,
+  onInvoke,
+}: {
+  capabilityName: string;
+  onInvoke: (input: unknown) => void;
+}) {
+  if (capabilityName === "toggle_led") {
+    return (
+      <div className="flex gap-1">
+        <button className="btn" onClick={() => onInvoke({ on: true })}>
+          Encender
+        </button>
+        <button className="btn" onClick={() => onInvoke({ on: false })}>
+          Apagar
+        </button>
+      </div>
+    );
+  }
+  if (capabilityName === "move_axis") {
+    return (
+      <button className="btn" onClick={() => onInvoke({ distanceMm: 10 })}>
+        Mover +10mm
+      </button>
+    );
+  }
+  return (
+    <button className="btn" onClick={() => onInvoke({})}>
+      Invocar
+    </button>
+  );
+}
+
+function ConfirmationModal({ confirmation }: { confirmation: PendingConfirmation }) {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black/60">
+      <div className="w-full max-w-sm rounded-lg border border-amber-800 bg-zinc-900 p-5">
+        <h3 className="mb-1 text-base font-semibold text-amber-300">Confirmación requerida</h3>
+        <p className="mb-3 text-sm text-zinc-400">
+          Esta acción es <strong>{confirmation.severity}</strong> y no se ejecuta sin tu confirmación explícita
+          (ADR-004).
+        </p>
+        <div className="mb-4 rounded bg-zinc-950 p-2 font-mono text-xs text-zinc-300">
+          {confirmation.capabilityName} en {confirmation.deviceId}
+          <br />
+          input: {JSON.stringify(confirmation.input)}
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            className="btn"
+            onClick={() => window.kan.resolveConfirmation(confirmation.id, false)}
+          >
+            Rechazar
+          </button>
+          <button
+            className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-black hover:bg-amber-500"
+            onClick={() => window.kan.resolveConfirmation(confirmation.id, true)}
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
