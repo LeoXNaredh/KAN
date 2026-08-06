@@ -1,8 +1,22 @@
 @import "tailwindcss";
 
+/*
+ * Dark-por-defecto vía clase, no vía prefers-color-scheme (docs/17 §Tema):
+ * las clases dark: ya usadas en todo el proyecto pasan a activarse cuando
+ * <html> tiene la clase "dark" (forzada en app/layout.tsx), no cuando el
+ * sistema operativo está en modo oscuro. Un futuro toggle de tema (Light)
+ * solo necesita quitar esa clase — no reescribir CSS.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0a0e14;
+}
+
+:root.dark {
+  --background: #05070a;
+  --foreground: #e6e9ef;
 }
 
 @theme inline {
@@ -12,15 +26,23 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.3s ease-out both;
 }
