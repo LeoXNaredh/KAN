@@ -52,7 +52,7 @@ export class GeminiProvider implements AIProviderPort {
   }
 }
 
-function toGeminiContent(message: Message): Content {
+export function toGeminiContent(message: Message): Content {
   if (message.role === "tool" && message.toolResult) {
     return {
       role: "function",
@@ -80,7 +80,7 @@ function toGeminiContent(message: Message): Content {
   };
 }
 
-function toFunctionDeclaration(tool: ToolDescriptor) {
+export function toFunctionDeclaration(tool: ToolDescriptor) {
   return {
     name: tool.name,
     description: tool.description,
@@ -93,7 +93,7 @@ function toFunctionDeclaration(tool: ToolDescriptor) {
  * `{ distanceMm: "number" }`) al esquema real que exige el SDK de Gemini.
  * Validación de JSON Schema completa queda deferida (docs/04, docs/12 §5).
  */
-function toGeminiSchema(inputSchema: Record<string, unknown> | undefined): FunctionDeclarationSchema | undefined {
+export function toGeminiSchema(inputSchema: Record<string, unknown> | undefined): FunctionDeclarationSchema | undefined {
   if (!inputSchema || Object.keys(inputSchema).length === 0) return undefined;
 
   const properties: Record<string, { type: SchemaType }> = {};
@@ -104,7 +104,7 @@ function toGeminiSchema(inputSchema: Record<string, unknown> | undefined): Funct
   return { type: SchemaType.OBJECT, properties };
 }
 
-function mapSchemaType(value: unknown): SchemaType {
+export function mapSchemaType(value: unknown): SchemaType {
   const hint = String(value).toLowerCase();
   if (hint === "boolean") return SchemaType.BOOLEAN;
   if (hint === "number" || hint === "integer") return SchemaType.NUMBER;
