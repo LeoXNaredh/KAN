@@ -13,6 +13,14 @@ export interface ToolDescriptor {
 export interface ToolCallProposal {
   name: string;
   args: unknown;
+  /**
+   * Dato opaco específico del proveedor que debe reenviarse tal cual junto
+   * con esta propuesta en la siguiente ronda (ej. el "thought signature" de
+   * Gemini). KAN no lo interpreta — solo lo transporta ida y vuelta a
+   * través del historial de mensajes. Mantiene AIProviderPort neutral
+   * (ADR-011): ningún tipo compartido lleva el nombre de un proveedor.
+   */
+  providerMetadata?: unknown;
 }
 
 export interface ToolExecutionResult {

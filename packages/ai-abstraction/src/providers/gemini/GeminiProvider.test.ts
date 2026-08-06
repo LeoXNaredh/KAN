@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { SchemaType } from "@google/generative-ai";
 import type { Message } from "@kan/core";
 import { toGeminiContent, toGeminiSchema, mapSchemaType, toFunctionDeclaration } from "./GeminiProvider";
 
@@ -27,7 +26,7 @@ describe("toGeminiContent", () => {
     });
   });
 
-  it("mapea un mensaje 'tool' a role 'function' con functionResponse", () => {
+  it("mapea un mensaje 'tool' a role 'user' con functionResponse (la API rechaza role 'function')", () => {
     const message: Message = {
       role: "tool",
       content: "Resultado: 23",
@@ -35,22 +34,22 @@ describe("toGeminiContent", () => {
       toolResult: { name: "read_sensor", success: true, data: { temperatureC: 23 } },
     };
     const content = toGeminiContent(message);
-    expect(content.role).toBe("function");
-    expect(content.parts[0]).toMatchObject({
+    expect(content.role).toBe("user");
+    expect(content.parts?.[0]).toMatchObject({
       functionResponse: { name: "read_sensor", response: { result: { name: "read_sensor", success: true, data: { temperatureC: 23 } } } },
     });
   });
 });
 
 describe("mapSchemaType", () => {
-  it("mapea 'boolean' -> BOOLEAN", () => expect(mapSchemaType("boolean")).toBe(SchemaType.BOOLEAN));
-  it("mapea 'number' -> NUMBER", () => expect(mapSchemaType("number")).toBe(SchemaType.NUMBER));
-  it("mapea 'integer' -> NUMBER", () => expect(mapSchemaType("integer")).toBe(SchemaType.NUMBER));
-  it("mapea case-insensitive ('BOOLEAN') -> BOOLEAN", () => expect(mapSchemaType("BOOLEAN")).toBe(SchemaType.BOOLEAN));
-  it("cualquier otra cosa cae a STRING por defecto", () => {
-    expect(mapSchemaType("string")).toBe(SchemaType.STRING);
-    expect(mapSchemaType("algo-desconocido")).toBe(SchemaType.STRING);
-    expect(mapSchemaType(42)).toBe(SchemaType.STRING);
+  it("mapea 'boolean' -> boolean", () => expect(mapSchemaType("boolean")).toBe("boolean"));
+  it("mapea 'number' -> number", () => expect(mapSchemaType("number")).toBe("number"));
+  it("mapea 'integer' -> number", () => expect(mapSchemaType("integer")).toBe("number"));
+  it("mapea case-insensitive ('BOOLEAN') -> boolean", () => expect(mapSchemaType("BOOLEAN")).toBe("boolean"));
+  it("cualquier otra cosa cae a string por defecto", () => {
+    expect(mapSchemaType("string")).toBe("string");
+    expect(mapSchemaType("algo-desconocido")).toBe("string");
+    expect(mapSchemaType(42)).toBe("string");
   });
 });
 
@@ -60,13 +59,13 @@ describe("toGeminiSchema", () => {
     expect(toGeminiSchema({})).toBeUndefined();
   });
 
-  it("convierte el inputSchema informal a un esquema OBJECT válido para Gemini", () => {
+  it("convierte el inputSchema informal a JSON Schema real", () => {
     const schema = toGeminiSchema({ distanceMm: "number", on: "boolean" });
     expect(schema).toEqual({
-      type: SchemaType.OBJECT,
+      type: "object",
       properties: {
-        distanceMm: { type: SchemaType.NUMBER },
-        on: { type: SchemaType.BOOLEAN },
+        distanceMm: { type: "number" },
+        on: { type: "boolean" },
       },
     });
   });
@@ -80,6 +79,6 @@ describe("toFunctionDeclaration", () => {
       inputSchema: {},
     });
     expect(declaration.name).toMatch(/^[a-zA-Z0-9_-]+$/);
-    expect(declaration.parameters).toBeUndefined();
+    expect(declaration.parametersJsonSchema).toBeUndefined();
   });
 });

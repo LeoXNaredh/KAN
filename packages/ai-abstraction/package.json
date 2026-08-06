@@ -11,7 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google/genai": "^2.16.0",
     "@kan/core": "workspace:*",
     "@kan/plugin-contract": "workspace:*"
   },
