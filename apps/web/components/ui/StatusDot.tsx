@@ -1,9 +1,9 @@
 export type StatusLevel = "online" | "warning" | "offline";
 
 const LEVEL_STYLES: Record<StatusLevel, { dot: string; label: string }> = {
-  online: { dot: "bg-emerald-500", label: "text-emerald-400" },
-  warning: { dot: "bg-amber-500", label: "text-amber-400" },
-  offline: { dot: "bg-red-500", label: "text-red-400" },
+  online: { dot: "bg-success", label: "text-success" },
+  warning: { dot: "bg-warning", label: "text-warning" },
+  offline: { dot: "bg-danger", label: "text-danger" },
 };
 
 /**

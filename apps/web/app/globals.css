@@ -9,26 +9,66 @@
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design System v1 — ver DESIGN_SYSTEM.md para la tabla completa y el
+ * criterio de uso de cada token. Nombrados de forma neutral (no "web-*")
+ * para que apps/desktop pueda adoptarlos más adelante (docs/17).
+ */
 :root {
-  --background: #f8fafc;
-  --foreground: #0a0e14;
+  --color-surface: #f8fafc;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #f1f5f9;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+  --color-ink: #0a0e14;
+  --color-ink-muted: #475569;
+  --color-ink-faint: #94a3b8;
+  --color-accent: #0284c7;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
 }
 
 :root.dark {
-  --background: #05070a;
-  --foreground: #e6e9ef;
+  --color-surface: #05070a;
+  --color-surface-2: #0b0e14;
+  --color-surface-3: #12161f;
+  --color-line: #1f2430;
+  --color-line-strong: #2a3040;
+  --color-ink: #e6e9ef;
+  --color-ink-muted: #9aa3b2;
+  --color-ink-faint: #5b6472;
+  --color-accent: #0ea5e9;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-surface-3: var(--color-surface-3);
+  --color-line: var(--color-line);
+  --color-line-strong: var(--color-line-strong);
+  --color-ink: var(--color-ink);
+  --color-ink-muted: var(--color-ink-muted);
+  --color-ink-faint: var(--color-ink-faint);
+  --color-accent: var(--color-accent);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --duration-fast: 150ms;
+  --duration-base: 300ms;
+  --duration-slow: 500ms;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-surface);
+  color: var(--color-ink);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
@@ -44,5 +84,5 @@ body {
 }
 
 .fade-in {
-  animation: fade-in 0.3s ease-out both;
+  animation: fade-in var(--duration-base) ease-out both;
 }

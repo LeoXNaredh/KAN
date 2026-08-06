@@ -1,3 +1,4 @@
+import { Card } from "@/components/ui/Card";
 import type { SystemStatusResponse } from "@/lib/status/types";
 
 function formatRelativeTime(iso: string | undefined): string {
@@ -26,16 +27,16 @@ export function SystemStatus({ status }: { status: SystemStatusResponse | null }
   ];
 
   return (
-    <div className="fade-in rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
-      <h2 className="mb-3 text-sm font-medium text-zinc-300">Estado del sistema</h2>
+    <Card className="fade-in">
+      <h2 className="mb-3 text-sm font-medium text-ink-muted">Estado del sistema</h2>
       <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
         {rows.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-900/60 px-3 py-2">
-            <dt className="text-zinc-500">{label}</dt>
-            <dd className="font-medium text-zinc-200">{value}</dd>
+          <div key={label} className="flex items-center justify-between gap-2 rounded-lg bg-surface-3 px-3 py-2">
+            <dt className="text-ink-faint">{label}</dt>
+            <dd className="font-medium text-ink">{value}</dd>
           </div>
         ))}
       </dl>
-    </div>
+    </Card>
   );
 }

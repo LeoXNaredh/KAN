@@ -1,5 +1,6 @@
 "use client";
 
+import { Cpu, CircuitBoard, Bot, Printer, Zap, FlaskConical, type LucideIcon } from "lucide-react";
 import { useSystemStatus } from "@/lib/status/useSystemStatus";
 import { StatusCard } from "@/components/dashboard/StatusCard";
 import { DeviceCard } from "@/components/dashboard/DeviceCard";
@@ -10,13 +11,13 @@ import { ConversationPanel } from "@/components/dashboard/ConversationPanel";
 import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
 import type { StatusLevel } from "@/components/ui/StatusDot";
 
-const DEVICE_CATALOG: Array<{ key: string; label: string; icon: string; matches: (kind: string) => boolean }> = [
-  { key: "esp32", label: "ESP32", icon: "🔌", matches: (kind) => kind === "esp32-arduino" },
-  { key: "arduino", label: "Arduino", icon: "🔧", matches: (kind) => kind === "esp32-arduino" },
-  { key: "robot", label: "Robot", icon: "🤖", matches: (kind) => kind.includes("robot") },
-  { key: "printer", label: "Impresora 3D", icon: "🖨️", matches: (kind) => kind.includes("print") },
-  { key: "laser", label: "CNC / Láser", icon: "🔦", matches: (kind) => kind.includes("cnc") || kind.includes("laser") },
-  { key: "simulator", label: "Simulador", icon: "🧪", matches: (kind) => kind === "device-simulator" },
+const DEVICE_CATALOG: Array<{ key: string; label: string; icon: LucideIcon; matches: (kind: string) => boolean }> = [
+  { key: "esp32", label: "ESP32", icon: Cpu, matches: (kind) => kind === "esp32-arduino" },
+  { key: "arduino", label: "Arduino", icon: CircuitBoard, matches: (kind) => kind === "esp32-arduino" },
+  { key: "robot", label: "Robot", icon: Bot, matches: (kind) => kind.includes("robot") },
+  { key: "printer", label: "Impresora 3D", icon: Printer, matches: (kind) => kind.includes("print") },
+  { key: "laser", label: "CNC / Láser", icon: Zap, matches: (kind) => kind.includes("cnc") || kind.includes("laser") },
+  { key: "simulator", label: "Simulador", icon: FlaskConical, matches: (kind) => kind === "device-simulator" },
 ];
 
 export default function DashboardPage() {
@@ -40,8 +41,8 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-lg font-semibold text-zinc-100">Dashboard</h1>
-        <p className="text-sm text-zinc-500">Resumen general de KAN.</p>
+        <h1 className="text-lg font-semibold text-ink">Dashboard</h1>
+        <p className="text-sm text-ink-faint">Resumen general de KAN.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -65,7 +66,7 @@ export default function DashboardPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-sm font-medium text-zinc-300">Dispositivos</h2>
+        <h2 className="mb-3 text-sm font-medium text-ink-muted">Dispositivos</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {DEVICE_CATALOG.map((entry) => {
             const connected = allDevices.some((device) => entry.matches(device.kind));

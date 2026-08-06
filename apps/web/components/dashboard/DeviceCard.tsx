@@ -1,29 +1,29 @@
+import type { LucideIcon } from "lucide-react";
+import { Card } from "@/components/ui/Card";
+
 export function DeviceCard({
-  icon,
+  icon: Icon,
   label,
   connected,
   detail,
 }: {
-  icon: string;
+  icon: LucideIcon;
   label: string;
   connected: boolean;
   detail?: string;
 }) {
   return (
-    <div
-      className={`fade-in flex items-center gap-3 rounded-xl border p-4 transition-colors ${
-        connected ? "border-emerald-900/60 bg-emerald-950/20" : "border-zinc-800 bg-zinc-950/60"
-      }`}
+    <Card
+      padding="sm"
+      className={`fade-in flex items-center gap-3 ${connected ? "border-success/40 bg-success/5" : ""}`}
     >
-      <span className="text-2xl" aria-hidden="true">
-        {icon}
-      </span>
+      <Icon className={`h-6 w-6 shrink-0 ${connected ? "text-success" : "text-ink-faint"}`} aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-zinc-200">{label}</p>
-        <p className={`text-xs ${connected ? "text-emerald-400" : "text-zinc-500"}`}>
+        <p className="text-sm font-medium text-ink">{label}</p>
+        <p className={`text-xs ${connected ? "text-success" : "text-ink-faint"}`}>
           {connected ? (detail ?? "Conectado") : "No conectado"}
         </p>
       </div>
-    </div>
+    </Card>
   );
 }

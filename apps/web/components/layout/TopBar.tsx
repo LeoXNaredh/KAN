@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { Menu } from "lucide-react";
 import { StatusDot, type StatusLevel } from "@/components/ui/StatusDot";
 import { useSystemStatus } from "@/lib/status/useSystemStatus";
 
@@ -44,28 +45,28 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const connection = overallConnection(status);
 
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-950/80 px-4 py-3 backdrop-blur">
+    <header className="flex items-center justify-between gap-4 border-b border-line bg-surface-2/80 px-4 py-3 backdrop-blur">
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onOpenMenu}
           aria-label="Abrir navegación"
-          className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 md:hidden"
+          className="rounded-lg p-2 text-ink-muted hover:bg-surface-3 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:hidden"
         >
-          <span aria-hidden="true">☰</span>
+          <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
         <div>
-          <p className="text-sm font-semibold text-zinc-100">KAN</p>
-          <p className="text-xs text-zinc-500">Asistente Inteligente</p>
+          <p className="text-sm font-semibold text-ink">KAN</p>
+          <p className="text-xs text-ink-faint">Asistente Inteligente</p>
         </div>
       </div>
 
       <div className="flex items-center gap-4">
         <div className="hidden text-right sm:block">
-          <p className="text-sm text-zinc-300 tabular-nums">
+          <p className="text-sm text-ink-muted tabular-nums">
             {now ? now.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
           </p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-ink-faint">
             {now ? now.toLocaleDateString("es", { day: "2-digit", month: "short", year: "numeric" }) : ""}
           </p>
         </div>
