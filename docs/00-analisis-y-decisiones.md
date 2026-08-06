@@ -129,7 +129,43 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 - Forzar `apps/web` a un servidor Node custom (Next.js permite esto) desplegado fuera de Vercel: viable pero acopla el ciclo de release del Core Gateway al de la app web sin necesidad; son responsabilidades distintas (una es BFF/UI, la otra es infraestructura de tiempo real).
 - Usar Supabase Realtime como transporte en vez de WebSocket propio: se reevalúa en el futuro si simplifica operaciones, pero el protocolo ya definido (heartbeat, hello con sync de capabilities, dispatch/telemetría) es más específico de lo que Realtime ofrece out-of-the-box.
 
-**Consecuencia.** Este incremento (Edge Agent + Simulador) se valida standalone, sin este servidor — ver plan de este incremento. Construir el Core Gateway y el function-calling del orquestador (para que el chat realmente dispare capabilities) es el siguiente incremento.
+**Consecuencia.** ~~Este incremento (Edge Agent + Simulador) se valida standalone, sin este servidor.~~ **Actualización (Milestone v0.1):** implementado y probado — `apps/gateway` + `packages/gateway-core` (`docs/12-arquitectura-gateway.md`). El endpoint HTTP interno terminó siendo una API versionada completa (`/v1/tools`, `/v1/tools/:name/execute`, `/v1/agents`, `/v1/audit`), no solo "dispatch + consulta" como se anticipaba aquí.
+
+### ADR-010: La confirmación de acciones peligrosas permanece local al Edge Agent — nunca se delega al chat remoto
+
+**Contexto.** Con el Gateway real y el `TaskOrchestrator` despachando tareas, surgió la pregunta obvia: cuando una capability `irreversible-material`/`safety-critical` queda `pending_confirmation`, ¿por qué no dejar que el usuario la confirme escribiendo "sí" en el chat, ya que de ahí vino la orden?
+
+**Decisión.** No. `TaskOrchestrator.submit()` resuelve de inmediato con `status: "pending_confirmation"` en cuanto el Edge Agent lo reporta — no espera a que nadie la confirme por ningún canal remoto. La confirmación real solo puede darse en la UI del propio Edge Agent, en la máquina físicamente conectada al dispositivo.
+
+**Alternativas descartadas:** exponer un endpoint en el Gateway (`POST /v1/confirmations/:id`) para que `apps/web` confirme en nombre del usuario vía chat. Técnicamente trivial de construir — se descartó por seguridad, no por costo de implementación.
+
+**Por qué.** Un chat puede ser accedido remotamente (otro dispositivo, otra red, alguien que consiguió el link). Exigir que la confirmación de "cortar con láser" o "mover el brazo robótico" ocurra físicamente en la máquina conectada al hardware es una propiedad de seguridad real: quien confirma está, por construcción, cerca de las consecuencias. Delegarlo al chat rompería esa garantía por conveniencia.
+
+**Consecuencia.** El chat le informa al usuario que hay una confirmación pendiente y que debe resolverla en la app de escritorio — no puede resolverla por sí mismo. Documentado también en `docs/12` §4 y verificado con tests (`ToolExecutor.test.ts`).
+
+### ADR-011: No adoptar el Vercel AI SDK como capa base de `@kan/ai-abstraction`
+
+**Contexto.** `docs/05` (versión original) recomendaba apoyarse en el Vercel AI SDK para no reimplementar streaming/normalización de tool-calling entre proveedores.
+
+**Decisión.** Al implementar `GeminiProvider` con function-calling real, la superficie necesaria (traducir `ToolDescriptor[]` a `functionDeclarations`, mapear mensajes con roles `tool`/`assistant-con-toolCall` a `Content[]` de Gemini, parsear `functionCalls()` de la respuesta) se escribió directo contra el SDK oficial `@google/generative-ai` en unas ~110 líneas bien testeadas (`GeminiProvider.test.ts`, 12 tests). El Vercel AI SDK habría añadido una dependencia y una capa de indirección adicional sin resolver un problema que no teníamos todavía (streaming real, múltiples proveedores simultáneos).
+
+**Consecuencia.** Se reevalúa esta decisión el día que se agregue un segundo proveedor real (Claude/GPT) — si mapear cada proveedor a mano empieza a duplicar lógica de forma dolorosa, el Vercel AI SDK (u otra capa de normalización) vuelve a ser candidato. Documentado como decisión activa, no definitiva.
+
+### ADR-012: Los límites de red se prueban con clientes reales, no con mocks
+
+**Contexto.** Al escribir la Fase 4 de testing del Milestone v0.1, `WsConnectionManager` (el único módulo que toca WebSockets reales) podía haberse probado mockeando la librería `ws` — más rápido de escribir, pero no prueba nada sobre el protocolo HTTP de upgrade, el parseo de headers, ni el comportamiento real de cierre de sockets.
+
+**Decisión.** `WsConnectionManager.test.ts` levanta un `http.Server` real en un puerto efímero y usa clientes `WebSocket` reales (de la misma librería `ws`) para probar: rechazo de token inválido, aceptación de hello válido, rechazo de versión de protocolo incompatible, rechazo de `hello` duplicado, reemplazo de conexión zombie por colisión de `edgeAgentId`, limpieza de estado al desconectar, y manejo de mensajes con forma inesperada. 9 tests, ~500ms.
+
+**Consecuencia.** Esta es la prueba de mayor valor de todo el milestone: verifica exactamente los hardenings de seguridad de `docs/13`/`docs/15` contra el comportamiento real de la librería, no contra una simulación de cómo creemos que se comporta. Se adopta como criterio general: **cualquier módulo que sea "el único que toca X real" (transporte, filesystem, proceso hijo) se prueba contra X real cuando sea practico, no contra un doble.**
+
+### ADR-013: Una sola configuración de ESLint compartida en la raíz, no `packages/config`
+
+**Contexto.** `docs/02` (versión original) reservaba `packages/config` para eslint/tsconfig compartidos.
+
+**Decisión.** Se implementó como un único `eslint.config.mjs` en la raíz del monorepo (ESLint 9, flat config, `typescript-eslint`), referenciado por cada paquete con `eslint . --config ../../eslint.config.mjs`, en vez de un paquete `@kan/config` publicable internamente. `apps/web` mantiene su propia config (`eslint-config-next`) por separado, ya que sus reglas son específicas de Next.js.
+
+**Por qué.** Con 10 paquetes y una sola política de lint real (más `eslint-config-next` para web), un paquete npm interno completo era over-engineering — un archivo compartido con una ruta relativa cumple lo mismo con una fracción del código. `packages/config` queda como placeholder para el día que haga falta compartir algo más que una config de lint (ej. tokens de design system).
 
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
@@ -150,3 +186,8 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 - [Roadmap](09-roadmap.md)
 - [Backlog y primeras 50 tareas](10-backlog-y-tareas.md)
 - [Riesgos](11-riesgos.md)
+- [Arquitectura del Gateway](12-arquitectura-gateway.md)
+- [Auditoría v0.1](13-auditoria-v0.1.md)
+- [Performance v0.1](14-performance-v0.1.md)
+- [Seguridad v0.1](15-seguridad-v0.1.md)
+- [Propuestas de arquitectura v0.1](16-arquitectura-propuestas-v0.1.md)

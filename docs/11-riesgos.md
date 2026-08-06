@@ -1,5 +1,7 @@
 # Riesgos
 
+> **Actualizado tras el Milestone v0.1**: `docs/13-auditoria-v0.1.md` (auditoría de código/arquitectura/concurrencia/performance/seguridad sobre el sistema real) y `docs/15-seguridad-v0.1.md` (reporte de seguridad formal) confirman y refinan varios de los riesgos técnicos de abajo con evidencia concreta del código, no solo previsión. En particular: el riesgo de "responsabilidad por daño físico" de la sección 3 ya tiene mitigación real y probada (ADR-004, `PermissionManager` con tests dedicados); el riesgo de autenticación/autorización sigue abierto y ahora está caracterizado con precisión (`docs/15` secciones 1-2).
+
 ## 1. Riesgos técnicos
 
 | Riesgo | Impacto | Mitigación |

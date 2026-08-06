@@ -1,8 +1,8 @@
 # Documentación de KAN
 
-Análisis arquitectónico completo derivado del [KAN Master Prompt](../README.md), como "Primera Tarea" solicitada: sin código, solo decisiones.
+Análisis arquitectónico completo derivado del [KAN Master Prompt](../README.md). Empezó como "Primera Tarea" (solo decisiones, sin código) y hoy documenta un sistema real: chat con function-calling, Gateway, Edge Agent y un Device Simulator funcionando end-to-end (**Milestone v0.1**, ver [CHANGELOG.md](../CHANGELOG.md) y [RELEASE_NOTES_v0.1.md](../RELEASE_NOTES_v0.1.md)).
 
-**Empieza aquí:** [00-analisis-y-decisiones.md](00-analisis-y-decisiones.md) — resumen de la visión, qué se cuestiona del planteamiento original y por qué (incluye los ADRs).
+**Empieza aquí:** [00-analisis-y-decisiones.md](00-analisis-y-decisiones.md) — resumen de la visión, qué se cuestiona del planteamiento original y por qué (incluye los ADRs). Para el estado real del sistema hoy, empieza por [13-auditoria-v0.1.md](13-auditoria-v0.1.md).
 
 ## Índice
 
@@ -21,6 +21,9 @@ Análisis arquitectónico completo derivado del [KAN Master Prompt](../README.md
 | [10 — Backlog y primeras 50 tareas](10-backlog-y-tareas.md) | 18 epics + tabla priorizada de 50 tareas |
 | [11 — Riesgos](11-riesgos.md) | Técnicos, de negocio y legales — con foco en seguridad física |
 | [12 — Arquitectura del Gateway](12-arquitectura-gateway.md) | Los 10 módulos del plano de control: Connection Manager, Agent Registry, Capability Registry, Task Orchestrator, Function Calling Engine, Audit Service, Event Bus, Scheduler, Notification Service, API Pública |
+| [13 — Auditoría v0.1](13-auditoria-v0.1.md) | Deuda técnica, duplicación, acoplamientos, memory leaks, race conditions, arquitectura, seguridad y performance — con severidad y prioridad de fix |
+| [14 — Performance v0.1](14-performance-v0.1.md) | Latencias medidas en vivo, tiempo de conexión del Edge Agent, memoria, Event Bus, cuellos de botella y qué no se midió |
+| [15 — Seguridad v0.1](15-seguridad-v0.1.md) | Auth, autorización, validación de entradas, serialización, WebSockets, tokens, logs, auditoría, escenarios de ataque |
 
 ## La decisión más importante de todo el documento
 

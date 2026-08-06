@@ -1,5 +1,7 @@
 # Arquitectura de Comunicación
 
+> **Estado real (v0.1):** el servidor del lado "Core Cloud ↔ Edge Agent" **ya existe y está probado** — es `apps/gateway` / `WsConnectionManager` (`docs/12` §1), no un incremento pendiente como decía una versión anterior de este documento. Diferencias concretas con la tabla de abajo: sin mTLS todavía (token compartido + `timingSafeEqual`, ver `docs/15-seguridad-v0.1.md`), sin Supabase Realtime (el cliente web recibe la respuesta por el propio request HTTP, no por push), sin JWT/RLS (sin autenticación de usuario todavía — mismo gap documentado en `docs/13`/`docs/15`).
+
 ## 1. Matriz de comunicación
 
 | Origen → Destino | Protocolo | Naturaleza | Notas de seguridad |

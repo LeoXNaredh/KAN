@@ -2,6 +2,8 @@
 
 El Core (según el README) es responsable únicamente de: comprender lenguaje natural, gestionar conversaciones, memoria, contexto, usuarios, permisos, dispositivos, plugins, modelos de IA, coordinar tareas y orquestar agentes. Todo lo demás es plugin. Aquí se detalla cada módulo como caso de uso de `packages/core`.
 
+> **Estado real (v0.1):** los módulos 1.9 (Task Coordinator) y 1.10 (Agent Orchestrator) descritos abajo existen hoy **fusionados** en una sola clase, `SendMessageUseCase` (`packages/core/src/application/use-cases/SendMessageUseCase.ts`), con function-calling real (no solo diseñado) contra Gemini a través del Gateway (`docs/12`). Los módulos 1.1 (Conversation Manager), 1.2 (Memory), 1.3 (Context), 1.4 (User), 1.5 (Permission por usuario), 1.6/1.7 (Device/Plugin Manager del lado Cloud) siguen sin implementarse como piezas separadas — `SendMessageUseCase` cubre hoy una versión mínima de conversación + orquestación, sin memoria de largo plazo ni gestión de usuarios. La separación en módulos independientes descrita abajo sigue siendo la dirección correcta para cuando exista Memory/Auth reales, no un diseño abandonado.
+
 ## 1. Módulos y sus responsabilidades
 
 ### 1.1 Conversation Manager

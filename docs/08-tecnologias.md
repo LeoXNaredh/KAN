@@ -16,6 +16,21 @@
 | CI/CD | GitHub Actions + Vercel (web) + release pipeline propio (desktop/mobile) | — | Estándar, integración directa con GitHub Flow del README |
 | Observabilidad | Sentry (errores) + Vercel Analytics + logs estructurados (Edge Agent → Cloud) | Datadog | Costo/complejidad apropiados para MVP; Datadog si se necesita APM avanzado en Fase 2 |
 
+## 1.1 Añadido durante v0.1 (Gateway + estabilización) — real, no planeado
+
+| Pieza | Tecnología | Dónde |
+|---|---|---|
+| Servidor HTTP del Gateway | Express | `apps/gateway` |
+| WebSocket (Edge Agent↔Gateway) | `ws` (modo `noServer`, compartiendo puerto con Express) | `packages/gateway-core/src/infra/WsConnectionManager.ts` |
+| Runtime del Gateway en desarrollo | `tsx watch` (ejecuta TS directo, sin paso de build) | `apps/gateway` |
+| Lint | ESLint 9 (flat config) + `typescript-eslint` — una config compartida en la raíz para todo el monorepo excepto `apps/web` (que mantiene su config de `eslint-config-next`) | `eslint.config.mjs` |
+| Testing | Vitest en los 9 paquetes con lógica no trivial | cada `package.json` |
+| Testing HTTP | `supertest` (rutas del Gateway) | `apps/gateway` |
+| Empaquetado de escritorio | `electron-vite` (Vite para main/preload/renderer) | `apps/desktop` |
+| Comparación de tokens segura | `node:crypto` `timingSafeEqual` | `packages/plugin-contract/src/auth.ts` |
+
+**Decisión no tomada (y por qué):** se evaluó el Vercel AI SDK como capa base para `@kan/ai-abstraction` (mencionado en la versión original de este documento) y **no se adoptó** — la superficie real que necesitábamos (function-calling + texto simple contra un único proveedor) se implementó directo contra el SDK de Gemini sin ganar nada de la capa de abstracción adicional. Se reevalúa si/cuando se agregue un segundo proveedor real (Claude/GPT).
+
 ## 2. Notas sobre el free tier (honestidad de arquitecto)
 
 - **Supabase Free**: proyecto se pausa tras 7 días de inactividad, 500MB de DB, 2 proyectos. Adecuado para desarrollo y demo con early adopters, no para producción con usuarios reales concurrentes. La migración a Pro es solo configuración si evitamos features exclusivas de un tier (cumplido por diseño).

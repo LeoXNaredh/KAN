@@ -2,6 +2,8 @@
 
 Metodología Scrum (según README): Epic → Feature → Story → Task/Subtask/Bug.
 
+> **Estado real al cierre de v0.1** (ver `docs/09-roadmap.md` §0 para el detalle): **E1** (Core), **E2** (IA, con function-calling real), **E3** (Plugins), **E4** (Edge Agent), **E14** (Observabilidad — logging + tests, no Sentry todavía), **E15** (Seguridad — hardening de red/tokens, no firma de plugins todavía) están **completos o sustancialmente avanzados**. **E6** (Web) tiene el chat funcional pero no auth de usuario. **E9** (Escritorio) completo para el simulador. Nuevo epic no listado originalmente y ya completo: **Gateway** (`docs/12`) — el plano de control que resultó necesario antes de lo planeado. **E5** (Usuarios/Permisos por usuario, no por severidad — ese sí existe) sigue sin empezar, es la brecha de seguridad más importante identificada en `docs/15-seguridad-v0.1.md`. **E7** (ESP32/3D printing reales), **E8** (Memoria/RAG), **E10-E13**, **E16-E17** siguen sin empezar.
+
 ## 1. Epics del backlog completo
 
 | # | Epic | Fase |
