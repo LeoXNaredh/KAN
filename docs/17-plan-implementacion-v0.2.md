@@ -1,6 +1,30 @@
 # Plan de implementación v0.2 — Línea A / Línea B
 
-> Compañero técnico de [`VISION_PRODUCT_v0.2.md`](../VISION_PRODUCT_v0.2.md). Ese documento dice *qué* y *por qué*; este dice *cómo*, con qué paquetes, en qué orden, y qué decisiones de arquitectura hacen falta antes de escribir código. **Nada de este documento se implementa todavía — es la propuesta a aprobar.**
+> Compañero técnico de [`VISION_PRODUCT_v0.2.md`](../VISION_PRODUCT_v0.2.md). Ese documento dice *qué* y *por qué*; este dice *cómo*, con qué paquetes, en qué orden, y qué decisiones de arquitectura hacen falta antes de escribir código.
+
+---
+
+## 0. Repriorización 2026-08-06 — de "UX visible" a "inteligencia real"
+
+Tras cerrar el Dashboard v0.2 (`6b96bfd`) y el Design System v1 (`f0b0129`), el usuario decidió que la base visual ya es suficiente por ahora y redefinió el orden de prioridades: **el criterio deja de ser "qué se ve más rápido" y pasa a ser "qué acerca más a KAN a un asistente real tipo Jarvis"**, con foco explícito en construir "lento pero correctamente" — sin rehacer arquitectura más adelante. El orden de incrementos del §4 original (abajo, conservado como referencia histórica) queda **superseded** por esta lista:
+
+| Prioridad | Contenido |
+|---|---|
+| **P0** | Supabase Auth, perfiles de usuario, configuración por usuario, memoria persistente |
+| P1 | Voz (Push-to-Talk), Speech-to-Text, Text-to-Speech, personalidad configurable, conversaciones naturales |
+| P2 | Memoria de largo plazo, contexto entre conversaciones, preferencias del usuario, aprendizaje de dispositivos, planificación de tareas |
+| P3 | Visión: cámara, análisis de imágenes, OCR, lectura de documentos, reconocimiento de dispositivos |
+| P4 | Dashboard inteligente: widgets, estado de dispositivos, actividad, automatizaciones, notificaciones |
+| P5 | Hardware: ESP32, Arduino, impresoras 3D, CNC, láser, robots, PLC, MQTT, Modbus, ROS2 |
+| P6 | Automatizaciones: workflows, agentes, planner, scheduler, eventos, reglas |
+| P7 | Apps móviles: Android, iOS, PWA, notificaciones push |
+| P8 | Marketplace de plugins: SDK, API pública, documentación |
+
+**Efecto directo sobre las secciones de abajo:**
+- **ADR-016** ("identidad mínima separada de Auth completo") queda **superseded**: P0 va directo a Auth completo de Supabase, no a un `userId` mínimo como paso intermedio — el usuario prefiere construir la pieza correcta una vez en vez de una versión mínima que luego se reemplaza. Se conserva en §2 como registro histórico de la decisión anterior, no como plan vigente.
+- **ADR-015** (Memoria estructurada antes que RAG) sigue vigente — P0 incluye "memoria persistente" y P2 "memoria de largo plazo", coherente con la secuencia ya propuesta (estructurada primero, RAG después si aparece un caso de uso real).
+- **ADR-014** (`VoiceProviderPort` por fases) sigue vigente — ahora es P1, no #6 de una lista de 10.
+- Todo lo de §3 (mapeo por funcionalidad) sigue siendo información técnica válida — la referencia cruzada por P-tier reemplaza al orden secuencial de §4, que queda como archivo histórico, no como plan activo.
 
 ---
 
@@ -102,7 +126,7 @@ Fase 1 (push-to-talk) usa `transcribe`/`synthesize` como llamadas de request-res
 
 ---
 
-## 4. Orden de incrementos propuesto
+## 4. Orden de incrementos propuesto (histórico — superseded por §0)
 
 Alternando Línea A / Línea B por incremento (ver VISION_PRODUCT §8, R2 — paralelismo de roadmap, no de ejecución simultánea):
 
