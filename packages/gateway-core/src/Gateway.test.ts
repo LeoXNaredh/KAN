@@ -212,4 +212,28 @@ describe("Gateway (integración, transporte simulado)", () => {
     expect(result).toEqual({ success: false, data: undefined, error: "el driver explotó" });
     expect(auditStore.entries).toHaveLength(1);
   });
+
+  it("un cambio de Safety Policy del Edge Agent queda registrado en la auditoría (regla 7)", () => {
+    const { connectionManager, auditStore } = buildGateway();
+    const edgeAgentId = randomUUID();
+    connectionManager.simulateAgentConnect(helloFor(edgeAgentId));
+
+    connectionManager.simulateTelemetry(edgeAgentId, {
+      type: "safety_policy.changed",
+      deviceId: "esp32-1",
+      target: "5",
+      alias: "Relé bomba de agua",
+      severity: "irreversible-material",
+      previousSeverity: "reversible",
+      at: new Date().toISOString(),
+    });
+
+    expect(auditStore.entries).toHaveLength(1);
+    expect(auditStore.entries[0]).toMatchObject({
+      actor: "user",
+      action: "safety_policy.changed",
+      subject: `${edgeAgentId}/esp32-1/5`,
+      metadata: { alias: "Relé bomba de agua", severity: "irreversible-material", previousSeverity: "reversible" },
+    });
+  });
 });

@@ -4,6 +4,7 @@ packages:
   - "plugins/*"
 allowBuilds:
   '@google/genai': true
+  '@serialport/bindings-cpp': true
   electron: true
   esbuild: true
   protobufjs: true

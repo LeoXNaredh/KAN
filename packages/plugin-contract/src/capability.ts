@@ -7,6 +7,14 @@ export interface CapabilityDescriptor {
   supportsDryRun: boolean;
   /** Esquema de entrada, sin validar en runtime todavía (ver plan de este incremento). */
   inputSchema?: Record<string, unknown>;
+  /**
+   * Nombre del campo del input que identifica el target físico afectado
+   * (ej. "pin" para un GPIO). Habilita que la Safety Policy del dispositivo
+   * (SafetyPolicyStore, @kan/edge-agent-core) sobrescriba la severidad de
+   * esta capability por target individual. Sin este campo, la capability
+   * nunca es afectada por overrides — usa siempre `severity` tal cual.
+   */
+  targetParam?: string;
 }
 
 export interface CapabilityResult {

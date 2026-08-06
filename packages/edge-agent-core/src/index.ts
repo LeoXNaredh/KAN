@@ -1,6 +1,7 @@
 export * from "./domain/entities/Device";
 export * from "./domain/entities/PluginInstance";
 export * from "./domain/entities/PendingConfirmation";
+export * from "./domain/entities/SafetyPolicyEntry";
 export * from "./domain/ports/ConfigStorePort";
 export * from "./domain/ports/LoggerPort";
 export * from "./domain/ports/CoreConnectionPort";
@@ -9,6 +10,7 @@ export * from "./application/EdgeAgentBus";
 export * from "./application/PluginManager";
 export * from "./application/DeviceManager";
 export * from "./application/PermissionManager";
+export * from "./application/SafetyPolicyStore";
 export * from "./application/CapabilityRegistry";
 export * from "./infra/JsonFileConfigStore";
 export * from "./infra/FileAndConsoleLogger";

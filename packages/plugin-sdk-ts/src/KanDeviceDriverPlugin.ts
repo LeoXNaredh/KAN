@@ -3,6 +3,7 @@ import type {
   CapabilityResult,
   DeviceDescriptor,
   DeviceDriverPort,
+  TargetDescriptor,
 } from "@kan/plugin-contract";
 import { KanPlugin } from "./KanPlugin";
 
@@ -19,4 +20,15 @@ export abstract class KanDeviceDriverPlugin extends KanPlugin implements DeviceD
   abstract disconnect(deviceId: string): Promise<void>;
   abstract getCapabilities(deviceId: string): CapabilityDescriptor[];
   abstract invoke(deviceId: string, capabilityName: string, input: unknown): Promise<CapabilityResult>;
+
+  /**
+   * Targets físicos direccionables conocidos de antemano (ej. los pines de
+   * un ESP32), para que la Safety Policy del dispositivo tenga algo que
+   * ofrecer al usuario para clasificar aunque ninguna capability se haya
+   * invocado todavía. Vacío por defecto — la mayoría de los drivers (ej. el
+   * simulador) no tienen targets configurables.
+   */
+  listTargets(_deviceId: string): TargetDescriptor[] {
+    return [];
+  }
 }

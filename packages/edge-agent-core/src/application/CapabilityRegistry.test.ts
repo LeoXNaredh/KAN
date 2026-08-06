@@ -9,11 +9,24 @@ import { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
 import { EdgeAgentBus } from "./EdgeAgentBus";
 import { DeviceManager } from "./DeviceManager";
 import { PermissionManager } from "./PermissionManager";
+import { SafetyPolicyStore } from "./SafetyPolicyStore";
 import { CapabilityRegistry } from "./CapabilityRegistry";
 import type { LoggerPort } from "../domain/ports/LoggerPort";
+import type { ConfigStorePort } from "../domain/ports/ConfigStorePort";
 
 function createLogger(): LoggerPort {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+function createInMemoryConfigStore(): ConfigStorePort {
+  const data = new Map<string, unknown>();
+  return {
+    get: <T>(key: string) => data.get(key) as T | undefined,
+    set: <T>(key: string, value: T) => {
+      data.set(key, value);
+    },
+    all: () => Object.fromEntries(data),
+  };
 }
 
 class FakeDriver extends KanDeviceDriverPlugin {
@@ -37,6 +50,13 @@ class FakeDriver extends KanDeviceDriverPlugin {
     return [
       { name: "read_only_cap", description: "...", severity: "read-only", supportsDryRun: false },
       { name: "dangerous_cap", description: "...", severity: "irreversible-material", supportsDryRun: false },
+      {
+        name: "write_pin",
+        description: "...",
+        severity: "irreversible-material",
+        supportsDryRun: false,
+        targetParam: "pin",
+      },
     ];
   }
 
@@ -51,6 +71,7 @@ describe("CapabilityRegistry", () => {
   let logger: LoggerPort;
   let deviceManager: DeviceManager;
   let permissionManager: PermissionManager;
+  let safetyPolicyStore: SafetyPolicyStore;
   let registry: CapabilityRegistry;
 
   beforeEach(async () => {
@@ -58,14 +79,15 @@ describe("CapabilityRegistry", () => {
     logger = createLogger();
     deviceManager = new DeviceManager(bus, logger);
     permissionManager = new PermissionManager(bus, logger);
-    registry = new CapabilityRegistry(deviceManager, permissionManager, bus, logger);
+    safetyPolicyStore = new SafetyPolicyStore(createInMemoryConfigStore(), bus);
+    registry = new CapabilityRegistry(deviceManager, permissionManager, safetyPolicyStore, bus, logger);
     await deviceManager.discoverAll([new FakeDriver()]);
   });
 
   it("list() agrega las capabilities de todos los dispositivos descubiertos", () => {
     const listing = registry.list();
-    expect(listing).toHaveLength(2);
-    expect(listing.map((l) => l.capability.name)).toEqual(["read_only_cap", "dangerous_cap"]);
+    expect(listing).toHaveLength(3);
+    expect(listing.map((l) => l.capability.name)).toEqual(["read_only_cap", "dangerous_cap", "write_pin"]);
   });
 
   it("invoke() de una capability read-only se ejecuta directo", async () => {
@@ -107,6 +129,23 @@ describe("CapabilityRegistry", () => {
 
   it("executeConfirmed() con un id desconocido devuelve undefined", async () => {
     expect(await registry.executeConfirmed("no-existe", true)).toBeUndefined();
+  });
+
+  it("invoke() de un target sin Safety Policy configurada respeta la severidad restrictiva declarada por la capability", async () => {
+    const outcome = await registry.invoke("fake-1", "write_pin", { pin: 5 });
+    expect(outcome.status).toBe("pending_confirmation");
+  });
+
+  it("invoke() de un target con override a reversible se ejecuta directo sin confirmación", async () => {
+    safetyPolicyStore.set("fake-1", "5", { severity: "reversible", alias: "LED interno" });
+    const outcome = await registry.invoke("fake-1", "write_pin", { pin: 5 });
+    expect(outcome.status).toBe("executed");
+  });
+
+  it("el override de un target no afecta a otro target sin configurar del mismo dispositivo", async () => {
+    safetyPolicyStore.set("fake-1", "5", { severity: "reversible" });
+    const outcome = await registry.invoke("fake-1", "write_pin", { pin: 18 });
+    expect(outcome.status).toBe("pending_confirmation");
   });
 
   it("un driver que lanza se convierte en CapabilityResult failed, no en excepción sin manejar", async () => {

@@ -3,6 +3,7 @@ import type { LoggerPort } from "../domain/ports/LoggerPort";
 import type { EdgeAgentBus } from "./EdgeAgentBus";
 import type { DeviceManager } from "./DeviceManager";
 import type { PermissionManager } from "./PermissionManager";
+import type { SafetyPolicyStore } from "./SafetyPolicyStore";
 
 export interface CapabilityListing {
   deviceId: string;
@@ -25,6 +26,7 @@ export class CapabilityRegistry {
   constructor(
     private readonly deviceManager: DeviceManager,
     private readonly permissionManager: PermissionManager,
+    private readonly safetyPolicyStore: SafetyPolicyStore,
     private readonly bus: EdgeAgentBus,
     private readonly logger: LoggerPort,
   ) {}
@@ -46,9 +48,10 @@ export class CapabilityRegistry {
       throw new Error(`Capability desconocida: ${capabilityName} en dispositivo ${deviceId}`);
     }
 
-    this.bus.emit("capability.invoked", { deviceId, capability: capabilityName, severity: capability.severity });
+    const severity = this.safetyPolicyStore.resolveSeverity(deviceId, capability, input);
+    this.bus.emit("capability.invoked", { deviceId, capability: capabilityName, severity });
 
-    const decision = this.permissionManager.evaluate(deviceId, capabilityName, capability.severity, input);
+    const decision = this.permissionManager.evaluate(deviceId, capabilityName, severity, input);
     if (decision.outcome === "pending") {
       return { status: "pending_confirmation", confirmationId: decision.confirmation.id };
     }

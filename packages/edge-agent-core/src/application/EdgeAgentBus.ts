@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type { ActionSeverity, CapabilityResult } from "@kan/plugin-contract";
 import type { Device } from "../domain/entities/Device";
 import type { PendingConfirmation } from "../domain/entities/PendingConfirmation";
+import type { SafetyPolicyEntry } from "../domain/entities/SafetyPolicyEntry";
 import type { LogLevel } from "../domain/ports/LoggerPort";
 import type { CoreConnectionStatus } from "../domain/ports/CoreConnectionPort";
 
@@ -15,6 +16,7 @@ export interface EdgeAgentEvents {
   "capability.failed": { deviceId: string; capability: string; error: string };
   "permission.pending": { confirmation: PendingConfirmation };
   "permission.resolved": { confirmationId: string; approved: boolean };
+  "safety_policy.changed": { entry: SafetyPolicyEntry; previousSeverity?: ActionSeverity };
   "core.status": { status: CoreConnectionStatus };
   log: { level: LogLevel; message: string; meta?: Record<string, unknown>; at: string };
 }

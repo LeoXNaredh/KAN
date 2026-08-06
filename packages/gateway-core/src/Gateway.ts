@@ -79,9 +79,21 @@ export class Gateway {
       this.capabilityRegistry.removeAgent(edgeAgentId);
     });
 
-    this.deps.connectionManager.onMessage((_edgeAgentId, message) => {
+    this.deps.connectionManager.onMessage((edgeAgentId, message) => {
       if (message.type === "telemetry") {
         this.taskOrchestrator.handleTelemetry(message);
+        return;
+      }
+      if (message.type === "safety_policy.changed") {
+        // El cambio ya ocurrió y se persistió localmente en el Edge Agent;
+        // esto solo deja constancia en la auditoría (regla 7 de Safety Policy).
+        this.auditService.record({
+          actor: "user",
+          action: "safety_policy.changed",
+          subject: `${edgeAgentId}/${message.deviceId}/${message.target}`,
+          metadata: { alias: message.alias, severity: message.severity, previousSeverity: message.previousSeverity },
+        });
+        return;
       }
       // "heartbeat" solo mantiene viva la conexión (ConnectionManagerPort lo maneja internamente).
     });

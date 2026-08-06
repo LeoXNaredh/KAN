@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { EdgeAgentEvents } from "@kan/edge-agent-core";
+import type { ActionSeverity } from "@kan/plugin-contract";
 
 export type BusEvent = {
   [K in keyof EdgeAgentEvents]: { type: K; payload: EdgeAgentEvents[K] };
@@ -13,6 +14,9 @@ const kanApi = {
   resolveConfirmation: (confirmationId: string, approved: boolean) =>
     ipcRenderer.invoke("kan:resolveConfirmation", confirmationId, approved),
   getCoreStatus: () => ipcRenderer.invoke("kan:getCoreStatus"),
+  listSafetyTargets: (deviceId: string) => ipcRenderer.invoke("kan:listSafetyTargets", deviceId),
+  setSafetyPolicy: (deviceId: string, target: string, severity: ActionSeverity, alias?: string) =>
+    ipcRenderer.invoke("kan:setSafetyPolicy", deviceId, target, severity, alias),
   onEvent: (handler: (event: BusEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: BusEvent) => handler(data);
     ipcRenderer.on("kan:event", listener);

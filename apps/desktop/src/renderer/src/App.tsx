@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
-import type { Device, CapabilityListing, PendingConfirmation, CoreConnectionStatus } from "@kan/edge-agent-core";
+import type {
+  Device,
+  CapabilityListing,
+  PendingConfirmation,
+  CoreConnectionStatus,
+  SafetyTargetListing,
+} from "@kan/edge-agent-core";
+import type { ActionSeverity } from "@kan/plugin-contract";
 import type { BusEvent } from "../../preload/index";
+
+const SEVERITY_OPTIONS: ActionSeverity[] = ["read-only", "reversible", "irreversible-material", "safety-critical"];
 
 interface LogEntry {
   level: string;
@@ -35,12 +44,21 @@ export default function App() {
   const [pending, setPending] = useState<PendingConfirmation[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [coreStatus, setCoreStatus] = useState<CoreConnectionStatus>("disconnected");
+  const [safetyTargets, setSafetyTargets] = useState<Record<string, SafetyTargetListing[]>>({});
+
+  function loadSafetyTargets(deviceId: string) {
+    window.kan.listSafetyTargets(deviceId).then((targets: SafetyTargetListing[]) => {
+      setSafetyTargets((prev) => ({ ...prev, [deviceId]: targets }));
+    });
+  }
 
   useEffect(() => {
     (async () => {
-      setDevices(await window.kan.listDevices());
+      const loadedDevices: Device[] = await window.kan.listDevices();
+      setDevices(loadedDevices);
       setCapabilities(await window.kan.listCapabilities());
       setCoreStatus(await window.kan.getCoreStatus());
+      loadedDevices.forEach((device) => loadSafetyTargets(device.id));
     })();
 
     const unsubscribe = window.kan.onEvent((event: BusEvent) => {
@@ -55,6 +73,10 @@ export default function App() {
               capability,
             })),
           ]);
+          loadSafetyTargets(event.payload.device.id);
+          break;
+        case "safety_policy.changed":
+          loadSafetyTargets(event.payload.entry.deviceId);
           break;
         case "device.disconnected":
           setDevices((prev) =>
@@ -138,6 +160,9 @@ export default function App() {
                     </div>
                   ))}
               </div>
+              {safetyTargets[device.id] && safetyTargets[device.id].length > 0 && (
+                <SafetyPolicyPanel deviceId={device.id} targets={safetyTargets[device.id]} />
+              )}
             </div>
           ))}
         </section>
@@ -189,6 +214,67 @@ function CapabilityControls({
     <button className="btn" onClick={() => onInvoke({})}>
       Invocar
     </button>
+  );
+}
+
+function SafetyPolicyPanel({ deviceId, targets }: { deviceId: string; targets: SafetyTargetListing[] }) {
+  const [drafts, setDrafts] = useState<Record<string, { alias: string; severity: ActionSeverity }>>({});
+
+  function draftFor(target: SafetyTargetListing) {
+    return drafts[target.target] ?? { alias: target.alias ?? target.suggestedAlias ?? "", severity: target.effectiveSeverity };
+  }
+
+  function save(target: SafetyTargetListing) {
+    const draft = draftFor(target);
+    window.kan.setSafetyPolicy(deviceId, target.target, draft.severity, draft.alias || undefined);
+  }
+
+  return (
+    <div className="mt-3 border-t border-zinc-800 pt-3">
+      <h3 className="mb-2 text-xs font-medium text-zinc-400">
+        Safety Policy — clasificación de targets (pines). Sin configurar = usa el default más restrictivo.
+      </h3>
+      <div className="flex flex-col gap-1.5">
+        {targets.map((target) => {
+          const draft = draftFor(target);
+          return (
+            <div key={target.target} className="flex items-center gap-2 rounded border border-zinc-800 px-2 py-1.5 text-xs">
+              <span className="w-16 font-mono text-zinc-400">{target.target}</span>
+              <input
+                className="min-w-0 flex-1 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-1"
+                placeholder="Alias (ej. Relé bomba de agua)"
+                value={draft.alias}
+                onChange={(e) =>
+                  setDrafts((prev) => ({ ...prev, [target.target]: { ...draft, alias: e.target.value } }))
+                }
+              />
+              <select
+                className="rounded border border-zinc-800 bg-zinc-950 px-1.5 py-1"
+                value={draft.severity}
+                onChange={(e) =>
+                  setDrafts((prev) => ({
+                    ...prev,
+                    [target.target]: { ...draft, severity: e.target.value as ActionSeverity },
+                  }))
+                }
+              >
+                {SEVERITY_OPTIONS.map((severity) => (
+                  <option key={severity} value={severity}>
+                    {severity}
+                  </option>
+                ))}
+              </select>
+              <span className={`rounded px-1.5 py-0.5 text-[10px] ${target.configured ? "bg-emerald-900 text-emerald-200" : "bg-zinc-800 text-zinc-400"}`}>
+                {target.configured ? "configurado" : `default: ${target.defaultSeverity}`}
+              </span>
+              <button className="btn" onClick={() => save(target)}>
+                Guardar
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

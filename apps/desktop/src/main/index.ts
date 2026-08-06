@@ -10,6 +10,7 @@ import {
   NoopUpdater,
   type EdgeAgentEvents,
 } from "@kan/edge-agent-core";
+import type { ActionSeverity } from "@kan/plugin-contract";
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
 
 let mainWindow: BrowserWindow | null = null;
@@ -25,6 +26,7 @@ const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "capability.failed",
   "permission.pending",
   "permission.resolved",
+  "safety_policy.changed",
   "core.status",
   "log",
 ];
@@ -95,6 +97,14 @@ function registerIpcHandlers(): void {
     return edgeAgent.resolveConfirmation(confirmationId, approved);
   });
   ipcMain.handle("kan:getCoreStatus", () => edgeAgent?.getCoreConnectionStatus() ?? "disconnected");
+  ipcMain.handle("kan:listSafetyTargets", (_event, deviceId: string) => edgeAgent?.listSafetyTargets(deviceId) ?? []);
+  ipcMain.handle(
+    "kan:setSafetyPolicy",
+    (_event, deviceId: string, target: string, severity: ActionSeverity, alias?: string) => {
+      if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+      return edgeAgent.setSafetyPolicy(deviceId, target, severity, alias);
+    },
+  );
 }
 
 function createWindow(): void {

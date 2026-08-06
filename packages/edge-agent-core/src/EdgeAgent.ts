@@ -1,15 +1,23 @@
 import { platform } from "node:os";
 import type { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
-import type { AgentTaskDispatchMessage } from "@kan/plugin-contract";
+import type { ActionSeverity, AgentTaskDispatchMessage, TargetDescriptor } from "@kan/plugin-contract";
 import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
 import type { LoggerPort } from "./domain/ports/LoggerPort";
 import type { CoreConnectionPort } from "./domain/ports/CoreConnectionPort";
 import type { UpdaterPort } from "./domain/ports/UpdaterPort";
+import type { SafetyPolicyEntry } from "./domain/entities/SafetyPolicyEntry";
 import type { EdgeAgentBus } from "./application/EdgeAgentBus";
 import { PluginManager } from "./application/PluginManager";
 import { DeviceManager } from "./application/DeviceManager";
 import { PermissionManager } from "./application/PermissionManager";
+import { SafetyPolicyStore } from "./application/SafetyPolicyStore";
 import { CapabilityRegistry, type CapabilityListing, type InvokeOutcome } from "./application/CapabilityRegistry";
+
+export interface SafetyTargetListing extends TargetDescriptor {
+  alias?: string;
+  effectiveSeverity: ActionSeverity;
+  configured: boolean;
+}
 
 export interface EdgeAgentDeps {
   edgeAgentId: string;
@@ -32,6 +40,7 @@ export class EdgeAgent {
   private readonly pluginManager: PluginManager;
   private readonly deviceManager: DeviceManager;
   private readonly permissionManager: PermissionManager;
+  private readonly safetyPolicyStore: SafetyPolicyStore;
   private readonly capabilityRegistry: CapabilityRegistry;
 
   constructor(private readonly deps: EdgeAgentDeps) {
@@ -39,12 +48,28 @@ export class EdgeAgent {
     this.pluginManager = new PluginManager(deps.bus, deps.logger, deps.configStore);
     this.deviceManager = new DeviceManager(deps.bus, deps.logger);
     this.permissionManager = new PermissionManager(deps.bus, deps.logger);
+    this.safetyPolicyStore = new SafetyPolicyStore(deps.configStore, deps.bus);
     this.capabilityRegistry = new CapabilityRegistry(
       this.deviceManager,
       this.permissionManager,
+      this.safetyPolicyStore,
       deps.bus,
       deps.logger,
     );
+
+    // Reenvía cada cambio de Safety Policy al Gateway para que quede en la
+    // auditoría (regla 7) — el cambio en sí ya se persistió localmente.
+    this.bus.on("safety_policy.changed", ({ entry, previousSeverity }) => {
+      this.deps.coreConnection.send({
+        type: "safety_policy.changed",
+        deviceId: entry.deviceId,
+        target: entry.target,
+        alias: entry.alias,
+        severity: entry.severity,
+        previousSeverity,
+        at: entry.updatedAt,
+      });
+    });
   }
 
   async registerPlugin(driver: KanDeviceDriverPlugin): Promise<void> {
@@ -97,6 +122,31 @@ export class EdgeAgent {
 
   getCoreConnectionStatus() {
     return this.deps.coreConnection.status;
+  }
+
+  /**
+   * Targets conocidos de un dispositivo (ej. sus pines) mezclados con la
+   * Safety Policy ya configurada, para que la app de escritorio pueda
+   * mostrar de un vistazo qué está clasificado y qué sigue en el default.
+   */
+  listSafetyTargets(deviceId: string): SafetyTargetListing[] {
+    const driver = this.deviceManager.getDriverFor(deviceId);
+    const known = driver?.listTargets(deviceId) ?? [];
+    return known.map((target) => {
+      const override = this.safetyPolicyStore.get(deviceId, target.target);
+      return {
+        target: target.target,
+        suggestedAlias: target.suggestedAlias,
+        defaultSeverity: target.defaultSeverity,
+        alias: override?.alias,
+        effectiveSeverity: override?.severity ?? target.defaultSeverity,
+        configured: override !== undefined,
+      };
+    });
+  }
+
+  setSafetyPolicy(deviceId: string, target: string, severity: ActionSeverity, alias?: string): SafetyPolicyEntry {
+    return this.safetyPolicyStore.set(deviceId, target, { severity, alias });
   }
 
   private async handleCoreMessage(message: AgentTaskDispatchMessage): Promise<void> {

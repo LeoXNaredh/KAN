@@ -45,5 +45,25 @@ export interface TelemetryMessage {
   at: string;
 }
 
+/**
+ * Notifica al Gateway que el usuario cambió la Safety Policy local de un
+ * target (ej. reclasificó un pin) para que quede en la auditoría (docs/00,
+ * regla 7 del sistema de Safety Policy) — el cambio en sí ya ocurrió y se
+ * persistió localmente en el Edge Agent; esto es solo el registro.
+ */
+export interface SafetyPolicyChangedMessage {
+  type: "safety_policy.changed";
+  deviceId: string;
+  target: string;
+  alias?: string;
+  severity: ActionSeverity;
+  previousSeverity?: ActionSeverity;
+  at: string;
+}
+
 export type CoreToEdgeMessage = AgentTaskDispatchMessage;
-export type EdgeToCoreMessage = HelloMessage | HeartbeatMessage | TelemetryMessage;
+export type EdgeToCoreMessage =
+  | HelloMessage
+  | HeartbeatMessage
+  | TelemetryMessage
+  | SafetyPolicyChangedMessage;
