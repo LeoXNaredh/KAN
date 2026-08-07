@@ -93,6 +93,12 @@ importers:
       '@kan/plugin-contract':
         specifier: workspace:*
         version: link:../../packages/plugin-contract
+      '@kan/supabase-adapter':
+        specifier: workspace:*
+        version: link:../../packages/supabase-adapter
+      '@supabase/supabase-js':
+        specifier: ^2.48.0
+        version: 2.112.1
       express:
         specifier: ^4.21.2
         version: 4.22.2(supports-color@7.2.0)
@@ -333,6 +339,9 @@ importers:
       '@kan/core':
         specifier: workspace:*
         version: link:../core
+      '@kan/gateway-core':
+        specifier: workspace:*
+        version: link:../gateway-core
       '@supabase/supabase-js':
         specifier: ^2.48.0
         version: 2.112.1

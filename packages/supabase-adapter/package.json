@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@kan/core": "workspace:*",
+    "@kan/gateway-core": "workspace:*",
     "@supabase/supabase-js": "^2.48.0"
   },
   "devDependencies": {

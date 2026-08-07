@@ -34,21 +34,21 @@ describe("JsonlAuditStore", () => {
     return new JsonlAuditStore(filePath);
   }
 
-  it("append() hace visible la entrada de inmediato en list() (lectura en memoria, no del disco)", () => {
+  it("append() hace visible la entrada de inmediato en list() (lectura en memoria, no del disco)", async () => {
     const store = tempStore();
-    store.append(entry({ subject: "ref-a" }));
-    expect(store.list()).toHaveLength(1);
-    expect(store.list()[0].subject).toBe("ref-a");
+    await store.append(entry({ subject: "ref-a" }));
+    expect(await store.list()).toHaveLength(1);
+    expect((await store.list())[0].subject).toBe("ref-a");
   });
 
-  it("list() filtra por actor/action/subject", () => {
+  it("list() filtra por actor/action/subject", async () => {
     const store = tempStore();
-    store.append(entry({ subject: "ref-a", action: "tool.execute" }));
-    store.append(entry({ subject: "ref-b", action: "tool.propose" }));
+    await store.append(entry({ subject: "ref-a", action: "tool.execute" }));
+    await store.append(entry({ subject: "ref-b", action: "tool.propose" }));
 
-    expect(store.list({ subject: "ref-a" })).toHaveLength(1);
-    expect(store.list({ action: "tool.propose" })).toHaveLength(1);
-    expect(store.list({ subject: "no-existe" })).toHaveLength(0);
+    expect(await store.list({ subject: "ref-a" })).toHaveLength(1);
+    expect(await store.list({ action: "tool.propose" })).toHaveLength(1);
+    expect(await store.list({ subject: "no-existe" })).toHaveLength(0);
   });
 
   it("persiste a disco de forma asíncrona (no bloquea append(), hallazgo A8 de docs/13)", async () => {
@@ -56,18 +56,19 @@ describe("JsonlAuditStore", () => {
     tempFiles.push(filePath);
     const store = new JsonlAuditStore(filePath);
 
-    store.append(entry({ subject: "ref-durable" }));
-    // append() no espera al disco — se le da un tick al event loop antes de verificar el archivo.
+    // No se espera la promesa de append(): la escritura a disco en sí sigue
+    // sin bloquear — se le da un tick al event loop antes de verificar el archivo.
+    void store.append(entry({ subject: "ref-durable" }));
     await sleep(50);
 
     expect(existsSync(filePath)).toBe(true);
     const reloaded = new JsonlAuditStore(filePath);
-    expect(reloaded.list()).toHaveLength(1);
-    expect(reloaded.list()[0].subject).toBe("ref-durable");
+    expect(await reloaded.list()).toHaveLength(1);
+    expect((await reloaded.list())[0].subject).toBe("ref-durable");
   });
 
-  it("un archivo inexistente arranca con lista vacía sin lanzar", () => {
+  it("un archivo inexistente arranca con lista vacía sin lanzar", async () => {
     const store = tempStore();
-    expect(store.list()).toEqual([]);
+    expect(await store.list()).toEqual([]);
   });
 });

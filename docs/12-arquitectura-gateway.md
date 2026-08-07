@@ -214,12 +214,12 @@ interface AuditEntry {
 }
 
 interface AuditStorePort {
-  append(entry: AuditEntry): void;
-  list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): AuditEntry[];
+  append(entry: AuditEntry): Promise<void>; // async desde ADR-026 (docs/16 P3)
+  list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): Promise<AuditEntry[]>;
 }
 ```
 
-**Implementado en este incremento:** `AuditService` (genera id/timestamp, emite evento en el bus) sobre `JsonlAuditStore` (un archivo `.jsonl` local, un registro por línea — durable entre reinicios sin necesitar todavía una base de datos real).
+**Implementado en este incremento:** `AuditService` (genera id/timestamp, emite evento en el bus) sobre `JsonlAuditStore` (un archivo `.jsonl` local, un registro por línea — durable entre reinicios sin necesitar todavía una base de datos real). **Persistencia real (ADR-026, docs/16 P3):** `apps/gateway` usa `SupabaseAuditStore` (`@kan/supabase-adapter`, tabla `audit_entries`, `service_role` key) en su lugar; `JsonlAuditStore` sigue disponible como implementación sin dependencias externas.
 
 ## 7. Event Bus
 

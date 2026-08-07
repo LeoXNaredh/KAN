@@ -41,10 +41,10 @@ class FakeConnectionManager implements ConnectionManagerPort {
 
 class InMemoryAuditStore implements AuditStorePort {
   entries: AuditEntry[] = [];
-  append(entry: AuditEntry): void {
+  async append(entry: AuditEntry): Promise<void> {
     this.entries.push(entry);
   }
-  list(): AuditEntry[] {
+  async list(): Promise<AuditEntry[]> {
     return this.entries;
   }
 }

@@ -22,15 +22,13 @@
 
 **Prioridad:** alta, pero explícitamente **no bloqueante para seguir con ESP32 en un entorno de un solo usuario** — bloqueante solo para compartir el sistema con alguien más.
 
-## P3 — Persistencia real para el estado del Gateway
+## P3 — Persistencia real para el estado del Gateway — ✅ Implementado, alcance parcial (2026-08-07, ADR-026)
 
-**Problema.** `AgentRegistry`, `GlobalCapabilityRegistry` y `JsonlAuditStore` viven en memoria/archivo local del proceso del Gateway. Un reinicio del Gateway pierde el registro de agentes (se reconstruye al reconectar, aceptable) pero el histórico de auditoría queda solo en ese archivo local, sin réplica ni backup.
+**Problema (histórico).** `AgentRegistry`, `GlobalCapabilityRegistry` y `JsonlAuditStore` vivían en memoria/archivo local del proceso del Gateway. Un reinicio del Gateway pierde el registro de agentes (se reconstruye al reconectar, aceptable) pero el histórico de auditoría quedaba solo en ese archivo local, sin réplica ni backup.
 
-**Propuesta.** Los puertos ya están diseñados para este swap sin tocar el dominio (mismo patrón que ADR-007 para `apps/web`): `AuditStorePort` → adaptador Supabase (tabla `audit_entries`) en vez de `JsonlAuditStore`; opcionalmente `AgentRegistry`/`GlobalCapabilityRegistry` respaldados por Redis si el Gateway llega a correr en más de una instancia (hoy asume un solo proceso — ver P5).
+**Resuelto (solo el Audit Store — la mitad "costo bajo" de la propuesta).** `AuditStorePort` → `SupabaseAuditStore` (`@kan/supabase-adapter`), tabla `audit_entries` (`supabase/migrations/0007_audit_entries.sql`). Al implementar apareció un obstáculo real no anticipado por la propuesta: `AuditStorePort` era síncrono (`append(): void`, `list(): AuditEntry[]`) y tuvo que volverse async para poder hacer network I/O de verdad — con blast radius mínimo porque `AuditService.record()` sigue sin esperar `append()` (best-effort, igual que antes). El Gateway usa la `service_role` key (primer uso en el proyecto) porque no tiene sesión de usuario; `audit_entries` tiene RLS activado pero sin ninguna policy para `anon`/`authenticated` — deny-by-default real. Ver ADR-026 (`docs/00`) para el detalle completo y las alternativas descartadas.
 
-**Costo estimado:** bajo para el Audit Store (un adaptador nuevo detrás del puerto existente), medio para Agent/Capability Registry si se requiere multi-instancia.
-
-**Prioridad:** media — no urgente mientras el Gateway corra como un solo proceso de un solo desarrollador.
+**Sigue pendiente:** `AgentRegistry`/`GlobalCapabilityRegistry` respaldados por Redis para multi-instancia — no se abordó en este incremento (sigue siendo la mitad "costo medio" de la propuesta original, sin caso de uso real todavía mientras el Gateway corra como un solo proceso).
 
 ## P4 — Auditoría completa: invocaciones manuales del Edge Agent — ✅ Implementado (2026-08-07, ADR-025, alcance parcial)
 
@@ -82,7 +80,7 @@
 |---|---|---|---|
 | P1 | Validación JSON Schema real | ✅ Implementado (ADR-024) | — |
 | P2 | Auth/autorización por usuario | Alta | Compartir el sistema con más de un usuario |
-| P3 | Persistencia real del Gateway | Media | Multi-instancia / durabilidad del audit trail |
+| P3 | Persistencia real del Gateway | ✅ Implementado, alcance parcial (ADR-026) | Multi-instancia (Redis para Agent/Capability Registry) queda pendiente |
 | P4 | Auditoría de invocaciones manuales | ✅ Implementado, alcance parcial (ADR-025) | Auditar confirmaciones manuales queda pendiente |
 | P6 | Rate limiting | ✅ Implementado (ADR-025) | — |
 | P7 | Streaming del chat | Baja → Alta | El primer dispositivo con operaciones largas |

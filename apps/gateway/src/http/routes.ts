@@ -53,8 +53,8 @@ export function createRoutes(gateway: Gateway, internalToken: string, rateLimitO
     res.json({ agents: gateway.agentRegistry.list() });
   });
 
-  router.get("/v1/audit", (_req, res) => {
-    res.json({ entries: gateway.auditService.list() });
+  router.get("/v1/audit", async (_req, res) => {
+    res.json({ entries: await gateway.auditService.list() });
   });
 
   router.get("/v1/jobs", (_req, res) => {

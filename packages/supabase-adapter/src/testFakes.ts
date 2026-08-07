@@ -41,6 +41,9 @@ export class FakeQueryBuilder implements PromiseLike<FakeQueryResult> {
   order(...args: unknown[]) {
     return this.record("order", args);
   }
+  limit(...args: unknown[]) {
+    return this.record("limit", args);
+  }
   insert(...args: unknown[]) {
     return this.record("insert", args);
   }

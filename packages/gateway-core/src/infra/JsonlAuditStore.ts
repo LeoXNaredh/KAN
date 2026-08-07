@@ -10,6 +10,11 @@ import type { AuditStorePort } from "../domain/ports/AuditStorePort";
  * A8: `appendFileSync` en el hot path bloqueaba el único hilo del Gateway
  * en cada ejecución de tool). El array en memoria es la fuente de lectura;
  * el archivo es la copia durable para sobrevivir un reinicio.
+ *
+ * Sigue disponible como alternativa sin dependencias externas tras ADR-026
+ * (docs/16 P3) — `apps/gateway` en producción usa `SupabaseAuditStore`
+ * (`@kan/supabase-adapter`) en su lugar, mismo criterio que
+ * `InMemoryConversationRepository` sigue existiendo tras ADR-007.
  */
 export class JsonlAuditStore implements AuditStorePort {
   private readonly entries: AuditEntry[] = [];
@@ -20,14 +25,14 @@ export class JsonlAuditStore implements AuditStorePort {
     this.entries = this.loadFromDisk();
   }
 
-  append(entry: AuditEntry): void {
+  async append(entry: AuditEntry): Promise<void> {
     this.entries.push(entry);
     appendFile(this.filePath, JSON.stringify(entry) + "\n", "utf-8", (error) => {
       if (error) console.error(`[JsonlAuditStore] no se pudo escribir a disco: ${error.message}`);
     });
   }
 
-  list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): AuditEntry[] {
+  async list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): Promise<AuditEntry[]> {
     if (!filter) return [...this.entries];
     return this.entries.filter(
       (entry) =>

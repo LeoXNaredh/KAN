@@ -1,16 +1,25 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import { createClient } from "@supabase/supabase-js";
+import { SupabaseAuditStore } from "@kan/supabase-adapter";
 import {
   Gateway,
   GatewayBus,
   WsConnectionManager,
-  JsonlAuditStore,
   NodeCronScheduler,
   JsonFileScheduledJobStore,
   ConsoleNotificationService,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Falta ${name}. Ver apps/gateway/.env.example.`);
+  }
+  return value;
+}
 
 const PORT = Number(process.env.PORT ?? 8787);
 const EDGE_TOKEN = process.env.KAN_EDGE_TOKEN ?? "dev-token";
@@ -23,7 +32,11 @@ const MAX_WS_CONNECTIONS = Number(process.env.KAN_GATEWAY_MAX_WS_CONNECTIONS) ||
 
 const bus = new GatewayBus();
 const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS);
-const auditStore = new JsonlAuditStore(fileURLToPath(new URL("../data/audit.jsonl", import.meta.url)));
+// service_role key (no anon): el Gateway no tiene sesión de usuario, así que
+// no hay auth.uid() para las RLS policies — audit_entries no tiene ninguna
+// policy para anon/authenticated a propósito (docs/16 P3, ADR-026).
+const supabaseClient = createClient(requireEnv("KAN_SUPABASE_URL"), requireEnv("KAN_SUPABASE_SERVICE_ROLE_KEY"));
+const auditStore = new SupabaseAuditStore(supabaseClient);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );
