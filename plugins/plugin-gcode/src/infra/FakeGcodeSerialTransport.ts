@@ -1,26 +1,26 @@
 import type { PortInfo, SerialConnection, SerialTransportPort, LineConnectionState } from "@kan/serial-line-transport";
 
 /**
- * Transporte serial simulado para tests (ADR-012: probar contra un "cliente
- * real" — aquí, un dispositivo que habla el protocolo de verdad — en vez de
- * mockear la lógica interna). Cada `FakeDevice` decide qué responder a cada
- * comando, igual que respondería el firmware real sobre `Serial`.
+ * Firmware G-code simulado para tests (ADR-012: probar contra un "cliente
+ * real" — un dispositivo que habla el protocolo de verdad — en vez de
+ * mockear la lógica interna). Mismo rol que FakeSerialTransport en
+ * plugin-esp32-arduino, adaptado a texto plano en vez de JSON.
  */
-export interface FakeDevice {
+export interface FakeGcodeDevice {
   path: string;
   manufacturer?: string;
-  /** `undefined` simula un dispositivo serial ajeno a KAN que no responde nuestro protocolo. */
-  handle(command: Record<string, unknown>): Record<string, unknown> | undefined;
+  /** Decide qué línea(s) responder a cada línea recibida — `undefined` simula un dispositivo que no responde (colgado o ajeno). */
+  handle(line: string): string[] | undefined;
 }
 
-export class FakeSerialTransport implements SerialTransportPort {
-  constructor(private readonly devices: FakeDevice[]) {}
+export class FakeGcodeSerialTransport implements SerialTransportPort {
+  constructor(private readonly devices: FakeGcodeDevice[]) {}
 
   async list(): Promise<PortInfo[]> {
     return this.devices.map((device) => ({ path: device.path, manufacturer: device.manufacturer }));
   }
 
-  async open(path: string): Promise<SerialConnection> {
+  async open(path: string, _baudRate?: number): Promise<SerialConnection> {
     const device = this.devices.find((d) => d.path === path);
     if (!device) {
       throw new Error(`Puerto no encontrado: ${path}`);
@@ -36,17 +36,11 @@ export class FakeSerialTransport implements SerialTransportPort {
       },
       write: (line: string) => {
         if (state !== "connected") return;
-        let command: Record<string, unknown>;
-        try {
-          command = JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          return;
-        }
-        const response = device.handle(command);
-        if (response !== undefined) {
+        const responseLines = device.handle(line);
+        if (responseLines !== undefined) {
           queueMicrotask(() => {
             if (state !== "connected") return;
-            lineHandlers.forEach((handler) => handler(JSON.stringify(response)));
+            responseLines.forEach((responseLine) => lineHandlers.forEach((handler) => handler(responseLine)));
           });
         }
       },

@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { createServer, type Server, type Socket } from "node:net";
 import { NodeTcpTransport } from "./NodeTcpTransport";
-import type { LineConnection, LineConnectionState } from "../LineConnection";
+import type { LineConnection, LineConnectionState } from "@kan/serial-line-transport";
 
 /**
  * Integración contra un servidor TCP real (ADR-012, docs/00: los límites de

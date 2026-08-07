@@ -1,5 +1,5 @@
 {
-  "name": "@kan/plugin-esp32-arduino",
+  "name": "@kan/serial-line-transport",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,9 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@kan/plugin-contract": "workspace:*",
-    "@kan/plugin-sdk-ts": "workspace:*",
-    "@kan/serial-line-transport": "workspace:*"
+    "serialport": "^12.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

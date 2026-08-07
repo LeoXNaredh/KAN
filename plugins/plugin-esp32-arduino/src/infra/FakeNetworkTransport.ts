@@ -1,4 +1,4 @@
-import type { LineConnection, LineConnectionState } from "../LineConnection";
+import type { LineConnection, LineConnectionState } from "@kan/serial-line-transport";
 import type { NetworkTransportPort } from "../NetworkTransportPort";
 
 /**

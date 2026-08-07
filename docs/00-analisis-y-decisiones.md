@@ -266,6 +266,22 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** La reconexión de MQTT no tiene backoff exponencial (a diferencia de TCP) — una desviación real y documentada, no una inconsistencia accidental.
 
+---
+
+### ADR-023: `plugin-gcode` — extrae `@kan/serial-line-transport`, `discover()` no escanea, parar es siempre de baja fricción
+
+**Contexto.** Siguiente incremento de hardware (P5): impresoras 3D (Marlin), CNC y láseres (GRBL) hablan G-code sobre Serial/USB. Mismo transporte físico que ya usa `plugin-esp32-arduino`, protocolo de cable distinto (texto G-code, no JSON).
+
+**Decisión — extraer `@kan/serial-line-transport`.** `LineConnection`, `SerialTransportPort`/`PortInfo` y `NodeSerialTransport` (envoltorio de `serialport`) se movieron de `plugin-esp32-arduino` a un paquete nuevo, genuinamente compartido (segundo consumidor real, no especulativo). `FakeSerialTransport` y `wireProtocol.ts` **se quedaron** en `plugin-esp32-arduino` — están acoplados al protocolo JSON propio de KAN, no son reutilizables para G-code (que necesita su propio fake y su propio parser de respuestas "ok"/"error"). Verificado sin regresión: los 27 tests de `plugin-esp32-arduino` pasan igual después de la extracción.
+
+**Decisión — `discover()` nunca escanea puertos sin configurar.** A diferencia de ESP32 (que puede escanear todos los puertos seriales porque su propio firmware responde un "ping" JSON inofensivo que cualquier otro dispositivo simplemente ignora), Marlin y GRBL no comparten un comando de identificación común — no hay forma universal de confirmar "esto es una máquina G-code de verdad" sin asumir un firmware específico. Mandarle texto G-code a un puerto serial desconocido es un riesgo real (podría ser cualquier otro dispositivo). `KAN_GCODE_PORTS` es obligatorio; `discover()` solo confirma que el puerto configurado abre, no que hable G-code — límite real, documentado en el README, no un descuido.
+
+**Decisión — severidad: parar es siempre `reversible`, encender el spindle/láser es `safety-critical`.** `emergency_stop`/`stop_spindle_or_laser` nunca deben quedar detrás de una confirmación — en una emergencia real, la acción de parar tiene que ejecutarse con la menor fricción posible, no la mayor. `start_spindle_or_laser` usa `safety-critical` (el techo de `ActionSeverity`, primera vez que se usa en el proyecto) en vez de `irreversible-material`: encender un láser o un spindle es, literalmente, el ejemplo de "podría lastimar a alguien" que se repite desde ADR-004 — merece la severidad más alta disponible, no la misma que mover un eje.
+
+**Decisión — `M104`/`M140` en vez de `M109`/`M190` para temperatura.** Las variantes "esperar hasta alcanzar" pueden tardar minutos — no encajan en un modelo de capability de request/response con timeout corto. `set_temperature` fija el objetivo y devuelve de inmediato; consultar si ya se alcanzó queda para `get_position`/una capability futura si aparece el caso de uso.
+
+**Consecuencia.** `move_axis` solo soporta movimiento relativo (`G91`/`G0`/`G90`), nunca a coordenadas absolutas — decisión deliberada para evitar mover la máquina a una posición inesperada si el estado de posicionamiento asumido no coincidía con el real.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

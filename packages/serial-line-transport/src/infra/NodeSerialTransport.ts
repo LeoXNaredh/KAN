@@ -4,8 +4,6 @@ import type { LineConnectionState } from "../LineConnection";
 
 /**
  * Transporte serial real sobre `serialport` (recomendado en docs/08 §3).
- * No hay hardware disponible para probarlo en esta sesión — queda listo
- * para que el usuario lo use al flashear un ESP32/Arduino real.
  *
  * Sin reconexión automática (a diferencia de NodeTcpTransport) — una
  * desconexión de un puerto serial (cable desenchufado) normalmente implica
