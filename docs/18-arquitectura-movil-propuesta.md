@@ -1,6 +1,6 @@
 # Propuesta de Arquitectura — App Móvil (React Native/Expo), roadmap P7
 
-> Mismo criterio que `docs/16`: esto es una **propuesta documentada, no implementada todavía**. Cada punto tiene problema/propuesta/costo/prioridad. Tres de los puntos exponen un gap real de código y se proponen como ADRs numerados (029-031) — no se agregan a `docs/00` hasta confirmarlos, mismo proceso que ya se usó para el pivote de `docs/17`.
+> **Estado (2026-08-07): propuesta aprobada, incremento 1 de 6 completo.** ADR-029/030/031 oficializados en `docs/00-analisis-y-decisiones.md` e implementados. `apps/mobile` existe (Expo SDK 57, TypeScript, NativeWind con los tokens de `DESIGN_SYSTEM.md`, cliente de Supabase con `AsyncStorage`) — scaffold verificado con `expo export` real, sin pantallas ni auth conectados todavía (eso es el incremento 2 de §7). El resto de este documento sigue siendo la referencia de diseño — cada punto tiene problema/propuesta/costo/prioridad, mismo formato que `docs/16`.
 
 ## 0. Qué ya está decidido (no se reabre acá)
 
@@ -31,7 +31,7 @@
 
 **Prioridad:** crítica — es el prerrequisito de todo lo del §1 que va directo a Supabase.
 
-### ADR-029 (propuesto): `/api/chat` acepta `Authorization: Bearer <token>` además de cookies
+### ADR-029 (oficial, ver `docs/00`): `/api/chat` acepta `Authorization: Bearer <token>` además de cookies
 
 **Contexto.** Confirmado en el código: `buildSendMessageUseCase()` (`apps/web/lib/chat/composition.ts`) solo reconoce sesión vía `getCurrentUserCached()`, que a su vez depende enteramente de `@supabase/ssr` y cookies. Un cliente móvil autenticado (sesión de Supabase vía AsyncStorage, §2) no tiene cookies que mandar — hoy pegaría contra `/api/chat` y siempre caería al fallback sin sesión (conversación en memoria, sin persistencia ni memoria ni personalidad), aunque el usuario esté logueado en la app.
 
@@ -53,7 +53,7 @@
 
 **Riesgo documentado, no resuelto acá:** hay reportes (issues de `expo/expo`, ej. #37310) de `expo/fetch` agrupando chunks en un solo bloque en vez de entregarlos incrementalmente en ciertas versiones de SDK — no bloqueante, pero amerita una prueba manual temprana contra la versión exacta de SDK elegida, antes de construir mucha UI encima asumiendo que el streaming granular funciona.
 
-### ADR-030 (propuesto): extraer `parseSseChunk` de `apps/web` a `@kan/core`
+### ADR-030 (oficial, ver `docs/00`): extraer `parseSseChunk` de `apps/web` a `@kan/core`
 
 **Contexto.** Ver arriba — `parseSseChunk` no tiene ninguna dependencia de plataforma, `readSseStream` sí (llama `response.body.getReader()` sobre un `Response` concreto).
 
@@ -86,7 +86,7 @@ Componentes: replicar los mismos 3-4 componentes chicos que ya existen en `apps/
 
 **Prioridad:** media-alta — no bloquea la funcionalidad, pero es la diferencia entre "se siente KAN" y "se siente una app RN genérica".
 
-### ADR-031 (propuesto): tokens de diseño duplicados a propósito entre `apps/web` y `apps/mobile`, no un paquete compartido todavía
+### ADR-031 (oficial, ver `docs/00`): tokens de diseño duplicados a propósito entre `apps/web` y `apps/mobile`, no un paquete compartido todavía
 
 **Contexto.** Ver el matiz de arriba — no existe hoy una forma de que un `@theme` CSS-first (Tailwind v4, web) y un `tailwind.config.js` (NativeWind v4, mobile) lean de una única fuente sin herramienta adicional.
 
@@ -122,7 +122,7 @@ Componentes: replicar los mismos 3-4 componentes chicos que ya existen en `apps/
 
 Orden propuesto si se aprueba esta propuesta (cada incremento se confirma antes de empezarlo, mismo proceso de siempre):
 
-1. Scaffold de `apps/mobile` (Expo + NativeWind configurado con los tokens del §4) + auth (§2) contra Supabase real.
+1. ✅ Scaffold de `apps/mobile` (Expo + NativeWind configurado con los tokens del §4) — completo. Falta conectar auth (§2) contra un proyecto de Supabase real (el cliente ya está armado, solo falta la pantalla de login y probar contra credenciales reales).
 2. Chat de solo texto contra `/api/chat` con streaming (§1, §3) — sin voz ni imagen todavía, para validar `expo/fetch` contra hardware/SDK real antes de construir más encima.
 3. ADR-029 (§2) implementado, para que el chat de la app móvil tenga persistencia/memoria real, no el fallback en memoria.
 4. Voz (§5) — STT + TTS.

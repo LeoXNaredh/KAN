@@ -1,12 +1,14 @@
 import {
+  GetCurrentUserUseCase,
   InMemoryConversationRepository,
   SendMessageUseCase,
   UserScopedMemoryContext,
   UserScopedPersonalityContext,
   type AIProviderPort,
   type ToolProviderPort,
+  type UserIdentity,
 } from "@kan/core";
-import { SupabaseConversationRepository, SupabaseMemoryStore, SupabaseUserPreferencesStore } from "@kan/supabase-adapter";
+import { SupabaseAuthAdapter, SupabaseConversationRepository, SupabaseMemoryStore, SupabaseUserPreferencesStore } from "@kan/supabase-adapter";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 
@@ -16,15 +18,38 @@ import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 const fallbackConversationRepository = new InMemoryConversationRepository();
 
 /**
+ * ADR-029 (docs/00): resuelve el usuario a partir del `access_token` de un
+ * cliente sin cookies (ej. la app móvil, roadmap P7) — nunca lanza, mismo
+ * criterio que `getCurrentUserCached()` ("sin sesión" ante cualquier fallo).
+ * El cliente de Supabase construido acá sirve igual para validar un JWT
+ * explícito: `auth.getUser(token)` no consulta la sesión implícita del
+ * cliente cuando se le pasa un token.
+ */
+async function getUserFromAccessToken(accessToken: string): Promise<UserIdentity | undefined> {
+  try {
+    const client = await createSupabaseServerClient();
+    const authPort = new SupabaseAuthAdapter(client);
+    return await new GetCurrentUserUseCase(authPort).execute(accessToken);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Composition root del chat (P0.2): si hay sesión, usa persistencia real en
  * Supabase (conversaciones + memoria); si no, cae al repositorio en memoria
  * de siempre, sin memoria — el chat sigue funcionando en ambos casos.
+ *
+ * `accessToken` (ADR-029): un cliente sin cookies (app móvil) lo manda por
+ * `Authorization: Bearer <token>` — si viene, se usa en vez de las cookies
+ * de siempre; el camino de `apps/web` (sin `accessToken`) no cambia.
  */
 export async function buildSendMessageUseCase(
   aiProvider: AIProviderPort,
   toolProvider?: ToolProviderPort,
+  accessToken?: string,
 ): Promise<SendMessageUseCase> {
-  const user = await getCurrentUserCached();
+  const user = accessToken ? await getUserFromAccessToken(accessToken) : await getCurrentUserCached();
 
   if (!user) {
     return new SendMessageUseCase(aiProvider, fallbackConversationRepository, toolProvider);

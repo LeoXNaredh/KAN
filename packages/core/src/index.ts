@@ -17,6 +17,7 @@ export * from "./domain/ports/PersonalityContextPort";
 export * from "./domain/ports/VoiceProviderPort";
 export * from "./application/UserScopedMemoryContext";
 export * from "./application/UserScopedPersonalityContext";
+export * from "./application/parseSseChunk";
 export * from "./application/use-cases/SendMessageUseCase";
 export * from "./application/use-cases/RegisterUserUseCase";
 export * from "./application/use-cases/SignInWithPasswordUseCase";

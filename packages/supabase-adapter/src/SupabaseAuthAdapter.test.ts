@@ -103,4 +103,15 @@ describe("SupabaseAuthAdapter", () => {
 
     expect(await adapter.getCurrentUser()).toBeUndefined();
   });
+
+  it("getCurrentUser(accessToken) valida el JWT dado en vez de la sesión implícita del cliente (ADR-029)", async () => {
+    const getUser = vi.fn().mockResolvedValue({ data: { user: { id: "u4", email: "movil@kan.dev" } }, error: null });
+    const client = createFakeAuthClient({ getUser });
+    const adapter = new SupabaseAuthAdapter(client);
+
+    const identity = await adapter.getCurrentUser("un-jwt-de-la-app-movil");
+
+    expect(identity).toEqual({ userId: "u4", email: "movil@kan.dev" });
+    expect(getUser).toHaveBeenCalledWith("un-jwt-de-la-app-movil");
+  });
 });

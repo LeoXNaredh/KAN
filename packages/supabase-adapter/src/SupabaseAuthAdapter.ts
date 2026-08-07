@@ -40,8 +40,8 @@ export class SupabaseAuthAdapter implements AuthPort {
     if (error) throw new Error(error.message);
   }
 
-  async getCurrentUser(): Promise<UserIdentity | undefined> {
-    const { data, error } = await this.client.auth.getUser();
+  async getCurrentUser(accessToken?: string): Promise<UserIdentity | undefined> {
+    const { data, error } = await this.client.auth.getUser(accessToken);
     if (error || !data.user) return undefined;
     return toUserIdentity(data.user);
   }

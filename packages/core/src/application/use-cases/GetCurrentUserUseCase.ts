@@ -4,7 +4,7 @@ import type { UserIdentity } from "../../domain/entities/UserIdentity";
 export class GetCurrentUserUseCase {
   constructor(private readonly authPort: AuthPort) {}
 
-  execute(): Promise<UserIdentity | undefined> {
-    return this.authPort.getCurrentUser();
+  execute(accessToken?: string): Promise<UserIdentity | undefined> {
+    return this.authPort.getCurrentUser(accessToken);
   }
 }

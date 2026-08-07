@@ -20,6 +20,12 @@ export interface AuthPort {
    */
   sendMagicLink(email: string, redirectTo?: string): Promise<void>;
   signOut(): Promise<void>;
-  /** `undefined` si no hay sesión activa en el cliente inyectado. */
-  getCurrentUser(): Promise<UserIdentity | undefined>;
+  /**
+   * `accessToken` (ADR-029, docs/00): si se pasa, valida ese JWT directo
+   * (mismo mecanismo que usaría un cliente sin cookies — ej. la app móvil,
+   * roadmap P7) en vez de mirar la sesión implícita del cliente inyectado.
+   * Sin `accessToken`, se comporta como siempre. `undefined` si no hay
+   * sesión activa (ni implícita ni vía el token dado).
+   */
+  getCurrentUser(accessToken?: string): Promise<UserIdentity | undefined>;
 }

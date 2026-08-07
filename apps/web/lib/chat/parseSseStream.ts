@@ -1,27 +1,13 @@
-/**
- * Parseo de Server-Sent Events del `/api/chat` (ADR-027, docs/16 P7) —
- * primer consumidor de streaming del repo. `parseSseChunk` queda separado y
- * puro (sin tocar `fetch`/`ReadableStream`) para poder testearse aislado el
- * día que `apps/web` tenga un test runner configurado.
- */
-export function parseSseChunk<T>(buffer: string): { events: T[]; remainder: string } {
-  const parts = buffer.split("\n\n");
-  // El último elemento puede ser un chunk incompleto (todavía sin el \n\n
-  // final) — se conserva para completarlo con el próximo `read()`.
-  const remainder = parts.pop() ?? "";
+import { parseSseChunk } from "@kan/core";
 
-  const events: T[] = [];
-  for (const part of parts) {
-    const dataLine = part.split("\n").find((line) => line.startsWith("data: "));
-    if (!dataLine) continue;
-    try {
-      events.push(JSON.parse(dataLine.slice("data: ".length)) as T);
-    } catch {
-      // Chunk malformado — se ignora, no se rompe el resto del stream.
-    }
-  }
-  return { events, remainder };
-}
+/**
+ * Consumo de streaming SSE del lado del navegador (ADR-027/030, docs/16 P7,
+ * docs/18). `parseSseChunk` vive en `@kan/core` — compartida con un futuro
+ * cliente móvil (roadmap P7); esto solo re-exporta y agrega la parte atada
+ * al `Response`/`ReadableStream` del navegador, que sí es específica de
+ * cada plataforma.
+ */
+export { parseSseChunk };
 
 export async function* readSseStream<T>(response: Response): AsyncGenerator<T> {
   if (!response.body) return;

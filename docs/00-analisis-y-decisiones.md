@@ -382,6 +382,40 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** Ninguna — es un cambio 100% aditivo y de infraestructura interna, sin impacto en comportamiento observable (los mensajes de log son los mismos, solo cambia el canal). Demostrado con un test nuevo en `NodeCronScheduler.test.ts` que inyecta un `LoggerPort` falso y verifica que el warning de "job vencido descartado" se dispara — antes de este incremento, ese aviso solo era visible en la salida de consola, no verificable en un test.
 
+### ADR-029: `/api/chat` acepta `Authorization: Bearer <token>` además de cookies (prerrequisito de la app móvil)
+
+**Contexto.** `docs/18` (propuesta de arquitectura móvil, roadmap P7): `buildSendMessageUseCase()` (`apps/web/lib/chat/composition.ts`) solo reconoce sesión vía `getCurrentUserCached()`, que depende enteramente de `@supabase/ssr` y cookies. Un cliente React Native no tiene cookies de navegador que mandar — su sesión de Supabase vive en `AsyncStorage`/`SecureStore`, y el mecanismo estándar para que un backend la reconozca es el `access_token` (JWT) de esa sesión viajando en el header `Authorization`. Sin esto, la app móvil podía hablar con `/api/chat` (confirmado que la ruta no exige sesión, ADR-017/composition.ts ya la hace opcional) pero **siempre** caería al fallback sin sesión — conversación en memoria, sin persistencia, memoria ni personalidad — aunque el usuario esté logueado en la app.
+
+**Decisión.** La resolución de usuario en `apps/web` gana una segunda vía, evaluada antes que las cookies: si la request trae `Authorization: Bearer <token>`, se valida ese JWT contra Supabase (`supabase.auth.getUser(token)`, con la `anon key` — mismo criterio de ADR-017 de no requerir `service_role` para esto) y se usa ese usuario. Si no hay header, el comportamiento es exactamente el de siempre (cookies vía `@supabase/ssr`, sin cambios). El camino de cookies no se toca — es una rama adicional, no un reemplazo, así que ningún consumidor existente (`apps/web` mismo) se ve afectado.
+
+**Alternativas consideradas.**
+- *Que la app móvil arme cookies falsas para simular un browser.* Descartada — fragile y no es el mecanismo real de sesión de un cliente no-browser; además `@supabase/ssr` espera cookies con un formato específico atado al ciclo de vida de Next.js.
+- *Que la app móvil no tenga persistencia de conversación del lado servidor y guarde todo localmente.* Descartada como default — rompería la paridad de "seguir la misma conversación desde cualquier dispositivo" que ya tiene la sesión de usuario en web.
+
+**Consecuencia.** `apps/web/lib/chat/composition.ts` (o el helper de sesión del que depende) gana una función que intenta primero el header, después las cookies — el resto de la cadena (`SendMessageUseCase`, `@kan/supabase-adapter`) no cambia, ya que reciben un `userId` resuelto, sin conocer cómo se resolvió.
+
+### ADR-030: `parseSseChunk` se extrae de `apps/web` a `@kan/core` (compartido con la app móvil)
+
+**Contexto.** `docs/18`: el parseo de chunks SSE construido para el streaming del chat (ADR-027) vive en `apps/web/lib/chat/parseSseStream.ts`, con dos partes de naturaleza distinta — `parseSseChunk(buffer)` (pura, sin ninguna dependencia de DOM/browser) y `readSseStream(response)` (atada a `response.body.getReader()` de un `Response` concreto). La app móvil necesita el mismo parseo, pero con su propio `readSseStream` (recibiendo el `Response` de `expo/fetch`, no el del navegador — necesario porque el `fetch` nativo de React Native sobre Hermes todavía no soporta `ReadableStream` de forma completa, ver `docs/18` §3).
+
+**Decisión.** `parseSseChunk` se mueve a `@kan/core` (mismo paquete que ya define `ChatStreamEvent`, el tipo que estos chunks transportan) — genuinamente compartido, no especulativo: es el segundo consumidor real, mismo criterio que ya se usó para extraer `@kan/serial-line-transport` (ADR-023). `readSseStream` se queda en cada plataforma (`apps/web`, y su futuro equivalente en `apps/mobile`), ya que es la única parte atada al runtime de `fetch` de cada una.
+
+**Alternativas consideradas.**
+- *Duplicar el parser en `apps/mobile` cuando se construya.* Descartada — es exactamente el tipo de lógica que el monorepo existe para compartir (ADR-002), y ya está escrita y probada.
+
+**Consecuencia.** `apps/web/lib/chat/parseSseStream.ts` pasa a re-exportar `parseSseChunk` desde `@kan/core` (o `apps/mobile`, cuando exista, la importa igual) en vez de definirla — sin cambio de comportamiento.
+
+### ADR-031: tokens de diseño duplicados a propósito entre `apps/web` y `apps/mobile`, no un paquete compartido todavía
+
+**Contexto.** `docs/18` §4: `apps/web` usa Tailwind v4 (config CSS-first, `@theme` dentro de `globals.css`, sin `tailwind.config.js`), pero NativeWind v4 — la versión estable, production-ready, la que se usa en `apps/mobile` — todavía espera el formato v3 (`tailwind.config.js` en JS). No existe hoy una forma de que ambos formatos lean de una única fuente sin una herramienta de generación adicional.
+
+**Decisión.** Se acepta la duplicación consciente de los valores de `DESIGN_SYSTEM.md` (documentados una sola vez ahí, copiados a mano al `tailwind.config.js` de `apps/mobile`) en vez de construir un paquete `packages/design-tokens` con generación de ambos formatos.
+
+**Alternativas consideradas.**
+- *Paquete `packages/design-tokens` (JSON/TS) que genera tanto el CSS `@theme` como el `tailwind.config.js`.* Descartada por ahora — sobre-ingeniería para 12 colores y 3 radios; se revisita si el número de tokens crece significativamente o si NativeWind v5 (que sí alinea con el formato CSS-first) se vuelve el default.
+
+**Consecuencia.** Mismo precedente que ya existe con `apps/desktop`, que tampoco comparte hoy los tokens de `apps/web` (`DESIGN_SYSTEM.md`, sección de alcance) — cambiar el color de acento, por ejemplo, requiere editarlo en dos lugares hasta que se revisite esta decisión.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

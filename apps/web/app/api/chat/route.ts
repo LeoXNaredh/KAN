@@ -16,14 +16,24 @@ const toolProvider = new GatewayToolProvider({
   internalToken: process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-token",
 });
 
-async function buildUseCase(): Promise<SendMessageUseCase> {
+async function buildUseCase(accessToken?: string): Promise<SendMessageUseCase> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new MissingApiKeyError();
   }
   const model = process.env.GEMINI_MODEL || undefined;
   const aiProvider = new ModelRouter(new GeminiProvider({ apiKey, model }));
-  return buildSendMessageUseCase(aiProvider, toolProvider);
+  return buildSendMessageUseCase(aiProvider, toolProvider, accessToken);
+}
+
+// ADR-029 (docs/00): un cliente sin cookies (ej. la app móvil, roadmap P7)
+// manda su sesión de Supabase como Authorization: Bearer <access_token> en
+// vez de cookies — apps/web (con cookies) no manda este header y sigue
+// exactamente igual.
+function extractBearerToken(request: Request): string | undefined {
+  const header = request.headers.get("authorization");
+  if (!header?.startsWith("Bearer ")) return undefined;
+  return header.slice("Bearer ".length).trim() || undefined;
 }
 
 class MissingApiKeyError extends Error {
@@ -93,7 +103,7 @@ export async function POST(request: Request) {
 
   let useCase: SendMessageUseCase;
   try {
-    useCase = await buildUseCase();
+    useCase = await buildUseCase(extractBearerToken(request));
   } catch (error) {
     if (error instanceof MissingApiKeyError) {
       return NextResponse.json({ error: error.message }, { status: 412 });
