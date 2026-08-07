@@ -35,5 +35,33 @@ export function createRoutes(gateway: Gateway, internalToken: string): Router {
     res.json({ entries: gateway.auditService.list() });
   });
 
+  router.get("/v1/jobs", (_req, res) => {
+    res.json({ jobs: gateway.scheduler.list() });
+  });
+
+  router.post("/v1/jobs", (req, res) => {
+    const capabilityRef = req.body?.taskRequest?.capabilityRef;
+    if (typeof capabilityRef !== "string" || !capabilityRef.trim()) {
+      res.status(400).json({ error: "'taskRequest.capabilityRef' es requerido." });
+      return;
+    }
+
+    try {
+      const jobId = gateway.scheduler.schedule({
+        taskRequest: { capabilityRef, input: req.body?.taskRequest?.input ?? {} },
+        cron: typeof req.body?.cron === "string" ? req.body.cron : undefined,
+        runAt: typeof req.body?.runAt === "string" ? req.body.runAt : undefined,
+      });
+      res.status(201).json({ jobId });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Error desconocido" });
+    }
+  });
+
+  router.delete("/v1/jobs/:id", (req, res) => {
+    gateway.scheduler.cancel(req.params.id);
+    res.status(204).end();
+  });
+
   return router;
 }

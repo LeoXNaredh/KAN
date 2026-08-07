@@ -201,6 +201,25 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** Un `messages.image_data` de varios MB en Postgres no escala indefinidamente — es una limitación conocida, no oculta. Si el uso real de Visión crece (muchas imágenes grandes, galería, recorte/preview), la migración a Supabase Storage es un cambio de adaptador (`SupabaseConversationRepository` implementa `ConversationRepositoryPort` igual, solo cambia qué guarda en `image_data`) — el dominio (`Message.image`) y el puerto no necesitan tocarse, así que no es una rearquitectura, es un swap de adaptador como los que ya viene haciendo el proyecto (`InMemoryConversationRepository` → `SupabaseConversationRepository`).
 
+---
+
+### ADR-019: Scheduler real — `node-cron` + persistencia JSON simple, y la regla de no disparar jobs vencidos al reiniciar
+
+**Contexto.** P6 (`docs/17` §3.7) pide reemplazar `NoopScheduler` (seam que registra jobs pero nunca los ejecuta) por un scheduler real que dispare `TaskOrchestrator.submit()` en el horario programado. `SchedulerPort` ya existía (`schedule`/`cancel`/`list`) pero no tenía forma de ejecutar nada — el Gateway construye `TaskOrchestrator` internamente, así que el scheduler concreto no puede conocerlo en su propio constructor (problema de orden de construcción).
+
+**Decisión.**
+1. `SchedulerPort` gana `start(dispatch)`/`stop()`. `Gateway.bootstrap()` llama `scheduler.start(...)` pasando una función que audita el disparo (`action: "job.fired"`, mismo `AuditService` que ya usa `tool.execute`) y recién después llama `taskOrchestrator.submit()` — así un job programado queda en la misma auditoría, y por lo tanto en el widget "Actividad reciente" del Dashboard (P4), sin código nuevo ahí.
+2. `NodeCronScheduler` (paquete `node-cron`, sin bindings nativos — instala limpio, a diferencia de `@abandonware/noble`) implementa jobs recurrentes (`cron`, con segundos opcionales) y de una sola vez (`runAt`, `setTimeout`). Valida en `schedule()`: exactamente uno de `cron`/`runAt`, cron bien formado, `runAt` estrictamente futuro — falla rápido y en voz alta, mismo criterio que el resto del proyecto (`validateAddress`/`validateHexValue` en `plugin-bluetooth-generic`, etc.).
+3. Persistencia: `ScheduledJobStorePort` + `JsonFileScheduledJobStore`, mismo patrón que `JsonFileConfigStore` (edge-agent-core) y `SafetyPolicyStore` — un archivo JSON reescrito completo en cada mutación. Alcanza para docenas de jobs; no es la solución de un scheduler a escala, es la solución correcta para el volumen real esperado hoy.
+4. **Regla de seguridad explícita:** un job `runAt` cuyo horario ya pasó mientras el Gateway estaba apagado **no se dispara** al reiniciar — se descarta con un warning en el log. KAN puede controlar hardware físico real (ADR-004); disparar una acción física "tarde", sin que el usuario la espere en ese momento, es peor que no dispararla. Un job `cron` sí se re-arma normal al reiniciar (su próxima ejecución sigue siendo futura por definición).
+
+**Alternativas consideradas.**
+- *Reinventar el parseo de cron a mano.* Descartado — parsear correctamente rangos/listas/steps de cron es no trivial y propenso a bugs sutiles; `node-cron` es una librería chica, sin dependencias nativas, y ya validada por uso real. Mismo criterio que ADR-011 (no reinventar lo que ya existe bien hecho y barato de adoptar).
+- *Disparar retroactivamente un `runAt` vencido al reiniciar.* Descartada explícitamente — ver la regla de seguridad arriba.
+- *Persistencia en Supabase en vez de un archivo local.* Prematuro: el Gateway hoy no tiene noción de usuario/sesión (vive en la LAN del Edge Agent, no en `apps/web`), y los jobs son locales a esa instancia — igual criterio que `JsonlAuditStore` ya usado para auditoría.
+
+**Consecuencia.** Probado con temporizadores reales (ADR-012: expresiones cron con segundos y esperas cortas de verdad, no mocks de tiempo) — el mismo criterio que ya encontró bugs reales en `NodeTcpTransport`.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

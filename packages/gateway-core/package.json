@@ -12,10 +12,12 @@
   },
   "dependencies": {
     "@kan/plugin-contract": "workspace:*",
+    "node-cron": "^3.0.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/node-cron": "^3.0.11",
     "@types/ws": "^8.5.13",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

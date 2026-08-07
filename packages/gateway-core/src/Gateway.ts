@@ -23,10 +23,10 @@ export interface GatewayDeps {
 
 /**
  * Composition root del Gateway (docs/12): une Connection Manager, Agent
- * Registry, Capability Registry, Task Orchestrator, Function Calling Engine
- * y Audit Service, y hace el ruteo entre el transporte y esos módulos.
- * Scheduler y Notification Service quedan disponibles pero sin ningún flujo
- * real que los dispare todavía (seams, docs/12 §8-9).
+ * Registry, Capability Registry, Task Orchestrator, Function Calling Engine,
+ * Audit Service y Scheduler, y hace el ruteo entre el transporte y esos
+ * módulos. Notification Service queda disponible pero sin ningún flujo real
+ * que lo dispare todavía (seam, docs/12 §9).
  */
 export class Gateway {
   readonly bus: GatewayBus;
@@ -34,6 +34,7 @@ export class Gateway {
   readonly capabilityRegistry: GlobalCapabilityRegistry;
   readonly taskOrchestrator: TaskOrchestrator;
   readonly auditService: AuditService;
+  readonly scheduler: SchedulerPort;
   readonly toolRegistry: ToolRegistry;
   private readonly toolResolver: RegistryToolResolver;
   private readonly toolExecutor: OrchestratorToolExecutor;
@@ -43,6 +44,7 @@ export class Gateway {
     this.agentRegistry = new AgentRegistry(deps.bus);
     this.capabilityRegistry = new GlobalCapabilityRegistry(deps.bus);
     this.auditService = new AuditService(deps.auditStore, deps.bus);
+    this.scheduler = deps.scheduler;
     this.taskOrchestrator = new TaskOrchestrator(
       this.agentRegistry,
       this.capabilityRegistry,
@@ -99,10 +101,22 @@ export class Gateway {
     });
 
     this.deps.connectionManager.start();
+
+    this.deps.scheduler.start(async (taskRequest, jobId) => {
+      this.bus.emit("job.fired", { jobId, capabilityRef: taskRequest.capabilityRef });
+      this.auditService.record({
+        actor: "system",
+        action: "job.fired",
+        subject: taskRequest.capabilityRef,
+        metadata: { jobId },
+      });
+      return this.taskOrchestrator.submit(taskRequest);
+    });
   }
 
   shutdown(): void {
     this.deps.connectionManager.stop();
+    this.deps.scheduler.stop();
   }
 
   listTools(): ToolDescriptor[] {

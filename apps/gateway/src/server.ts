@@ -6,7 +6,8 @@ import {
   GatewayBus,
   WsConnectionManager,
   JsonlAuditStore,
-  NoopScheduler,
+  NodeCronScheduler,
+  JsonFileScheduledJobStore,
   ConsoleNotificationService,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
@@ -18,7 +19,10 @@ const INTERNAL_TOKEN = process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-t
 const bus = new GatewayBus();
 const connectionManager = new WsConnectionManager(EDGE_TOKEN);
 const auditStore = new JsonlAuditStore(fileURLToPath(new URL("../data/audit.jsonl", import.meta.url)));
-const scheduler = new NoopScheduler();
+const scheduledJobStore = new JsonFileScheduledJobStore(
+  fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
+);
+const scheduler = new NodeCronScheduler(scheduledJobStore);
 const notificationService = new ConsoleNotificationService();
 
 const gateway = new Gateway({ bus, connectionManager, auditStore, scheduler, notificationService });
@@ -33,6 +37,7 @@ bus.on("task.dispatched", ({ taskId, capabilityRef }) =>
 );
 bus.on("task.completed", ({ taskId, result }) => console.log(`[gateway] Tarea ${taskId} completada:`, result));
 bus.on("task.failed", ({ taskId, error }) => console.error(`[gateway] Tarea ${taskId} falló: ${error}`));
+bus.on("job.fired", ({ jobId, capabilityRef }) => console.log(`[gateway] Job ${jobId} disparado: ${capabilityRef}`));
 
 const app = express();
 app.use(express.json());

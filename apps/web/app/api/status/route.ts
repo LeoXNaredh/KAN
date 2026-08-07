@@ -30,8 +30,9 @@ interface RawAuditEntry {
  * Traduce una entrada cruda del Audit Service (docs/12 §9) a texto legible
  * para el Dashboard — misma regla del BFF: el cliente nunca ve `action`
  * crudo. Solo traduce las acciones que el Gateway realmente emite hoy
- * (`tool.execute`, `safety_policy.changed` — ver ToolExecutor.ts/Gateway.ts);
- * cualquier acción futura cae al genérico en vez de romper el widget.
+ * (`tool.execute`, `safety_policy.changed`, `job.fired` (P6) — ver
+ * ToolExecutor.ts/Gateway.ts); cualquier acción futura cae al genérico en
+ * vez de romper el widget.
  */
 function translateAuditEntry(entry: RawAuditEntry): string {
   switch (entry.action) {
@@ -39,6 +40,8 @@ function translateAuditEntry(entry: RawAuditEntry): string {
       return `Se ejecutó "${entry.subject}"`;
     case "safety_policy.changed":
       return `Cambió la política de seguridad de ${entry.subject}`;
+    case "job.fired":
+      return `Se disparó el job programado "${entry.subject}"`;
     default:
       return `${entry.action}: ${entry.subject}`;
   }

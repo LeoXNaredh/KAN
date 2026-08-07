@@ -5,7 +5,7 @@ import { GatewayBus } from "./application/GatewayBus";
 import { Gateway } from "./Gateway";
 import type { AgentConnectionInfo, ConnectionManagerPort, Unsubscribe } from "./domain/ports/ConnectionManagerPort";
 import type { AuditStorePort } from "./domain/ports/AuditStorePort";
-import type { SchedulerPort } from "./domain/ports/SchedulerPort";
+import type { SchedulerDispatch, SchedulerPort } from "./domain/ports/SchedulerPort";
 import type { NotificationServicePort } from "./domain/ports/NotificationServicePort";
 import type { AuditEntry } from "./domain/entities/AuditEntry";
 
@@ -71,13 +71,22 @@ class InMemoryAuditStore implements AuditStorePort {
   }
 }
 
-class NoopSchedulerStub implements SchedulerPort {
+class FakeSchedulerStub implements SchedulerPort {
+  dispatch: SchedulerDispatch | undefined;
+  stopped = false;
+
   schedule(): string {
     return "unused";
   }
   cancel(): void {}
   list() {
     return [];
+  }
+  start(dispatch: SchedulerDispatch): void {
+    this.dispatch = dispatch;
+  }
+  stop(): void {
+    this.stopped = true;
   }
 }
 
@@ -89,15 +98,16 @@ function buildGateway() {
   const bus = new GatewayBus();
   const connectionManager = new FakeConnectionManager();
   const auditStore = new InMemoryAuditStore();
+  const scheduler = new FakeSchedulerStub();
   const gateway = new Gateway({
     bus,
     connectionManager,
     auditStore,
-    scheduler: new NoopSchedulerStub(),
+    scheduler,
     notificationService: new NoopNotificationStub(),
   });
   gateway.bootstrap();
-  return { gateway, connectionManager, auditStore, bus };
+  return { gateway, connectionManager, auditStore, bus, scheduler };
 }
 
 function helloFor(edgeAgentId: string): HelloMessage {
@@ -211,6 +221,39 @@ describe("Gateway (integración, transporte simulado)", () => {
     const result = await executePromise;
     expect(result).toEqual({ success: false, data: undefined, error: "el driver explotó" });
     expect(auditStore.entries).toHaveLength(1);
+  });
+
+  it("bootstrap() arranca el scheduler; un job disparado se somete al Task Orchestrator y queda auditado (P6)", async () => {
+    const { gateway, connectionManager, auditStore, scheduler } = buildGateway();
+    connectionManager.simulateAgentConnect(helloFor(randomUUID()));
+    const [tool] = gateway.listTools();
+
+    expect(scheduler.dispatch).toBeDefined();
+    const resultPromise = scheduler.dispatch!({ capabilityRef: tool.name, input: {} }, "job-1");
+
+    const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+    connectionManager.simulateTelemetry(gateway.agentRegistry.list()[0].edgeAgentId, {
+      type: "telemetry",
+      taskId,
+      status: "done",
+      data: { ok: true },
+      at: new Date().toISOString(),
+    });
+
+    const result = await resultPromise;
+    expect(result).toEqual({ status: "done", data: { ok: true }, error: undefined, confirmationId: undefined });
+    expect(auditStore.entries.map((entry) => entry.action)).toContain("job.fired");
+    expect(auditStore.entries.find((entry) => entry.action === "job.fired")).toMatchObject({
+      actor: "system",
+      subject: tool.name,
+      metadata: { jobId: "job-1" },
+    });
+  });
+
+  it("shutdown() detiene el scheduler además del transporte", () => {
+    const { gateway, scheduler } = buildGateway();
+    gateway.shutdown();
+    expect(scheduler.stopped).toBe(true);
   });
 
   it("un cambio de Safety Policy del Edge Agent queda registrado en la auditoría (regla 7)", () => {

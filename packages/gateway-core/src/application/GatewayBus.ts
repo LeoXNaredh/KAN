@@ -13,6 +13,7 @@ export interface GatewayEvents {
   "tool.proposed": { name: string; args: unknown };
   "tool.executed": { name: string; result: ToolExecutionResult };
   "audit.recorded": { entry: AuditEntry };
+  "job.fired": { jobId: string; capabilityRef: string };
 }
 
 /** Mismo patrón que EdgeAgentBus (packages/edge-agent-core) — docs/12 §7. */

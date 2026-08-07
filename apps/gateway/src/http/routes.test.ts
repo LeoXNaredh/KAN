@@ -12,6 +12,11 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
     executeTool: async () => ({ success: true, data: { ok: true } }),
     agentRegistry: { list: () => [] } as unknown as Gateway["agentRegistry"],
     auditService: { list: () => [] } as unknown as Gateway["auditService"],
+    scheduler: {
+      list: () => [],
+      schedule: () => "job-1",
+      cancel: () => {},
+    } as unknown as Gateway["scheduler"],
     ...overrides,
   } as Gateway;
 }
@@ -87,5 +92,87 @@ describe("Gateway HTTP routes", () => {
     const app = appWith(gateway);
     const response = await request(app).get("/v1/audit").set("Authorization", `Bearer ${TOKEN}`);
     expect(response.body).toEqual({ entries: [{ id: "1" }] });
+  });
+
+  it("GET /v1/jobs expone el listado del Scheduler", async () => {
+    const gateway = fakeGateway({
+      scheduler: { list: () => [{ id: "job-1" }] } as unknown as Gateway["scheduler"],
+    });
+    const app = appWith(gateway);
+    const response = await request(app).get("/v1/jobs").set("Authorization", `Bearer ${TOKEN}`);
+    expect(response.body).toEqual({ jobs: [{ id: "job-1" }] });
+  });
+
+  it("POST /v1/jobs rechaza sin taskRequest.capabilityRef", async () => {
+    const app = appWith(fakeGateway());
+    const response = await request(app)
+      .post("/v1/jobs")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send({ cron: "0 8 * * *" });
+    expect(response.status).toBe(400);
+  });
+
+  it("POST /v1/jobs delega en scheduler.schedule() y devuelve el jobId", async () => {
+    let received: unknown;
+    const gateway = fakeGateway({
+      scheduler: {
+        list: () => [],
+        schedule: (job: unknown) => {
+          received = job;
+          return "job-42";
+        },
+        cancel: () => {},
+      } as unknown as Gateway["scheduler"],
+    });
+    const app = appWith(gateway);
+
+    const response = await request(app)
+      .post("/v1/jobs")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send({ taskRequest: { capabilityRef: "laser.cut", input: { depth: 1 } }, cron: "0 8 * * *" });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({ jobId: "job-42" });
+    expect(received).toEqual({ taskRequest: { capabilityRef: "laser.cut", input: { depth: 1 } }, cron: "0 8 * * *", runAt: undefined });
+  });
+
+  it("POST /v1/jobs traduce un error de validación del scheduler a 400", async () => {
+    const gateway = fakeGateway({
+      scheduler: {
+        list: () => [],
+        schedule: () => {
+          throw new Error("Expresión cron inválida: nope");
+        },
+        cancel: () => {},
+      } as unknown as Gateway["scheduler"],
+    });
+    const app = appWith(gateway);
+
+    const response = await request(app)
+      .post("/v1/jobs")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send({ taskRequest: { capabilityRef: "x" }, cron: "nope" });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Expresión cron inválida: nope" });
+  });
+
+  it("DELETE /v1/jobs/:id delega en scheduler.cancel()", async () => {
+    let cancelledId: string | undefined;
+    const gateway = fakeGateway({
+      scheduler: {
+        list: () => [],
+        schedule: () => "job-1",
+        cancel: (id: string) => {
+          cancelledId = id;
+        },
+      } as unknown as Gateway["scheduler"],
+    });
+    const app = appWith(gateway);
+
+    const response = await request(app).delete("/v1/jobs/job-1").set("Authorization", `Bearer ${TOKEN}`);
+
+    expect(response.status).toBe(204);
+    expect(cancelledId).toBe("job-1");
   });
 });
