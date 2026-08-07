@@ -112,8 +112,25 @@ export class EdgeAgent {
     return this.capabilityRegistry.list();
   }
 
-  invokeCapability(deviceId: string, capabilityName: string, input: unknown): Promise<InvokeOutcome> {
-    return this.capabilityRegistry.invoke(deviceId, capabilityName, input);
+  async invokeCapability(deviceId: string, capabilityName: string, input: unknown): Promise<InvokeOutcome> {
+    const outcome = await this.capabilityRegistry.invoke(deviceId, capabilityName, input);
+    // Solo el camino "manual" (invocado directo desde apps/desktop, no
+    // despachado por el Gateway) necesita este aviso — handleCoreMessage()
+    // ya queda auditado del lado del Gateway como actor "llm" (ToolExecutor).
+    // Alcance limitado a ejecución inmediata (docs/16 P4, ADR-025): una
+    // acción que queda pending_confirmation todavía no tiene resultado que
+    // auditar; se audita si/cuando se confirma es trabajo futuro.
+    if (outcome.status === "executed") {
+      this.deps.coreConnection.send({
+        type: "audit.local",
+        deviceId,
+        capability: capabilityName,
+        success: outcome.result.success,
+        error: outcome.result.error,
+        at: new Date().toISOString(),
+      });
+    }
+    return outcome;
   }
 
   resolveConfirmation(confirmationId: string, approved: boolean): Promise<InvokeOutcome | undefined> {

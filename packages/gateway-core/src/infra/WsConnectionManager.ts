@@ -15,6 +15,14 @@ const HEARTBEAT_TIMEOUT_MS = 45_000;
 const REAPER_INTERVAL_MS = 10_000;
 /** Los mensajes reales del protocolo son pequeños; evita que un socket envíe payloads gigantes (hallazgo A9 de docs/13). */
 const MAX_PAYLOAD_BYTES = 64 * 1024;
+/**
+ * Cap global de conexiones concurrentes (docs/16 P6, ADR-025) — hoy solo
+ * existe un único token compartido para todo el Gateway (sin identidad por
+ * agente a nivel de auth), así que este es un límite global de recursos, no
+ * "por token" literal. Protege contra sockets que pasan el auth pero nunca
+ * completan `hello`, o simplemente contra demasiadas conexiones a la vez.
+ */
+const DEFAULT_MAX_CONNECTIONS = 50;
 
 interface TrackedConnection {
   socket: WebSocket;
@@ -47,7 +55,10 @@ export class WsConnectionManager implements ConnectionManagerPort {
   private readonly messageHandlers: Array<(edgeAgentId: string, message: EdgeToCoreMessage) => void> = [];
   private reaper: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private readonly authToken: string) {}
+  constructor(
+    private readonly authToken: string,
+    private readonly maxConnections: number = DEFAULT_MAX_CONNECTIONS,
+  ) {}
 
   start(): void {
     this.reaper = setInterval(() => this.reapDeadConnections(), REAPER_INTERVAL_MS);
@@ -64,6 +75,11 @@ export class WsConnectionManager implements ConnectionManagerPort {
     const receivedToken = typeof authHeader === "string" ? authHeader : undefined;
     if (!safeCompareToken(receivedToken, `Bearer ${this.authToken}`)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    if (this.pending.size + this.byAgentId.size >= this.maxConnections) {
+      socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
       socket.destroy();
       return;
     }

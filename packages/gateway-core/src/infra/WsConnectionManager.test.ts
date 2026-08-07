@@ -176,6 +176,38 @@ describe("WsConnectionManager (integración WS real)", () => {
     ws.close();
   });
 
+  it("rechaza una conexión adicional una vez alcanzado el cap global de conexiones (docs/16 P6, ADR-025)", async () => {
+    const cappedManager = new WsConnectionManager(TOKEN, 1);
+    cappedManager.start();
+    const cappedServer = createServer();
+    cappedServer.on("upgrade", (request, socket, head) => {
+      if (request.url === "/edge") {
+        cappedManager.handleUpgrade(request, socket, head);
+      } else {
+        socket.destroy();
+      }
+    });
+    await new Promise<void>((resolve) => cappedServer.listen(0, resolve));
+    const cappedPort = (cappedServer.address() as { port: number }).port;
+
+    try {
+      const first = new WebSocket(`ws://localhost:${cappedPort}/edge`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      await waitForOpen(first);
+
+      const second = new WebSocket(`ws://localhost:${cappedPort}/edge`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      const closeOrError = await new Promise<string>((resolve) => {
+        second.once("unexpected-response", (_req, res) => resolve(`status:${res.statusCode}`));
+        second.once("error", () => resolve("error"));
+      });
+      expect(closeOrError).toContain("503");
+
+      first.close();
+    } finally {
+      cappedManager.stop();
+      await new Promise<void>((resolve) => cappedServer.close(() => resolve()));
+    }
+  });
+
   it("mensajes con forma inesperada (sin 'type' string) se ignoran sin tumbar la conexión (hallazgo M5 de docs/13)", async () => {
     const ws = connect();
     await waitForOpen(ws);

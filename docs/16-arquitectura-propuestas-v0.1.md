@@ -32,15 +32,11 @@
 
 **Prioridad:** media — no urgente mientras el Gateway corra como un solo proceso de un solo desarrollador.
 
-## P4 — Auditoría completa: invocaciones manuales del Edge Agent
+## P4 — Auditoría completa: invocaciones manuales del Edge Agent — ✅ Implementado (2026-08-07, ADR-025, alcance parcial)
 
-**Problema.** Documentado en `docs/13` (M3) y `docs/15` (sección 8): acciones disparadas desde los botones "Invocar" de `apps/desktop` no llegan al `audit.jsonl` del Gateway.
+**Problema (histórico).** Documentado en `docs/13` (M3) y `docs/15` (sección 8): acciones disparadas desde los botones "Invocar" de `apps/desktop` no llegaban al `audit.jsonl` del Gateway.
 
-**Propuesta.** Extender el protocolo (`packages/plugin-contract/src/protocol.ts`) con un nuevo mensaje `EdgeToCoreMessage`, ej. `{ type: "audit.local", capability, deviceId, result, at }`, que el Edge Agent envía además de la telemetría normal cada vez que `CapabilityRegistry.invoke()` se dispara sin que haya venido de un `AgentTaskDispatchMessage` del Gateway (es decir, iniciado localmente). El Gateway lo recibe y lo registra en `AuditService` igual que cualquier otra ejecución, con `actor: "user"` en vez de `"llm"`. Si el Edge Agent está offline, se encola igual que cualquier otro dato pendiente de sincronizar (Modo Offline, ya diseñado).
-
-**Costo estimado:** bajo (medio día) — extensión de protocolo + un handler nuevo en `Gateway.bootstrap()`.
-
-**Prioridad:** media — no es una vulnerabilidad, es una brecha de completitud del audit trail.
+**Resuelto (con alcance limitado).** Nuevo mensaje `AuditLocalMessage` (`packages/plugin-contract/src/protocol.ts`) enviado por `EdgeAgent.invokeCapability()` cuando la invocación se ejecuta de inmediato; `Gateway.bootstrap()` lo registra en `AuditService` con `actor: "user"`. **Corrección sobre la propuesta original:** la premisa "si el Edge Agent está offline, se encola igual que cualquier otro dato pendiente de sincronizar (Modo Offline, ya diseñado)" no correspondía a código real — esa cola no existe en el repositorio (`CoreWebSocketClient.send()` es fire-and-forget para cualquier mensaje). `audit.local` no la construye; hereda el mismo comportamiento fire-and-forget que ya tiene `safety_policy.changed` en producción. **Limitación conocida, fuera de este incremento a propósito:** una acción peligrosa manual que queda `pending_confirmation` y se resuelve después en el modal de `apps/desktop` (`resolveConfirmation()`) todavía no genera entrada de auditoría — justo las acciones de mayor riesgo. Ver ADR-025 (`docs/00`) para el detalle completo.
 
 ## P5 — Desambiguación multi-dispositivo y tareas compuestas en el Task Orchestrator
 
@@ -52,15 +48,11 @@
 
 **Prioridad:** baja — no hay todavía un caso de uso real que lo necesite (con un solo Edge Agent y un solo dispositivo simulado, la ambigüedad no existe). Construir esto ahora sería especulativo.
 
-## P6 — Rate limiting en el Gateway
+## P6 — Rate limiting en el Gateway — ✅ Implementado (2026-08-07, ADR-025)
 
-**Problema.** Documentado en `docs/13` (M4) y `docs/15` (secciones 5 y 9): sin límite de conexiones WS concurrentes ni de requests HTTP por unidad de tiempo.
+**Problema (histórico).** Documentado en `docs/13` (M4) y `docs/15` (secciones 5 y 9): sin límite de conexiones WS concurrentes ni de requests HTTP por unidad de tiempo.
 
-**Propuesta.** `express-rate-limit` (o equivalente) en las rutas HTTP del Gateway; un límite de conexiones WS simultáneas por token en `WsConnectionManager` (hoy no hay tope). Ambos son cambios pequeños y aislados.
-
-**Costo estimado:** bajo (un par de horas).
-
-**Prioridad:** baja mientras el Gateway sea de un solo usuario/agente; **sube a alta** en cuanto se abra a llamadores de terceros (marketplace, Fase 2+) — debería resolverse como parte de esa misma iniciativa, no antes.
+**Resuelto.** `express-rate-limit` en `createRoutes()` (`apps/gateway`), aplicado antes del chequeo de token — 120 req/min por IP por defecto, configurable vía env. `WsConnectionManager` gana un cap de conexiones concurrentes (default 50), aplicado en `handleUpgrade()`. **Precisión sobre la propuesta original:** el cap es **global**, no "por token" — hoy el Gateway usa un único token compartido para todos los Edge Agents, sin identidad por token; un límite "por token" no tiene sentido hasta que exista esa identidad (P2). Ver ADR-025 (`docs/00`).
 
 ## P7 — Streaming de respuestas del chat
 
@@ -91,8 +83,8 @@
 | P1 | Validación JSON Schema real | ✅ Implementado (ADR-024) | — |
 | P2 | Auth/autorización por usuario | Alta | Compartir el sistema con más de un usuario |
 | P3 | Persistencia real del Gateway | Media | Multi-instancia / durabilidad del audit trail |
-| P4 | Auditoría de invocaciones manuales | Media | Completitud de compliance |
-| P6 | Rate limiting | Baja → Alta | Abrir el Gateway a terceros (marketplace) |
+| P4 | Auditoría de invocaciones manuales | ✅ Implementado, alcance parcial (ADR-025) | Auditar confirmaciones manuales queda pendiente |
+| P6 | Rate limiting | ✅ Implementado (ADR-025) | — |
 | P7 | Streaming del chat | Baja → Alta | El primer dispositivo con operaciones largas |
 | P5 | Multi-dispositivo / tareas compuestas | Baja | Un caso de uso real con >1 dispositivo del mismo tipo |
 | P8 | `LoggerPort` compartido | Muy baja | Nada — higiene de consistencia |

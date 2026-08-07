@@ -15,9 +15,14 @@ import { createRoutes } from "./http/routes";
 const PORT = Number(process.env.PORT ?? 8787);
 const EDGE_TOKEN = process.env.KAN_EDGE_TOKEN ?? "dev-token";
 const INTERNAL_TOKEN = process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-token";
+// Rate limiting / cap de conexiones (docs/16 P6, ADR-025) — undefined deja
+// que createRoutes()/WsConnectionManager usen sus defaults sensatos.
+const RATE_LIMIT_WINDOW_MS = Number(process.env.KAN_GATEWAY_RATE_LIMIT_WINDOW_MS) || undefined;
+const RATE_LIMIT_MAX = Number(process.env.KAN_GATEWAY_RATE_LIMIT_MAX) || undefined;
+const MAX_WS_CONNECTIONS = Number(process.env.KAN_GATEWAY_MAX_WS_CONNECTIONS) || undefined;
 
 const bus = new GatewayBus();
-const connectionManager = new WsConnectionManager(EDGE_TOKEN);
+const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS);
 const auditStore = new JsonlAuditStore(fileURLToPath(new URL("../data/audit.jsonl", import.meta.url)));
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
@@ -45,7 +50,7 @@ bus.on("job.notification", ({ jobId, title }) => console.log(`[gateway] Job ${jo
 
 const app = express();
 app.use(express.json());
-app.use(createRoutes(gateway, INTERNAL_TOKEN));
+app.use(createRoutes(gateway, INTERNAL_TOKEN, { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX }));
 
 const httpServer = createServer(app);
 

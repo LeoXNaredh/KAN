@@ -342,4 +342,27 @@ describe("Gateway (integración, transporte simulado)", () => {
       metadata: { alias: "Relé bomba de agua", severity: "irreversible-material", previousSeverity: "reversible" },
     });
   });
+
+  it("una invocación manual del Edge Agent (audit.local) queda registrada con actor 'user' (docs/16 P4, ADR-025)", () => {
+    const { connectionManager, auditStore } = buildGateway();
+    const edgeAgentId = randomUUID();
+    connectionManager.simulateAgentConnect(helloFor(edgeAgentId));
+
+    connectionManager.simulateTelemetry(edgeAgentId, {
+      type: "audit.local",
+      deviceId: "simulator-1",
+      capability: "toggle_led",
+      success: false,
+      error: "Argumentos inválidos: on must be boolean",
+      at: new Date().toISOString(),
+    });
+
+    expect(auditStore.entries).toHaveLength(1);
+    expect(auditStore.entries[0]).toMatchObject({
+      actor: "user",
+      action: "audit.local",
+      subject: `${edgeAgentId}/simulator-1/toggle_led`,
+      metadata: { success: false, error: "Argumentos inválidos: on must be boolean" },
+    });
+  });
 });

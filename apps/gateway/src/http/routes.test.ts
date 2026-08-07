@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
 import type { Gateway } from "@kan/gateway-core";
-import { createRoutes } from "./routes";
+import { createRoutes, type RateLimitOptions } from "./routes";
 
 const TOKEN = "test-internal-token";
 
@@ -21,10 +21,10 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
   } as Gateway;
 }
 
-function appWith(gateway: Gateway) {
+function appWith(gateway: Gateway, rateLimitOptions?: RateLimitOptions) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN));
+  app.use(createRoutes(gateway, TOKEN, rateLimitOptions));
   return app;
 }
 
@@ -179,6 +179,18 @@ describe("Gateway HTTP routes", () => {
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "Expresión cron inválida: nope" });
+  });
+
+  it("rechaza con 429 al superar el límite de requests configurado (docs/16 P6, ADR-025)", async () => {
+    const app = appWith(fakeGateway(), { windowMs: 60_000, max: 2 });
+
+    const first = await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`);
+    const second = await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`);
+    const third = await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(third.status).toBe(429);
   });
 
   it("DELETE /v1/jobs/:id delega en scheduler.cancel()", async () => {

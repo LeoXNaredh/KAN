@@ -97,6 +97,18 @@ export class Gateway {
         });
         return;
       }
+      if (message.type === "audit.local") {
+        // Invocación manual desde apps/desktop (docs/16 P4, ADR-025) — la
+        // ejecución ya ocurrió del lado del Edge Agent, esto solo la deja
+        // en la auditoría con actor "user" (a diferencia de "llm" del chat).
+        this.auditService.record({
+          actor: "user",
+          action: "audit.local",
+          subject: `${edgeAgentId}/${message.deviceId}/${message.capability}`,
+          metadata: { success: message.success, error: message.error },
+        });
+        return;
+      }
       // "heartbeat" solo mantiene viva la conexión (ConnectionManagerPort lo maneja internamente).
     });
 

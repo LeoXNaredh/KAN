@@ -61,9 +61,26 @@ export interface SafetyPolicyChangedMessage {
   at: string;
 }
 
+/**
+ * Deja constancia en la auditoría del Gateway de una invocación disparada
+ * localmente en el Edge Agent (ej. los botones "Invocar" de apps/desktop),
+ * que de otro modo nunca pasa por ToolExecutor/AuditService del lado del
+ * Gateway (docs/16 P4, ADR-025). Enviado además de — nunca en vez de — la
+ * telemetría normal cuando la invocación vino de un AgentTaskDispatchMessage.
+ */
+export interface AuditLocalMessage {
+  type: "audit.local";
+  deviceId: string;
+  capability: string;
+  success: boolean;
+  error?: string;
+  at: string;
+}
+
 export type CoreToEdgeMessage = AgentTaskDispatchMessage;
 export type EdgeToCoreMessage =
   | HelloMessage
   | HeartbeatMessage
   | TelemetryMessage
-  | SafetyPolicyChangedMessage;
+  | SafetyPolicyChangedMessage
+  | AuditLocalMessage;
