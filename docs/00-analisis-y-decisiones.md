@@ -246,6 +246,26 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** Cambio de shape no retrocompatible en `ScheduledJob`/`SchedulerDispatch` (`taskRequest` → `steps`) — aceptable porque el Scheduler se construyó en esta misma sesión, sin consumidores externos todavía.
 
+---
+
+### ADR-022: `plugin-mqtt` — cliente de un broker existente, reconexión con período fijo (no exponencial)
+
+**Contexto.** Siguiente incremento de hardware (P5) tras ESP32/Bluetooth: MQTT para sensores/actuadores IoT genéricos. Primera decisión de producto, confirmada explícitamente por el usuario: KAN se conecta como **cliente** a un broker MQTT que ya existe (Mosquitto, HiveMQ, etc.) — no aloja su propio broker. Es la topología estándar de IoT (el usuario ya tiene sensores publicando a un broker) y no exige infraestructura nueva de su parte.
+
+**Decisión — modelo de dispositivo.** Un "dispositivo" (`DeviceDriverPort`) es una conexión a un broker configurado vía `KAN_MQTT_BROKERS` (URLs separadas por coma, mismo patrón que `KAN_ESP32_WIFI_HOSTS` — nunca escanea la red). Cada topic al que el usuario se suscribe (`subscribe_mqtt`) se vuelve un target direccionable por Safety Policy, mismo mecanismo que direcciones BLE/pines ESP32. `publish_mqtt` es `irreversible-material` por defecto (no sabemos qué escucha un topic, podría ser un actuador real) — mismo criterio que `write_characteristic` en `plugin-bluetooth-generic`.
+
+**Decisión — reconexión: se apoya en `mqtt.js`, no reimplementa backoff exponencial.** A diferencia de `NodeTcpTransport` (backoff exponencial casero, tope fijo de 5 intentos), `plugin-mqtt` deja que el propio cliente `mqtt.js` reconecte (mismo objeto persiste, período **fijo** vía `reconnectPeriod` — la librería no ofrece backoff exponencial nativo) y **re-suscribe automáticamente los topics ya registrados** (`resubscribe: true`, el default, verificado contra la API real, no asumido). Reimplementar backoff exponencial a mano habría significado recrear el cliente en cada intento y perder ese resubscribe gratis — no valía la pena para lo que se ganaba. `NodeMqttTransportTuning.maxReconnectAttempts` queda como tope **opt-in, sin default** (a diferencia de TCP): un broker es infraestructura estable que puede reiniciarse por mantenimiento, no una placa que puede desaparecer para siempre — no tiene sentido "rendirse" por defecto. Cada cambio de estado expone `reconnectAttempt`/`unreachableSince` para que Core/UI puedan mostrar "sin respuesta desde HH:MM" en vez de una reconexión silenciosa e invisible.
+
+**Decisión — caché de topics sobrevive a `disconnect()`.** Mismo criterio que `lastScan` en `plugin-bluetooth-generic`: el último valor conocido de cada topic vive en un mapa separado de la conexión viva, nunca se borra al desconectar — tiene sentido poder preguntar "¿cuál fue la última lectura?" aunque la conexión haya caído hace un momento. Las capabilities que sí hablan con el broker (`subscribe_mqtt`, `unsubscribe_mqtt`, `publish_mqtt`) sí exigen conexión viva.
+
+**Decisión — credenciales.** Van en la URL de `KAN_MQTT_BROKERS` (mismo trust boundary que `GROQ_API_KEY`/`GEMINI_API_KEY`/`KAN_EDGE_TOKEN`, ya manejados así en el proyecto). Nunca se loguean ni aparecen en el nombre del dispositivo — `discover()` siempre redacta a `protocolo//host:puerto`.
+
+**Alternativas consideradas.**
+- *Backoff exponencial casero también para MQTT.* Descartada — ver arriba, el costo (perder resubscribe automático, más código a mantener) no se justifica frente a lo que ofrece `mqtt.js` de fábrica.
+- *KAN aloja su propio broker embebido (`aedes` en producción, no solo en tests).* Fuera de alcance para esta fase — decisión de producto explícita del usuario, no técnica. `aedes` se usa exclusivamente para levantar un broker real en los tests (ADR-012), nunca como parte del plugin en producción.
+
+**Consecuencia.** La reconexión de MQTT no tiene backoff exponencial (a diferencia de TCP) — una desviación real y documentada, no una inconsistencia accidental.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
