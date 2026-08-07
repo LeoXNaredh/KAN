@@ -24,6 +24,9 @@ Análisis arquitectónico completo derivado del [KAN Master Prompt](../README.md
 | [13 — Auditoría v0.1](13-auditoria-v0.1.md) | Deuda técnica, duplicación, acoplamientos, memory leaks, race conditions, arquitectura, seguridad y performance — con severidad y prioridad de fix |
 | [14 — Performance v0.1](14-performance-v0.1.md) | Latencias medidas en vivo, tiempo de conexión del Edge Agent, memoria, Event Bus, cuellos de botella y qué no se midió |
 | [15 — Seguridad v0.1](15-seguridad-v0.1.md) | Auth, autorización, validación de entradas, serialización, WebSockets, tokens, logs, auditoría, escenarios de ataque |
+| [16 — Propuestas de Arquitectura v0.1](16-arquitectura-propuestas-v0.1.md) | Mejoras identificadas al cierre de v0.1 (P1-P8) — validación de `inputSchema`, auth por usuario en el Gateway, persistencia real, auditoría de invocaciones manuales, rate limiting, streaming del chat, `LoggerPort` compartido |
+| [17 — Plan de implementación v0.2](17-plan-implementacion-v0.2.md) | Repriorización de "UX visible" a "inteligencia real" (P0-P8), ADRs de voz/memoria/identidad, mapeo por funcionalidad |
+| [18 — Propuesta de Arquitectura Móvil](18-arquitectura-movil-propuesta.md) | Cliente React Native/Expo (roadmap P7): conectividad con el Gateway/IA, sesión de Supabase sin cookies, streaming SSE, paridad de UI, voz/imagen nativas |
 
 ## La decisión más importante de todo el documento
 
