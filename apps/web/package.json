@@ -13,6 +13,7 @@
     "@kan/core": "workspace:*",
     "@kan/plugin-contract": "workspace:*",
     "@kan/supabase-adapter": "workspace:*",
+    "@kan/voice-abstraction": "workspace:*",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.48.0",
     "lucide-react": "^0.475.0",

@@ -177,6 +177,16 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** El esquema de base de datos (`supabase/migrations/`) se crea completo desde este incremento — `profiles`, `conversations`/`messages`, `user_preferences`, `memories`, `projects` — aunque varias tablas queden sin CRUD todavía (P0.2 y posteriores), para no tener que migrar esquema en cada incremento de identidad/memoria. Todas con RLS activado desde el día uno.
 
+### ADR-014: `VoiceProviderPort` desacoplado — pero solo para STT, no para TTS
+
+**Contexto.** `docs/17` había propuesto `VoiceProviderPort` con dos métodos simétricos, `transcribe()` y `synthesize()`, asumiendo que ambos serían llamadas a un proveedor de red. Al implementar Voz Fase 1 (push-to-talk) y buscar la opción "gratuita y muy efectiva" que pidió el usuario, resultó que STT y TTS no son simétricos en la práctica: Groq (Whisper) es un servicio de red real con un free tier generoso (2000 requests/día, sin tarjeta), pero la mejor opción de TTS gratuita sin límites de uso es la `SpeechSynthesis` **nativa del navegador** — que no es un servicio de red, es una Web API del lado del cliente.
+
+**Decisión.** `VoiceProviderPort` (`@kan/core`) queda con un solo método por ahora: `transcribe(audio): Promise<string>`. Su adaptador, `GroqVoiceProvider` (paquete nuevo `@kan/voice-abstraction`, mismo rol que `@kan/ai-abstraction`), recibe la clave de Groq y llama `fetch` directo contra su API compatible con OpenAI — sin SDK, mismo criterio que ADR-011. La síntesis de voz de esta fase vive en `apps/web` como un hook de navegador (`lib/voice/useSpeechSynthesis.ts`) que llama `window.speechSynthesis` directo, fuera de la capa de puertos/adaptadores — no hay proveedor de red que envolver todavía.
+
+**Por qué.** Forzar `synthesize()` en el puerto hoy habría significado una interfaz que ningún adaptador real implementa — peor que no tener el método. El puerto gana `synthesize()` el día que se sume un proveedor de TTS de red real (ElevenLabs, Google Cloud TTS), con el mismo patrón que ya funcionó para STT.
+
+**Consecuencia.** La síntesis de voz depende del navegador del usuario (no todos soportan `SpeechSynthesis` igual, ej. Firefox Android) — se degrada en silencio si no está disponible, nunca rompe el chat. Es una limitación real y documentada, no oculta.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

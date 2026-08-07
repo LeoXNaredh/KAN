@@ -1,28 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { Mic } from "lucide-react";
-import { Card } from "@/components/ui/Card";
+import { Mic, Loader2 } from "lucide-react";
+import type { VoiceInputStatus } from "@/lib/voice/useVoiceInput";
+
+const LABEL: Record<VoiceInputStatus, string> = {
+  idle: "Hablar con KAN",
+  recording: "Grabando… (click para enviar)",
+  transcribing: "Transcribiendo…",
+};
 
 /**
- * Sin backend todavía (docs/17 §3.4, Voz Fase 1 es un incremento aparte) —
- * existe visualmente para que la identidad del producto empiece a formarse.
+ * Control real de voz (P1) — ya no una tarjeta decorativa: vive junto al
+ * input del chat en ConversationPanel, el mismo lugar donde vive la
+ * conversación real.
  */
-export function VoiceButton() {
-  const [showComingSoon, setShowComingSoon] = useState(false);
-
+export function VoiceButton({ status, onClick }: { status: VoiceInputStatus; onClick: () => void }) {
   return (
-    <Card padding="lg" className="fade-in flex flex-col items-center justify-center gap-3">
-      <button
-        type="button"
-        onClick={() => setShowComingSoon(true)}
-        aria-label="Hablar con KAN"
-        className="flex h-20 w-20 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 transition-transform duration-fast hover:scale-105 hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent active:scale-95"
-      >
-        <Mic className="h-8 w-8" aria-hidden="true" />
-      </button>
-      <p className="text-sm font-medium text-ink-muted">Hablar con KAN</p>
-      {showComingSoon && <p className="text-xs text-accent">Próximamente</p>}
-    </Card>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={status === "transcribing"}
+      aria-label={LABEL[status]}
+      title={LABEL[status]}
+      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
+        status === "recording"
+          ? "bg-danger text-white hover:brightness-110"
+          : "border border-line text-ink-muted hover:bg-surface-3 hover:text-ink"
+      }`}
+    >
+      {status === "transcribing" ? (
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      ) : (
+        <Mic className="h-4 w-4" aria-hidden="true" />
+      )}
+    </button>
   );
 }

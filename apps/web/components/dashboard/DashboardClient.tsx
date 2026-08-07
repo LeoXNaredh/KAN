@@ -8,7 +8,6 @@ import { DeviceCard } from "@/components/dashboard/DeviceCard";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { SystemStatus } from "@/components/dashboard/SystemStatus";
 import { PluginCard } from "@/components/dashboard/PluginCard";
-import { VoiceButton } from "@/components/dashboard/VoiceButton";
 import { ConversationPanel } from "@/components/dashboard/ConversationPanel";
 import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
 import type { StatusLevel } from "@/components/ui/StatusDot";
@@ -103,7 +102,6 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
           <ConversationPanel compact />
         </div>
         <div className="flex flex-col gap-4">
-          <VoiceButton />
           <SystemStatus status={status} />
           <PluginCard plugins={allPlugins} />
         </div>
