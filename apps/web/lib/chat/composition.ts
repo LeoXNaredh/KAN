@@ -2,10 +2,11 @@ import {
   InMemoryConversationRepository,
   SendMessageUseCase,
   UserScopedMemoryContext,
+  UserScopedPersonalityContext,
   type AIProviderPort,
   type ToolProviderPort,
 } from "@kan/core";
-import { SupabaseConversationRepository, SupabaseMemoryStore } from "@kan/supabase-adapter";
+import { SupabaseConversationRepository, SupabaseMemoryStore, SupabaseUserPreferencesStore } from "@kan/supabase-adapter";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 
@@ -32,6 +33,7 @@ export async function buildSendMessageUseCase(
   const client = await createSupabaseServerClient();
   const conversationRepository = new SupabaseConversationRepository(client, user.userId);
   const memoryContext = new UserScopedMemoryContext(new SupabaseMemoryStore(client), user.userId);
+  const personalityContext = new UserScopedPersonalityContext(new SupabaseUserPreferencesStore(client), user.userId);
 
-  return new SendMessageUseCase(aiProvider, conversationRepository, toolProvider, memoryContext);
+  return new SendMessageUseCase(aiProvider, conversationRepository, toolProvider, memoryContext, personalityContext);
 }

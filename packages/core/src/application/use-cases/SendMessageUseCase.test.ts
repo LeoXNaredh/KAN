@@ -4,6 +4,8 @@ import { InMemoryConversationRepository } from "../../infra/InMemoryConversation
 import type { AIProviderPort, ChatRequest, ChatResponse } from "../../domain/ports/AIProviderPort";
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
 import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
+import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
+import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
 
 class ScriptedAIProvider implements AIProviderPort {
   readonly providerName = "scripted";
@@ -139,5 +141,53 @@ describe("SendMessageUseCase", () => {
     expect(lastMessage?.content).toMatch(/No pude completar/);
     // Como mucho 4 rondas (MAX_TOOL_ROUNDS): 1 user + 4*(assistant+tool) + 1 fallback = 10.
     expect(conversation.messages.length).toBeLessThanOrEqual(10);
+  });
+
+  it("inyecta hechos de memoria relevantes en el systemPrompt", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const memoryContext: MemoryContextPort = {
+      listRelevant: async () => [
+        { userId: "u1", category: "preferencia", key: "unidad_temperatura", value: "celsius", updatedAt: "2026-01-01T00:00:00.000Z" },
+      ],
+    };
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), undefined, memoryContext);
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(ai.requestsSeen[0].systemPrompt).toContain("unidad_temperatura");
+  });
+
+  it("inyecta la personalidad configurada en el systemPrompt", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const personalityContext: PersonalityContextPort = { getPersonality: async () => "Sé breve y directo, sin rodeos." };
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), undefined, undefined, personalityContext);
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(ai.requestsSeen[0].systemPrompt).toContain("Sé breve y directo, sin rodeos.");
+  });
+
+  it("si no hay personalidad configurada, el systemPrompt no la menciona", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const personalityContext: PersonalityContextPort = { getPersonality: async () => undefined };
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), undefined, undefined, personalityContext);
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(ai.requestsSeen[0].systemPrompt).not.toContain("personalidad");
+  });
+
+  it("si el store de personalidad falla, el chat sigue funcionando con el prompt por defecto", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const failingPersonalityContext: PersonalityContextPort = {
+      getPersonality: async () => {
+        throw new Error("db caída");
+      },
+    };
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), undefined, undefined, failingPersonalityContext);
+
+    const { conversation } = await useCase.execute({ userMessage: "hola" });
+
+    expect(conversation.messages.at(-1)?.content).toBe("ok");
   });
 });

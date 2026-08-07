@@ -1,4 +1,4 @@
-import { User, Brain, Trash2 } from "lucide-react";
+import { User, Brain, Sparkles, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
@@ -7,6 +7,8 @@ import { updateDisplayNameAction } from "@/lib/auth/actions";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 import { buildMemoryUseCases } from "@/lib/memory/composition";
 import { addMemoryAction, removeMemoryAction } from "@/lib/memory/actions";
+import { buildPreferencesUseCases } from "@/lib/preferences/composition";
+import { updatePersonalityAction } from "@/lib/preferences/actions";
 
 export default async function ConfiguracionPage({
   searchParams,
@@ -17,6 +19,9 @@ export default async function ConfiguracionPage({
   const user = await getCurrentUserCached();
   const summary = user ? await (await buildAuthUseCases()).getDashboardSummary.execute(user.userId) : undefined;
   const memories = user ? await (await buildMemoryUseCases()).listMemories.execute(user.userId) : [];
+  const preferences = user ? await (await buildPreferencesUseCases()).listPreferences.execute(user.userId) : [];
+  const personalityPreference = preferences.find((preference) => preference.key === "personality")?.value;
+  const personality = typeof personalityPreference === "string" ? personalityPreference : "";
 
   return (
     <div className="flex flex-col gap-6">
@@ -60,6 +65,30 @@ export default async function ConfiguracionPage({
                 Guardar
               </button>
             </div>
+          </form>
+        </Card>
+      )}
+
+      {user && (
+        <Card className="fade-in flex flex-col gap-4">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            Personalidad
+          </h2>
+          <p className="text-xs text-ink-faint">
+            Cómo querés que KAN te hable — tono, estilo, límites. Se aplica en cada conversación nueva.
+          </p>
+
+          <form action={updatePersonalityAction} className="flex flex-col gap-2">
+            <textarea
+              name="personality"
+              defaultValue={personality}
+              placeholder="Ej: Sé directo y breve, sin rodeos. Tono técnico. Nunca uses emojis."
+              className={`min-h-[5rem] ${INPUT_CLASSES}`}
+            />
+            <button type="submit" className={`self-start ${PRIMARY_BUTTON_CLASSES}`}>
+              Guardar
+            </button>
           </form>
         </Card>
       )}
@@ -119,8 +148,8 @@ export default async function ConfiguracionPage({
       )}
 
       <PlaceholderPage
-        title="Preferencias, IA y seguridad"
-        description="Proveedores de IA, notificaciones y las políticas de tus dispositivos llegan en un incremento futuro."
+        title="Proveedores de IA y seguridad"
+        description="Elegir proveedor de IA, notificaciones y las políticas de tus dispositivos llegan en un incremento futuro."
       />
     </div>
   );

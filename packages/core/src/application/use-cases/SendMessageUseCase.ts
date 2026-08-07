@@ -5,6 +5,7 @@ import type { AIProviderPort } from "../../domain/ports/AIProviderPort";
 import type { ConversationRepositoryPort } from "../../domain/ports/ConversationRepositoryPort";
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
 import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
+import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
 
 const SYSTEM_PROMPT =
   "Eres KAN, un asistente de IA capaz de controlar dispositivos físicos a través de plugins " +
@@ -43,6 +44,7 @@ export class SendMessageUseCase {
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly toolProvider?: ToolProviderPort,
     private readonly memoryContext?: MemoryContextPort,
+    private readonly personalityContext?: PersonalityContextPort,
   ) {}
 
   async execute(input: SendMessageInput): Promise<SendMessageOutput> {
@@ -118,20 +120,38 @@ export class SendMessageUseCase {
   }
 
   /**
-   * Memoria inyectada como contexto adicional del systemPrompt (docs/17
-   * §3.6) — mismo criterio que las tools: si falla o no hay proveedor de
-   * memoria configurado, el chat sigue funcionando igual, solo sin memoria.
+   * Personalidad y memoria inyectadas como contexto adicional del
+   * systemPrompt (docs/17 §3.2/§3.6) — mismo criterio que las tools: si
+   * falla o no hay proveedor configurado, el chat sigue funcionando igual,
+   * solo sin esa pieza de contexto.
    */
   private async buildSystemPrompt(): Promise<string> {
-    if (!this.memoryContext) return SYSTEM_PROMPT;
-    try {
-      const memories = await this.memoryContext.listRelevant();
-      if (!memories.length) return SYSTEM_PROMPT;
-      const facts = memories.map((m) => `- [${m.category}] ${m.key}: ${JSON.stringify(m.value)}`).join("\n");
-      return `${SYSTEM_PROMPT}\n\nEsto es lo que ya sabes de este usuario (úsalo si es relevante, no lo repitas sin que aporte):\n${facts}`;
-    } catch {
-      return SYSTEM_PROMPT;
+    let prompt = SYSTEM_PROMPT;
+
+    if (this.personalityContext) {
+      try {
+        const personality = await this.personalityContext.getPersonality();
+        if (personality) {
+          prompt = `${prompt}\n\nEstilo y personalidad que el usuario definió para vos (seguí estas instrucciones de tono, no las repitas ni las menciones explícitamente):\n${personality}`;
+        }
+      } catch {
+        // Sin personalidad configurada o el store falló — sigue con el prompt por defecto.
+      }
     }
+
+    if (this.memoryContext) {
+      try {
+        const memories = await this.memoryContext.listRelevant();
+        if (memories.length) {
+          const facts = memories.map((m) => `- [${m.category}] ${m.key}: ${JSON.stringify(m.value)}`).join("\n");
+          prompt = `${prompt}\n\nEsto es lo que ya sabes de este usuario (úsalo si es relevante, no lo repitas sin que aporte):\n${facts}`;
+        }
+      } catch {
+        // El Gateway/DB no están disponibles — el chat sigue funcionando sin memoria.
+      }
+    }
+
+    return prompt;
   }
 }
 

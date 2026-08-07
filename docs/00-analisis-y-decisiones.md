@@ -220,6 +220,18 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** Probado con temporizadores reales (ADR-012: expresiones cron con segundos y esperas cortas de verdad, no mocks de tiempo) — el mismo criterio que ya encontró bugs reales en `NodeTcpTransport`.
 
+---
+
+### ADR-020: Personalidad sobre `UserPreferencesPort` genérico — mismo molde que memoria, no una tabla/columna dedicada
+
+**Contexto.** La tabla `user_preferences` existe desde P0.1 (esquema completo desde el día uno) pero no tenía ni puerto ni UI — deuda documentada, no oculta. Al mismo tiempo, `docs/17` §3.2 pedía "Personalidad" (tono, estilo, límites del `systemPrompt`) como candidato de bajo riesgo y alto impacto.
+
+**Decisión.** `UserPreferencesPort` (CRUD completo por `key`, mismo shape que `MemoryStorePort`) + `PersonalityContextPort`/`UserScopedPersonalityContext` (puerto angosto pre-escopeado, mismo patrón que `MemoryContextPort`/`UserScopedMemoryContext`). `SendMessageUseCase` inyecta la personalidad en el `systemPrompt` igual que ya hace con la memoria — si no hay proveedor, o si `getPersonality()` falla, el chat sigue funcionando con el prompt por defecto. La UI en `/configuracion` solo expone la preferencia `personality` (un textarea libre) — el resto del store queda genérico y sin UI todavía, listo para preferencias futuras (unidades, idioma) sin otra migración.
+
+**Por qué no una columna `personality` en `profiles` en vez de la tabla genérica.** La tabla ya existe con RLS ya configurada (`user_preferences_manage_own`) desde P0.1 — usarla es cero costo marginal de esquema, y deja la puerta abierta a preferencias futuras sin otra migración ni otro puerto. Mismo razonamiento que ya se aplicó al diseñar el esquema completo desde el principio.
+
+**Consecuencia.** Ninguna — es aditivo puro (`personalityContext` es un 5º parámetro opcional de `SendMessageUseCase`, nada que ya lo llamaba sin él se rompe).
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
