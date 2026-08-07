@@ -2,18 +2,11 @@
 
 > Revisión completa de la arquitectura al cierre de v0.1. Cada propuesta de abajo es una **mejora identificada, documentada y no implementada** — según lo pedido explícitamente: "si encuentras una decisión mejor, documenta la propuesta, no la implementes todavía". Ordenadas por prioridad recomendada.
 
-## P1 — Validación real de `inputSchema` (JSON Schema)
+## P1 — Validación real de `inputSchema` (JSON Schema) — ✅ Implementado (2026-08-07, ADR-024)
 
-**Problema.** `CapabilityDescriptor.inputSchema` es un objeto informal (`{ distanceMm: "number" }`), no JSON Schema real. Cada plugin valida su propio input a mano — el simulador lo hace bien tras la Fase 3 de estabilización, pero no hay ninguna garantía de que el próximo plugin lo haga. `GeminiProvider.toGeminiSchema()` ya hace una conversión heurística de este formato informal al schema real que exige el SDK de Gemini — es decir, ya existe la mitad del trabajo de tener un schema real, solo que no se usa para validar, solo para informarle al LLM la forma esperada.
+**Problema (histórico).** `CapabilityDescriptor.inputSchema` era un objeto informal (`{ distanceMm: "number" }`), no JSON Schema real. Cada plugin validaba su propio input a mano, sin ninguna garantía de que el próximo plugin lo hiciera. `GeminiProvider.toGeminiSchema()` ya hacía una conversión heurística de ese formato informal al schema real que exige el SDK de Gemini — es decir, ya existía la mitad del trabajo de tener un schema real, solo que no se usaba para validar, solo para informarle al LLM la forma esperada.
 
-**Propuesta.** Adoptar JSON Schema real (`zod` con `zod-to-json-schema`, o `ajv` directo) en `packages/plugin-contract`:
-- `CapabilityDescriptor.inputSchema` pasa a ser un JSON Schema válido de verdad.
-- `plugin-sdk-ts` valida el input contra el schema **antes** de llamar a `plugin.invoke()` — el plugin ya no necesita repetir la validación básica de tipos, solo su lógica de negocio.
-- `packages/gateway-core`'s `ToolResolver` valida los `args` propuestos por el LLM contra el schema **antes** de que lleguen siquiera al Edge Agent — defensa en profundidad, dos capas de validación (Gateway y Edge Agent) en vez de una.
-
-**Costo estimado:** medio (una tarde) — el cambio de tipo se propaga a `plugin-device-simulator` (reescribir `getCapabilities()`), `GeminiProvider.toGeminiSchema()` (simplifica, ya no necesita heurística), y un nuevo paso de validación en `ToolResolver`/`plugin-sdk-ts`.
-
-**Prioridad:** la más alta de este documento — **bloqueante recomendado antes de construir `plugin-esp32-arduino`**, tal como quedó señalado en `docs/13` (M1) y `docs/15` (sección 3).
+**Resuelto.** `CapabilityDescriptor.inputSchema`/`ToolDescriptor.inputSchema` son JSON Schema real (`@kan/plugin-contract`, tipo `JsonSchema`), validado con `ajv` vía `validateAgainstSchema()`. Defensa en profundidad en dos capas, sin tocar `plugin-sdk-ts`: `ToolResolver.resolve()` (Gateway) rechaza args mal formados antes de despachar al Edge Agent, y `CapabilityRegistry.invoke()` (Edge Agent) los rechaza otra vez antes de resolver severidad o tocar el driver — son las dos fronteras de confianza reales (LLM↔Gateway, Gateway↔Edge Agent), no una capa intermedia en el SDK. Ver ADR-024 (`docs/00`) para el detalle y las alternativas descartadas.
 
 ## P2 — Autenticación y autorización por usuario
 
@@ -95,7 +88,7 @@
 
 | # | Propuesta | Prioridad | Bloqueante para |
 |---|---|---|---|
-| P1 | Validación JSON Schema real | **Alta** | `plugin-esp32-arduino` y cualquier plugin de hardware real |
+| P1 | Validación JSON Schema real | ✅ Implementado (ADR-024) | — |
 | P2 | Auth/autorización por usuario | Alta | Compartir el sistema con más de un usuario |
 | P3 | Persistencia real del Gateway | Media | Multi-instancia / durabilidad del audit trail |
 | P4 | Auditoría de invocaciones manuales | Media | Completitud de compliance |

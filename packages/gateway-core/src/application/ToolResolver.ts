@@ -1,3 +1,4 @@
+import { validateAgainstSchema } from "@kan/plugin-contract";
 import type { ToolRegistry } from "./ToolRegistry";
 
 export interface ResolvedToolCall {
@@ -24,8 +25,12 @@ export class RegistryToolResolver implements ToolResolverPort {
     if (!tool) {
       return { ok: false, error: `Herramienta desconocida: ${proposedName}` };
     }
-    // Validación de inputSchema real: diferida (ver docs/04, mismo criterio
-    // que el Edge Agent — el plugin valida su propio input por ahora).
+    // Primera capa de defensa en profundidad (docs/16 P1) — la segunda vive
+    // en CapabilityRegistry, del lado del Edge Agent.
+    const validation = validateAgainstSchema(tool.inputSchema, rawArgs);
+    if (!validation.ok) {
+      return { ok: false, error: validation.error };
+    }
     return { ok: true, call: { ref: proposedName, args: rawArgs } };
   }
 }

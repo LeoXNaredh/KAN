@@ -57,6 +57,17 @@ class FakeDriver extends KanDeviceDriverPlugin {
         supportsDryRun: false,
         targetParam: "pin",
       },
+      {
+        name: "toggle_led",
+        description: "...",
+        severity: "reversible",
+        supportsDryRun: false,
+        inputSchema: {
+          type: "object",
+          properties: { on: { type: "boolean" } },
+          required: ["on"],
+        },
+      },
     ];
   }
 
@@ -86,8 +97,13 @@ describe("CapabilityRegistry", () => {
 
   it("list() agrega las capabilities de todos los dispositivos descubiertos", () => {
     const listing = registry.list();
-    expect(listing).toHaveLength(3);
-    expect(listing.map((l) => l.capability.name)).toEqual(["read_only_cap", "dangerous_cap", "write_pin"]);
+    expect(listing).toHaveLength(4);
+    expect(listing.map((l) => l.capability.name)).toEqual([
+      "read_only_cap",
+      "dangerous_cap",
+      "write_pin",
+      "toggle_led",
+    ]);
   });
 
   it("invoke() de una capability read-only se ejecuta directo", async () => {
@@ -146,6 +162,24 @@ describe("CapabilityRegistry", () => {
     safetyPolicyStore.set("fake-1", "5", { severity: "reversible" });
     const outcome = await registry.invoke("fake-1", "write_pin", { pin: 18 });
     expect(outcome.status).toBe("pending_confirmation");
+  });
+
+  it("invoke() rechaza un input que no cumple el inputSchema sin tocar el driver (docs/16 P1 — segunda capa de defensa)", async () => {
+    const invokeSpy = vi.spyOn(FakeDriver.prototype, "invoke");
+
+    const outcome = await registry.invoke("fake-1", "toggle_led", { on: "sí" });
+
+    expect(outcome.status).toBe("executed");
+    if (outcome.status === "executed") {
+      expect(outcome.result.success).toBe(false);
+      expect(outcome.result.error).toMatch(/Argumentos inválidos/);
+    }
+    expect(invokeSpy).not.toHaveBeenCalled();
+  });
+
+  it("invoke() acepta un input que sí cumple el inputSchema", async () => {
+    const outcome = await registry.invoke("fake-1", "toggle_led", { on: true });
+    expect(outcome).toEqual({ status: "executed", result: { success: true, data: { capabilityName: "toggle_led" } } });
   });
 
   it("un driver que lanza se convierte en CapabilityResult failed, no en excepción sin manejar", async () => {

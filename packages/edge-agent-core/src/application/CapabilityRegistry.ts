@@ -1,4 +1,4 @@
-import type { CapabilityDescriptor, CapabilityResult } from "@kan/plugin-contract";
+import { validateAgainstSchema, type CapabilityDescriptor, type CapabilityResult } from "@kan/plugin-contract";
 import type { LoggerPort } from "../domain/ports/LoggerPort";
 import type { EdgeAgentBus } from "./EdgeAgentBus";
 import type { DeviceManager } from "./DeviceManager";
@@ -46,6 +46,16 @@ export class CapabilityRegistry {
     const capability = device?.capabilities.find((c) => c.name === capabilityName);
     if (!device || !capability) {
       throw new Error(`Capability desconocida: ${capabilityName} en dispositivo ${deviceId}`);
+    }
+
+    // Segunda capa de defensa en profundidad (docs/16 P1) — la primera vive
+    // en ToolResolver, del lado del Gateway. Se valida antes de resolver
+    // severidad: un input con forma inválida no debe ni siquiera decidir si
+    // requiere confirmación.
+    const validation = validateAgainstSchema(capability.inputSchema, input);
+    if (!validation.ok) {
+      this.logger.info(`Input rechazado por schema: ${capabilityName} en ${deviceId}: ${validation.error}`);
+      return { status: "executed", result: { success: false, error: validation.error } };
     }
 
     const severity = this.safetyPolicyStore.resolveSeverity(deviceId, capability, input);

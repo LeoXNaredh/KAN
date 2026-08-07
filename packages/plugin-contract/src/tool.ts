@@ -1,3 +1,5 @@
+import type { JsonSchema } from "./jsonSchema";
+
 /**
  * Vocabulario neutral del Function Calling Engine (docs/12-arquitectura-gateway.md,
  * sección 5). Ni @kan/ai-abstraction ni el Gateway importan nada del otro —
@@ -7,7 +9,7 @@
 export interface ToolDescriptor {
   name: string;
   description: string;
-  inputSchema: Record<string, unknown>;
+  inputSchema: JsonSchema;
 }
 
 export interface ToolCallProposal {

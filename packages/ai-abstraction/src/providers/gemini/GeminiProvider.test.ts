@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "@kan/core";
-import { toGeminiContent, toGeminiSchema, mapSchemaType, toFunctionDeclaration } from "./GeminiProvider";
+import { toGeminiContent, toFunctionDeclaration } from "./GeminiProvider";
 
 describe("toGeminiContent", () => {
   it("mapea un mensaje de usuario a role 'user'", () => {
@@ -60,36 +60,6 @@ describe("toGeminiContent", () => {
   });
 });
 
-describe("mapSchemaType", () => {
-  it("mapea 'boolean' -> boolean", () => expect(mapSchemaType("boolean")).toBe("boolean"));
-  it("mapea 'number' -> number", () => expect(mapSchemaType("number")).toBe("number"));
-  it("mapea 'integer' -> number", () => expect(mapSchemaType("integer")).toBe("number"));
-  it("mapea case-insensitive ('BOOLEAN') -> boolean", () => expect(mapSchemaType("BOOLEAN")).toBe("boolean"));
-  it("cualquier otra cosa cae a string por defecto", () => {
-    expect(mapSchemaType("string")).toBe("string");
-    expect(mapSchemaType("algo-desconocido")).toBe("string");
-    expect(mapSchemaType(42)).toBe("string");
-  });
-});
-
-describe("toGeminiSchema", () => {
-  it("devuelve undefined para un inputSchema vacío o ausente (capability sin parámetros)", () => {
-    expect(toGeminiSchema(undefined)).toBeUndefined();
-    expect(toGeminiSchema({})).toBeUndefined();
-  });
-
-  it("convierte el inputSchema informal a JSON Schema real", () => {
-    const schema = toGeminiSchema({ distanceMm: "number", on: "boolean" });
-    expect(schema).toEqual({
-      type: "object",
-      properties: {
-        distanceMm: { type: "number" },
-        on: { type: "boolean" },
-      },
-    });
-  });
-});
-
 describe("toFunctionDeclaration", () => {
   it("produce un nombre válido para el SDK (solo [a-zA-Z0-9_-], generado por GlobalCapabilityRegistry)", () => {
     const declaration = toFunctionDeclaration({
@@ -99,5 +69,22 @@ describe("toFunctionDeclaration", () => {
     });
     expect(declaration.name).toMatch(/^[a-zA-Z0-9_-]+$/);
     expect(declaration.parametersJsonSchema).toBeUndefined();
+  });
+
+  it("pasa el inputSchema (JSON Schema real, docs/16 P1) tal cual a Gemini", () => {
+    const declaration = toFunctionDeclaration({
+      name: "move_axis",
+      description: "Mueve un eje",
+      inputSchema: {
+        type: "object",
+        properties: { distanceMm: { type: "number" } },
+        required: ["distanceMm"],
+      },
+    });
+    expect(declaration.parametersJsonSchema).toEqual({
+      type: "object",
+      properties: { distanceMm: { type: "number" } },
+      required: ["distanceMm"],
+    });
   });
 });

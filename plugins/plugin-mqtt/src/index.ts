@@ -135,7 +135,11 @@ export class MqttDevicePlugin extends KanDeviceDriverPlugin {
         description: "Se suscribe a un topic MQTT (soporta wildcards '+'/'#') y empieza a cachear el último valor recibido.",
         severity: "read-only",
         supportsDryRun: false,
-        inputSchema: { topic: "string" },
+        inputSchema: {
+          type: "object",
+          properties: { topic: { type: "string" } },
+          required: ["topic"],
+        },
         targetParam: "topic",
       }),
       defineCapability({
@@ -143,7 +147,11 @@ export class MqttDevicePlugin extends KanDeviceDriverPlugin {
         description: "Deja de escuchar un topic MQTT.",
         severity: "reversible",
         supportsDryRun: false,
-        inputSchema: { topic: "string" },
+        inputSchema: {
+          type: "object",
+          properties: { topic: { type: "string" } },
+          required: ["topic"],
+        },
         targetParam: "topic",
       }),
       defineCapability({
@@ -151,7 +159,11 @@ export class MqttDevicePlugin extends KanDeviceDriverPlugin {
         description: "Devuelve el último valor recibido en un topic suscrito.",
         severity: "read-only",
         supportsDryRun: false,
-        inputSchema: { topic: "string" },
+        inputSchema: {
+          type: "object",
+          properties: { topic: { type: "string" } },
+          required: ["topic"],
+        },
         targetParam: "topic",
       }),
       defineCapability({
@@ -161,7 +173,16 @@ export class MqttDevicePlugin extends KanDeviceDriverPlugin {
         // Sin dry-run posible: no hay forma genérica de previsualizar qué
         // causaría un mensaje en un suscriptor desconocido.
         supportsDryRun: false,
-        inputSchema: { topic: "string", payload: "string", qos: "number", retain: "boolean" },
+        inputSchema: {
+          type: "object",
+          properties: {
+            topic: { type: "string" },
+            payload: { type: "string" },
+            qos: { type: "number" },
+            retain: { type: "boolean" },
+          },
+          required: ["topic", "payload"],
+        },
         targetParam: "topic",
       }),
       defineCapability({

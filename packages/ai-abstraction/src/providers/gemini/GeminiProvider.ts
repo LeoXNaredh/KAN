@@ -120,30 +120,9 @@ export function toFunctionDeclaration(tool: ToolDescriptor): FunctionDeclaration
   return {
     name: tool.name,
     description: tool.description,
-    parametersJsonSchema: toGeminiSchema(tool.inputSchema),
+    // `inputSchema` ya es JSON Schema real desde docs/16 P1 — Gemini lo
+    // acepta tal cual vía `parametersJsonSchema` (a diferencia del extinto
+    // `parameters`, que exigía su propio dialecto reducido).
+    parametersJsonSchema: Object.keys(tool.inputSchema ?? {}).length ? tool.inputSchema : undefined,
   };
-}
-
-/**
- * Convierte el `inputSchema` informal de CapabilityDescriptor (ej.
- * `{ distanceMm: "number" }`) a JSON Schema real. Validación de JSON Schema
- * completa (más allá de esta conversión heurística) queda deferida —
- * ver docs/16-arquitectura-propuestas-v0.1.md P1.
- */
-export function toGeminiSchema(inputSchema: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!inputSchema || Object.keys(inputSchema).length === 0) return undefined;
-
-  const properties: Record<string, { type: string }> = {};
-  for (const [key, value] of Object.entries(inputSchema)) {
-    properties[key] = { type: mapSchemaType(value) };
-  }
-
-  return { type: "object", properties };
-}
-
-export function mapSchemaType(value: unknown): string {
-  const hint = String(value).toLowerCase();
-  if (hint === "boolean") return "boolean";
-  if (hint === "number" || hint === "integer") return "number";
-  return "string";
 }

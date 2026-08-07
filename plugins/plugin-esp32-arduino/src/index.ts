@@ -160,7 +160,11 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
         description: "Lee el estado digital (HIGH/LOW) de un pin.",
         severity: "read-only",
         supportsDryRun: false,
-        inputSchema: { pin: "number" },
+        inputSchema: {
+          type: "object",
+          properties: { pin: { type: "number" } },
+          required: ["pin"],
+        },
         targetParam: "pin",
       }),
       defineCapability({
@@ -168,7 +172,11 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
         description: "Lee el valor analógico (ADC) de un pin.",
         severity: "read-only",
         supportsDryRun: false,
-        inputSchema: { pin: "number" },
+        inputSchema: {
+          type: "object",
+          properties: { pin: { type: "number" } },
+          required: ["pin"],
+        },
         targetParam: "pin",
       }),
       defineCapability({
@@ -176,7 +184,11 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
         description: "Escribe un estado digital (HIGH/LOW) en un pin.",
         severity: "irreversible-material",
         supportsDryRun: false,
-        inputSchema: { pin: "number", value: "boolean" },
+        inputSchema: {
+          type: "object",
+          properties: { pin: { type: "number" }, value: { type: "boolean" } },
+          required: ["pin", "value"],
+        },
         targetParam: "pin",
       }),
       defineCapability({
@@ -184,7 +196,11 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
         description: "Escribe un valor PWM (0-255) en un pin.",
         severity: "irreversible-material",
         supportsDryRun: false,
-        inputSchema: { pin: "number", value: "number" },
+        inputSchema: {
+          type: "object",
+          properties: { pin: { type: "number" }, value: { type: "number" } },
+          required: ["pin", "value"],
+        },
         targetParam: "pin",
       }),
     ];

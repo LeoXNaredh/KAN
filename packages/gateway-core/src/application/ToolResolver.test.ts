@@ -25,4 +25,43 @@ describe("RegistryToolResolver", () => {
     const result = resolver.resolve("tool_alucinada_por_el_llm", {});
     expect(result).toEqual({ ok: false, error: "Herramienta desconocida: tool_alucinada_por_el_llm" });
   });
+
+  it("rechaza args que no cumplen el inputSchema (docs/16 P1 — primera capa de defensa en profundidad)", () => {
+    const resolver = new RegistryToolResolver(
+      fakeRegistry([
+        {
+          name: "move_axis",
+          description: "...",
+          inputSchema: {
+            type: "object",
+            properties: { distanceMm: { type: "number" } },
+            required: ["distanceMm"],
+          },
+        },
+      ]),
+    );
+
+    const result = resolver.resolve("move_axis", { distanceMm: "diez" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/Argumentos inválidos/);
+  });
+
+  it("acepta args que sí cumplen el inputSchema", () => {
+    const resolver = new RegistryToolResolver(
+      fakeRegistry([
+        {
+          name: "move_axis",
+          description: "...",
+          inputSchema: {
+            type: "object",
+            properties: { distanceMm: { type: "number" } },
+            required: ["distanceMm"],
+          },
+        },
+      ]),
+    );
+
+    const result = resolver.resolve("move_axis", { distanceMm: 10 });
+    expect(result).toEqual({ ok: true, call: { ref: "move_axis", args: { distanceMm: 10 } } });
+  });
 });

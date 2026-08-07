@@ -185,14 +185,25 @@ export class GcodeDevicePlugin extends KanDeviceDriverPlugin {
         description: "Homea todos los ejes o los que se especifiquen (G28).",
         severity: "irreversible-material",
         supportsDryRun: false,
-        inputSchema: { axes: "string" },
+        inputSchema: {
+          type: "object",
+          properties: { axes: { type: "string" } },
+        },
       }),
       defineCapability({
         name: "move_axis",
         description: "Mueve un eje una distancia relativa en milímetros (G91/G0/G90).",
         severity: "irreversible-material",
         supportsDryRun: false,
-        inputSchema: { axis: "string", distanceMm: "number", feedRateMmPerMin: "number" },
+        inputSchema: {
+          type: "object",
+          properties: {
+            axis: { type: "string" },
+            distanceMm: { type: "number" },
+            feedRateMmPerMin: { type: "number" },
+          },
+          required: ["axis", "distanceMm"],
+        },
         targetParam: "axis",
       }),
       defineCapability({
@@ -200,7 +211,11 @@ export class GcodeDevicePlugin extends KanDeviceDriverPlugin {
         description: "Fija la temperatura objetivo del hotend o la cama, sin esperar a que la alcance (M104/M140).",
         severity: "irreversible-material",
         supportsDryRun: false,
-        inputSchema: { component: "string", celsius: "number" },
+        inputSchema: {
+          type: "object",
+          properties: { component: { type: "string" }, celsius: { type: "number" } },
+          required: ["component", "celsius"],
+        },
         targetParam: "component",
       }),
       defineCapability({
@@ -214,7 +229,12 @@ export class GcodeDevicePlugin extends KanDeviceDriverPlugin {
         description: "Enciende el spindle o láser (M3/M4) — acción de máxima severidad, podría causar daño físico real.",
         severity: "safety-critical",
         supportsDryRun: false,
-        inputSchema: { direction: "string", power: "number" },
+        // Ambos campos opcionales: 'direction' cae a "cw" y 'power' se omite
+        // del comando si no se especifica (ver validateDirection/validatePower).
+        inputSchema: {
+          type: "object",
+          properties: { direction: { type: "string" }, power: { type: "number" } },
+        },
       }),
       defineCapability({
         name: "stop_spindle_or_laser",
@@ -233,7 +253,11 @@ export class GcodeDevicePlugin extends KanDeviceDriverPlugin {
         description: "Envía una línea G-code arbitraria — para comandos no cubiertos por las capabilities estructuradas.",
         severity: "irreversible-material",
         supportsDryRun: false,
-        inputSchema: { line: "string" },
+        inputSchema: {
+          type: "object",
+          properties: { line: { type: "string" } },
+          required: ["line"],
+        },
       }),
     ];
   }

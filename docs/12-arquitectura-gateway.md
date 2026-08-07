@@ -169,7 +169,7 @@ interface GatewayTask {
 interface ToolDescriptor {
   name: string; // = GlobalCapability.ref
   description: string;
-  inputSchema: Record<string, unknown>;
+  inputSchema: JsonSchema; // JSON Schema real desde ADR-024 (docs/16 P1)
 }
 
 interface ToolRegistry {
@@ -195,9 +195,9 @@ interface ToolExecutor {
 }
 ```
 
-**Flujo:** `AIProviderPort.chat()` (implementado hoy por `GeminiProvider`, mañana por Claude/GPT/local sin cambiar nada de esto) recibe la lista de `ToolDescriptor` y devuelve, como máximo, una **propuesta** (`{name, args}`). `ToolResolver.resolve()` valida que ese nombre exista en el `ToolRegistry` real — si el LLM alucina un nombre, se rechaza aquí, antes de tocar nada. `ToolExecutor.execute()` es quien realmente llama al `TaskOrchestrator` (pasando antes por Audit Service). Ningún proveedor de IA tiene una línea de código que toque `TaskOrchestrator` — ese acoplamiento no existe ni puede existir por diseño.
+**Flujo:** `AIProviderPort.chat()` (implementado hoy por `GeminiProvider`, mañana por Claude/GPT/local sin cambiar nada de esto) recibe la lista de `ToolDescriptor` y devuelve, como máximo, una **propuesta** (`{name, args}`). `ToolResolver.resolve()` valida que ese nombre exista en el `ToolRegistry` real — si el LLM alucina un nombre, se rechaza aquí, antes de tocar nada — y, desde ADR-024, valida además los `args` contra el `inputSchema` (JSON Schema real) de esa tool, primera de las dos capas de defensa en profundidad (la segunda vive en `CapabilityRegistry`, del lado del Edge Agent). `ToolExecutor.execute()` es quien realmente llama al `TaskOrchestrator` (pasando antes por Audit Service). Ningún proveedor de IA tiene una línea de código que toque `TaskOrchestrator` — ese acoplamiento no existe ni puede existir por diseño.
 
-**Implementado en este incremento:** `CapabilityBackedToolRegistry`, `RegistryToolResolver`, `OrchestratorToolExecutor` (los tres respaldados por lo construido en las secciones 3 y 4).
+**Implementado en este incremento:** `CapabilityBackedToolRegistry`, `RegistryToolResolver`, `OrchestratorToolExecutor` (los tres respaldados por lo construido en las secciones 3 y 4). **Validación real de `inputSchema`:** ADR-024 (docs/00), `docs/16` P1.
 
 ## 6. Audit Service
 

@@ -56,14 +56,22 @@ export class DeviceSimulatorPlugin extends KanDeviceDriverPlugin {
         description: "Enciende o apaga el LED simulado.",
         severity: "reversible",
         supportsDryRun: false,
-        inputSchema: { on: "boolean" },
+        inputSchema: {
+          type: "object",
+          properties: { on: { type: "boolean" } },
+          required: ["on"],
+        },
       }),
       defineCapability({
         name: "move_axis",
         description: "Mueve el eje simulado una distancia en milímetros.",
         severity: "irreversible-material",
         supportsDryRun: true,
-        inputSchema: { distanceMm: "number" },
+        inputSchema: {
+          type: "object",
+          properties: { distanceMm: { type: "number" } },
+          required: ["distanceMm"],
+        },
       }),
     ];
   }

@@ -106,7 +106,15 @@ export class BluetoothDevicePlugin extends KanDeviceDriverPlugin {
         description: "Lee una característica GATT de un periférico BLE.",
         severity: "read-only",
         supportsDryRun: false,
-        inputSchema: { address: "string", serviceUuid: "string", characteristicUuid: "string" },
+        inputSchema: {
+          type: "object",
+          properties: {
+            address: { type: "string" },
+            serviceUuid: { type: "string" },
+            characteristicUuid: { type: "string" },
+          },
+          required: ["address", "serviceUuid", "characteristicUuid"],
+        },
         targetParam: "address",
       }),
       defineCapability({
@@ -114,7 +122,16 @@ export class BluetoothDevicePlugin extends KanDeviceDriverPlugin {
         description: "Escribe una característica GATT de un periférico BLE (valor en hexadecimal).",
         severity: "irreversible-material",
         supportsDryRun: false,
-        inputSchema: { address: "string", serviceUuid: "string", characteristicUuid: "string", value: "string" },
+        inputSchema: {
+          type: "object",
+          properties: {
+            address: { type: "string" },
+            serviceUuid: { type: "string" },
+            characteristicUuid: { type: "string" },
+            value: { type: "string" },
+          },
+          required: ["address", "serviceUuid", "characteristicUuid", "value"],
+        },
         targetParam: "address",
       }),
       defineCapability({
@@ -122,7 +139,11 @@ export class BluetoothDevicePlugin extends KanDeviceDriverPlugin {
         description: "Desconecta un periférico BLE previamente conectado.",
         severity: "reversible",
         supportsDryRun: false,
-        inputSchema: { address: "string" },
+        inputSchema: {
+          type: "object",
+          properties: { address: { type: "string" } },
+          required: ["address"],
+        },
         targetParam: "address",
       }),
     ];
