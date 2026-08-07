@@ -1,8 +1,10 @@
 # Propuesta de Arquitectura — App Móvil (React Native/Expo), roadmap P7
 
-> **Estado (2026-08-07): propuesta aprobada, incremento 3 de 6 completo.** ADR-029/030/031 oficializados en `docs/00-analisis-y-decisiones.md` e implementados. `apps/mobile` tiene scaffold (Expo SDK 57, NativeWind) + `expo-router` + login/registro con `Stack.Protected` (incremento 2) + **chat de solo texto con streaming real** (incremento 3): `expo/fetch` consumiendo `/api/chat` (SSE), autenticado con `Authorization: Bearer <token>` (ADR-029) usando el `access_token` de la sesión de Supabase, y el mismo `parseSseChunk` de `@kan/core` (ADR-030) que ya usa `apps/web`. Sin voz ni imagen todavía (incrementos 4-5). Verificado con `expo export` real (bundle exitoso) y typecheck/lint limpios en todo el monorepo; sin dispositivo/simulador en este entorno — falta probarlo interactivo contra un Gateway y un proyecto de Supabase reales. El resto de este documento sigue siendo la referencia de diseño — cada punto tiene problema/propuesta/costo/prioridad, mismo formato que `docs/16`.
+> **Estado (2026-08-07): propuesta aprobada, incrementos 4 y 5 de 6 completos.** ADR-029/030/031/032 oficializados en `docs/00-analisis-y-decisiones.md` e implementados. `apps/mobile` tiene scaffold + `expo-router` + login/registro (incremento 2) + chat de solo texto con streaming (incremento 3) + **voz** (incremento 4: `expo-audio` grabando, subida a `/api/voice/transcribe` por `XMLHttpRequest` — no `expo/fetch`, ver ADR-032 — y síntesis con `expo-speech`) + **imagen adjunta** (incremento 5: `expo-image-picker`, cámara y galería, mismo shape `{ data, mimeType }` que ya acepta el backend desde ADR-018). Cero cambios de backend en ninguno de los dos incrementos. Verificado con `expo export` real (bundle exitoso, 1730 módulos) y typecheck/lint limpios en todo el monorepo; sin dispositivo/simulador en este entorno — falta la prueba interactiva real de grabación, transcripción, síntesis y selección de imagen contra un dispositivo/SDK real.
 >
 > **Hallazgo del incremento 2, no anticipado en la propuesta original:** el barrel de `@kan/core` (`export *` de todo) arrastra `Message.ts`, que importa `randomUUID` de `"node:crypto"` — correcto para sus consumidores reales (`apps/web`, tests bajo Node) pero inexistente en Hermes/RN, lo que rompía el bundle de Metro apenas `apps/mobile` importaba cualquier cosa de `@kan/core` (incluso solo los casos de uso de auth, que no usan `Message.ts` en absoluto). Resuelto con un resolver de Metro en `apps/mobile/metro.config.js` que redirige `"node:crypto"` a un polyfill chico (`apps/mobile/polyfills/node-crypto.js`, sobre `expo-crypto`) — sin tocar `@kan/core`, que sigue siendo correcto para Node. Queda como precedente: cualquier futura pieza de `@kan/core` que use una API de Node rompe el bundle de mobile de la misma forma, hasta que se resuelva o se decida separar el barrel (fuera de alcance de este incremento).
+>
+> **Hallazgo de los incrementos 4-5, ver ADR-032:** `expo/fetch` (usado para el streaming del chat desde el incremento 3) tiene bugs documentados y no confirmados como resueltos en SDK 57 al subir `FormData` con archivos en nativo — la subida del audio grabado usa `XMLHttpRequest` en su lugar, deliberadamente distinto al mecanismo de red del streaming. La opción `voice` de `expo-speech` tampoco es confiable — la síntesis en mobile no fuerza una voz específica (a diferencia de web, que sí elige una voz en español), degradándose al default del sistema.
 
 ## 0. Qué ya está decidido (no se reabre acá)
 
@@ -101,18 +103,14 @@ Componentes: replicar los mismos 3-4 componentes chicos que ya existen en `apps/
 
 **Prioridad:** baja — documentar la decisión, no una tarea.
 
-## 5. Voz e imagen — mismo contrato de API, nuevas dependencias nativas de captura
+## 5. Voz e imagen — mismo contrato de API, nuevas dependencias nativas de captura — ✅ Implementado (2026-08-07, ADR-032)
 
-**Problema.** `useVoiceInput.ts` y `useSpeechSynthesis.ts` (`apps/web/lib/voice/`) usan APIs 100% de navegador (`MediaRecorder`, `window.speechSynthesis`) sin ninguna capa compartida — confirmado, cero abstracción cross-platform existente hoy para esto. Lo mismo la captura de imagen en `ConversationPanel.tsx` (`<input type="file">` + `FileReader`).
+**Problema (histórico).** `useVoiceInput.ts` y `useSpeechSynthesis.ts` (`apps/web/lib/voice/`) usan APIs 100% de navegador (`MediaRecorder`, `window.speechSynthesis`) sin ninguna capa compartida. Lo mismo la captura de imagen en `ConversationPanel.tsx` (`<input type="file">` + `FileReader`).
 
-**Propuesta — no hace falta tocar el backend, solo el lado nativo de captura:**
-- **STT:** se sigue usando `/api/voice/transcribe` (Groq, ya server-side y agnóstico de plataforma, ADR-014) — la app móvil solo graba localmente y sube el audio grabado, mismo contrato HTTP que ya usa `useVoiceInput.ts`. Grabación con **`expo-audio`** — `expo-av` fue removido en el SDK 55, no es una opción viable para un proyecto que arranca hoy en SDK 57.
-- **TTS:** **`expo-speech`** (motores nativos del OS, gratis) — mismo criterio que ADR-014 ya usó en web (preferir la síntesis nativa de la plataforma antes que sumar un proveedor de red).
-- **Imagen:** **`expo-image-picker`** (cámara + galería) produciendo el mismo shape `{ data: base64, mimeType }` que `Message.image` ya define (ADR-018) — cero cambios de backend, el límite de 4MB ya validado server-side sigue aplicando igual.
-
-**Costo estimado:** medio — son 3 flujos de UI nativos nuevos, aunque cada uno hable con un contrato de backend que ya existe y no cambia.
-
-**Prioridad:** media — se puede secuenciar después de que el chat de texto funcione end-to-end (ver §7).
+**Resuelto — cero cambios de backend, solo el lado nativo de captura:**
+- **STT:** sigue usando `/api/voice/transcribe` (Groq, ADR-014) sin cambios — `apps/mobile/lib/voice/useVoiceInput.ts` grava con **`expo-audio`** (`useAudioRecorder(RecordingPresets.HIGH_QUALITY)`, `.m4a`) y sube el archivo con `uploadAudio.ts`. **Corrección sobre la propuesta original:** la subida usa `XMLHttpRequest`, no `fetch`/`expo/fetch` — ver ADR-032 (`docs/00`) para el hallazgo que motivó ese cambio.
+- **TTS:** `apps/mobile/lib/voice/useSpeechSynthesis.ts` sobre **`expo-speech`** (`Speech.speak`), mismo criterio que ADR-014 en web (síntesis nativa del OS, gratis) — sin forzar una voz específica, ver ADR-032.
+- **Imagen:** `apps/mobile/lib/image/pickImage.ts` sobre **`expo-image-picker`** (cámara + galería, `base64: true`), produciendo el mismo shape `{ data, mimeType }` que `Message.image` ya define (ADR-018) — el límite de 4MB se replica en el cliente (mismo criterio de duplicación chica que ADR-031) y el servidor sigue validándolo igual.
 
 ## 6. Regla de seguridad explícita para `apps/mobile`
 
@@ -124,12 +122,14 @@ Componentes: replicar los mismos 3-4 componentes chicos que ya existen en `apps/
 
 Orden propuesto si se aprueba esta propuesta (cada incremento se confirma antes de empezarlo, mismo proceso de siempre):
 
-1. ✅ Scaffold de `apps/mobile` (Expo + NativeWind configurado con los tokens del §4) — completo. Falta conectar auth (§2) contra un proyecto de Supabase real (el cliente ya está armado, solo falta la pantalla de login y probar contra credenciales reales).
-2. ✅ Chat de solo texto contra `/api/chat` con streaming (§1, §3) — completo. Falta la prueba interactiva contra `expo/fetch` en un dispositivo/SDK real (no disponible en este entorno) antes de construir más encima.
-3. ADR-029 (§2) implementado, para que el chat de la app móvil tenga persistencia/memoria real, no el fallback en memoria.
-4. Voz (§5) — STT + TTS.
-5. Imagen (§5).
-6. Paridad de Dashboard (`/api/status`) y Automatizaciones — fuera del alcance de esta propuesta, a detallar cuando se llegue.
+1. ✅ Scaffold de `apps/mobile` (Expo + NativeWind configurado con los tokens del §4) — completo.
+2. ✅ Login/registro con `Stack.Protected` (§2) — completo.
+3. ✅ ADR-029 + chat de solo texto contra `/api/chat` con streaming (§1, §3) — completo.
+4. ✅ Voz (§5) — STT (`expo-audio` + `/api/voice/transcribe`) + TTS (`expo-speech`) — completo, ver ADR-032.
+5. ✅ Imagen (§5) — `expo-image-picker`, cámara y galería — completo.
+6. Paridad de Dashboard (`/api/status`) y Automatizaciones — fuera del alcance de esta propuesta, a detallar cuando se llegue. Único incremento pendiente de los 6 originalmente listados.
+
+**Pendiente en todos los incrementos por igual, no específico de ninguno:** ninguna de las pruebas interactivas reales (login contra Supabase real, streaming del chat, grabación/transcripción/síntesis de voz, selección de imagen) se pudo correr en este entorno de desarrollo — no hay simulador ni dispositivo disponible. Toda la verificación hecha hasta ahora es tipos, lint, y `expo export` (bundle exitoso). La primera prueba real en un dispositivo/simulador queda pendiente de que el usuario la corra.
 
 ## 8. Documentos relacionados
 
