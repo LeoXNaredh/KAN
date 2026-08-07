@@ -1,0 +1,279 @@
+"use client";
+
+import { useEffect, useState, type FormEvent } from "react";
+import { Clock, Loader2, Repeat, Trash2, TriangleAlert } from "lucide-react";
+import { Card } from "@/components/ui/Card";
+import type { ScheduledJobView } from "@/lib/jobs/types";
+
+interface ToolOption {
+  name: string;
+  description: string;
+}
+
+type ScheduleType = "cron" | "once";
+
+const CRON_PRESETS: Array<{ label: string; value: string }> = [
+  { label: "Cada hora", value: "0 * * * *" },
+  { label: "Cada 5 min", value: "*/5 * * * *" },
+  { label: "Diario a las 8:00", value: "0 8 * * *" },
+  { label: "Cada lunes 9:00", value: "0 9 * * 1" },
+];
+
+function formatSchedule(job: ScheduledJobView): string {
+  if (job.cron) return `Cron: ${job.cron}`;
+  if (job.runAt) return `Una vez: ${new Date(job.runAt).toLocaleString()}`;
+  return "—";
+}
+
+/**
+ * UI de Automatizaciones (P6): conecta con /api/jobs y /api/tools, que a su
+ * vez son BFFs finos sobre GET/POST /v1/jobs, DELETE /v1/jobs/:id y
+ * GET /v1/tools del Gateway (docs/12 §10). El formulario de argumentos usa
+ * un textarea JSON libre en vez de un formulario generado por inputSchema —
+ * las capabilities reales de hoy son mayormente sin argumentos o muy
+ * simples; un generador dinámico de formularios queda para cuando haya un
+ * caso de uso real que lo justifique (mismo criterio que ADR-015 con RAG).
+ */
+export function AutomatizacionesClient() {
+  const [jobs, setJobs] = useState<ScheduledJobView[]>([]);
+  const [tools, setTools] = useState<ToolOption[]>([]);
+  const [gatewayOnline, setGatewayOnline] = useState(true);
+  const [loading, setLoading] = useState(true);
+
+  const [capabilityRef, setCapabilityRef] = useState("");
+  const [scheduleType, setScheduleType] = useState<ScheduleType>("cron");
+  const [cron, setCron] = useState(CRON_PRESETS[0].value);
+  const [runAtLocal, setRunAtLocal] = useState("");
+  const [inputJson, setInputJson] = useState("{}");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  // Bump para forzar un refetch desde un event handler (crear/cancelar) sin
+  // llamar setState directo dentro del efecto (react-hooks/set-state-in-effect)
+  // — mismo criterio que useSystemStatus.ts/TopBar.tsx.
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const [jobsResponse, toolsResponse] = await Promise.all([fetch("/api/jobs"), fetch("/api/tools")]);
+        const jobsData = await jobsResponse.json();
+        const toolsData = await toolsResponse.json();
+        if (cancelled) return;
+        setJobs(jobsData.jobs ?? []);
+        setGatewayOnline(jobsData.gatewayOnline ?? false);
+        setTools(toolsData.tools ?? []);
+      } catch {
+        if (!cancelled) {
+          setJobs([]);
+          setGatewayOnline(false);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
+
+  async function handleCreate(event: FormEvent) {
+    event.preventDefault();
+    setFormError(null);
+
+    if (!capabilityRef) {
+      setFormError("Elegí una capability.");
+      return;
+    }
+
+    let input: unknown = {};
+    if (inputJson.trim()) {
+      try {
+        input = JSON.parse(inputJson);
+      } catch {
+        setFormError("El campo 'Argumentos' no es JSON válido.");
+        return;
+      }
+    }
+
+    if (scheduleType === "once" && !runAtLocal) {
+      setFormError("Elegí una fecha y hora.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          capabilityRef,
+          input,
+          cron: scheduleType === "cron" ? cron : undefined,
+          runAt: scheduleType === "once" ? new Date(runAtLocal).toISOString() : undefined,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Error desconocido");
+
+      setCapabilityRef("");
+      setInputJson("{}");
+      setRunAtLocal("");
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCancel(jobId: string) {
+    if (!confirm("¿Cancelar este job programado?")) return;
+    await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" });
+    setReloadKey((key) => key + 1);
+  }
+
+  function toolLabel(ref: string): string {
+    return tools.find((tool) => tool.name === ref)?.description ?? ref;
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-lg font-semibold text-ink">Automatizaciones</h1>
+        <p className="text-sm text-ink-faint">Programa capabilities para que KAN las ejecute sola, en un horario o de forma recurrente.</p>
+      </div>
+
+      {!gatewayOnline && (
+        <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+          No se pudo conectar con el Gateway — no se pueden crear ni ver automatizaciones ahora mismo.
+        </div>
+      )}
+
+      <Card>
+        <h2 className="mb-3 text-sm font-medium text-ink-muted">Programar un job nuevo</h2>
+        <form onSubmit={handleCreate} className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-ink-muted">Capability</span>
+            <select
+              className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              value={capabilityRef}
+              onChange={(event) => setCapabilityRef(event.target.value)}
+              disabled={!gatewayOnline || tools.length === 0}
+            >
+              <option value="">{tools.length === 0 ? "Sin capabilities disponibles" : "Elegí una capability..."}</option>
+              {tools.map((tool) => (
+                <option key={tool.name} value={tool.name}>
+                  {tool.description || tool.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex gap-4 text-sm">
+            <label className="flex items-center gap-1.5 text-ink-muted">
+              <input type="radio" checked={scheduleType === "cron"} onChange={() => setScheduleType("cron")} />
+              Recurrente (cron)
+            </label>
+            <label className="flex items-center gap-1.5 text-ink-muted">
+              <input type="radio" checked={scheduleType === "once"} onChange={() => setScheduleType("once")} />
+              Una sola vez
+            </label>
+          </div>
+
+          {scheduleType === "cron" ? (
+            <div className="flex flex-col gap-2">
+              <input
+                className="rounded-lg border border-line bg-surface-3 px-3 py-2 font-mono text-sm text-ink outline-none focus:border-accent"
+                value={cron}
+                onChange={(event) => setCron(event.target.value)}
+                placeholder="0 8 * * *"
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {CRON_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => setCron(preset.value)}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      cron === preset.value ? "border-accent bg-accent/10 text-accent" : "border-line text-ink-faint hover:text-ink"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <input
+              type="datetime-local"
+              className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              value={runAtLocal}
+              onChange={(event) => setRunAtLocal(event.target.value)}
+            />
+          )}
+
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-ink-muted">Argumentos (JSON, opcional)</span>
+            <textarea
+              className="min-h-[4.5rem] rounded-lg border border-line bg-surface-3 px-3 py-2 font-mono text-sm text-ink outline-none focus:border-accent"
+              value={inputJson}
+              onChange={(event) => setInputJson(event.target.value)}
+            />
+          </label>
+
+          {formError && (
+            <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">{formError}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting || !gatewayOnline}
+            className="self-start rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors duration-fast hover:brightness-110 disabled:opacity-50"
+          >
+            {submitting ? "Programando..." : "Programar"}
+          </button>
+        </form>
+      </Card>
+
+      <Card>
+        <h2 className="mb-3 text-sm font-medium text-ink-muted">Jobs programados</h2>
+        {loading ? (
+          <p className="flex items-center gap-2 text-sm text-ink-faint">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Cargando...
+          </p>
+        ) : jobs.length === 0 ? (
+          <p className="text-sm text-ink-faint">No hay automatizaciones programadas todavía.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {jobs.map((job) => (
+              <li key={job.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-3 px-3 py-2 text-sm">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-ink">{toolLabel(job.taskRequest.capabilityRef)}</span>
+                  <span className="flex items-center gap-1 text-xs text-ink-faint">
+                    {job.cron ? <Repeat className="h-3 w-3" aria-hidden="true" /> : <Clock className="h-3 w-3" aria-hidden="true" />}
+                    {formatSchedule(job)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Cancelar job"
+                  title="Cancelar job"
+                  onClick={() => handleCancel(job.id)}
+                  className="shrink-0 rounded-md p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  );
+}
