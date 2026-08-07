@@ -167,6 +167,16 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Por qué.** Con 10 paquetes y una sola política de lint real (más `eslint-config-next` para web), un paquete npm interno completo era over-engineering — un archivo compartido con una ruta relativa cumple lo mismo con una fracción del código. `packages/config` queda como placeholder para el día que haga falta compartir algo más que una config de lint (ej. tokens de design system).
 
+### ADR-017: Identidad y Auth vía puertos — Supabase como primer (y único) adaptador
+
+**Contexto.** El pivote de producto (`VISION_PRODUCT_v0.2.md`) puso a la identidad de usuario (P0 del roadmap, `docs/17`) como la base sobre la que se construyen memoria, dispositivos, voz, automatizaciones y perfiles en incrementos futuros. El usuario pidió explícitamente que esto se diseñara sin tener que rehacer arquitectura después, y que Next.js (`apps/web`) actuara solo como BFF — nunca lógica de negocio directa contra el SDK de un proveedor.
+
+**Decisión.** `AuthPort` y `UserProfilePort` viven en `@kan/core` (domain), igual que `AIProviderPort`/`ConversationRepositoryPort`/`ToolProviderPort`. El adaptador concreto vive en un paquete nuevo, `@kan/supabase-adapter` (mismo rol que `@kan/ai-abstraction` para el proveedor de IA): recibe un `SupabaseClient` ya construido por inyección, así el adaptador en sí no conoce Next.js ni maneja cookies — solo llama `.auth.*`/`.from(...)` del cliente que le pasan. Lo único atado a Next.js queda en `apps/web` (`lib/supabase/server.ts`, `middleware.ts`): construir el cliente por-request leyendo cookies (`@supabase/ssr`, patrón oficial para App Router) — es plomería de transporte, no lógica de negocio, igual que `WsConnectionManager` es infra y no aplicación en el Gateway (ADR-009). Sesión vía cookies (no localStorage/JWT manual) + RLS en la base de datos como línea de defensa real, no solo checks en la app. Se usa la `anon key` + sesión del usuario para todo — no se requiere `service_role key` en este incremento, ninguna operación necesita saltarse RLS todavía.
+
+**Por qué.** Separar el puerto (domain, sin dependencias) del adaptador (paquete propio, con el SDK de Supabase) es lo que permite que un futuro cliente móvil (React Native, roadmap P7) reutilice `@kan/supabase-adapter` sin rediseño — solo cambia quién construye el `SupabaseClient` y quién le inyecta las cookies/tokens. Es el mismo patrón que ya demostró funcionar con `AIProviderPort`/`GeminiProvider`: cambiar de proveedor, o añadir un segundo consumidor del mismo puerto, nunca debería tocar el dominio.
+
+**Consecuencia.** El esquema de base de datos (`supabase/migrations/`) se crea completo desde este incremento — `profiles`, `conversations`/`messages`, `user_preferences`, `memories`, `projects` — aunque varias tablas queden sin CRUD todavía (P0.2 y posteriores), para no tener que migrar esquema en cada incremento de identidad/memoria. Todas con RLS activado desde el día uno.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

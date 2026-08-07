@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ToolCallProposal } from "@kan/plugin-contract";
 
 export type MessageRole = "user" | "assistant" | "tool";
@@ -10,6 +11,8 @@ export interface ToolResultSummary {
 }
 
 export interface Message {
+  /** Estable desde la creación — permite upsert idempotente en el adaptador de persistencia (P0.2). */
+  id: string;
   role: MessageRole;
   content: string;
   createdAt: string;
@@ -20,5 +23,5 @@ export interface Message {
 }
 
 export function createMessage(role: MessageRole, content: string): Message {
-  return { role, content, createdAt: new Date().toISOString() };
+  return { id: randomUUID(), role, content, createdAt: new Date().toISOString() };
 }

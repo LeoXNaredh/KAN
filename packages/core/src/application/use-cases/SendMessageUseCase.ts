@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { appendMessage, createConversation, type Conversation } from "../../domain/entities/Conversation";
 import { createMessage, type Message } from "../../domain/entities/Message";
 import type { AIProviderPort } from "../../domain/ports/AIProviderPort";
 import type { ConversationRepositoryPort } from "../../domain/ports/ConversationRepositoryPort";
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
+import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
 
 const SYSTEM_PROMPT =
   "Eres KAN, un asistente de IA capaz de controlar dispositivos físicos a través de plugins " +
@@ -38,6 +40,7 @@ export class SendMessageUseCase {
     private readonly aiProvider: AIProviderPort,
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly toolProvider?: ToolProviderPort,
+    private readonly memoryContext?: MemoryContextPort,
   ) {}
 
   async execute(input: SendMessageInput): Promise<SendMessageOutput> {
@@ -48,6 +51,7 @@ export class SendMessageUseCase {
     conversation = appendMessage(conversation, createMessage("user", input.userMessage));
 
     const tools = await this.safeListTools();
+    const systemPrompt = await this.buildSystemPrompt();
     let finished = false;
     const startedAt = Date.now();
 
@@ -56,13 +60,14 @@ export class SendMessageUseCase {
 
       const response = await this.aiProvider.chat({
         messages: conversation.messages,
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt,
         tools,
       });
 
       if (response.toolCalls?.length && this.toolProvider) {
         for (const call of response.toolCalls) {
           const assistantMessage: Message = {
+            id: randomUUID(),
             role: "assistant",
             content: response.content ?? "",
             createdAt: new Date().toISOString(),
@@ -72,6 +77,7 @@ export class SendMessageUseCase {
 
           const result = await this.toolProvider.executeTool(call.name, call.args);
           const toolMessage: Message = {
+            id: randomUUID(),
             role: "tool",
             content: summarizeToolResult(call.name, result),
             createdAt: new Date().toISOString(),
@@ -106,6 +112,23 @@ export class SendMessageUseCase {
     } catch {
       // El Gateway no está disponible — el chat sigue funcionando sin tools.
       return undefined;
+    }
+  }
+
+  /**
+   * Memoria inyectada como contexto adicional del systemPrompt (docs/17
+   * §3.6) — mismo criterio que las tools: si falla o no hay proveedor de
+   * memoria configurado, el chat sigue funcionando igual, solo sin memoria.
+   */
+  private async buildSystemPrompt(): Promise<string> {
+    if (!this.memoryContext) return SYSTEM_PROMPT;
+    try {
+      const memories = await this.memoryContext.listRelevant();
+      if (!memories.length) return SYSTEM_PROMPT;
+      const facts = memories.map((m) => `- [${m.category}] ${m.key}: ${JSON.stringify(m.value)}`).join("\n");
+      return `${SYSTEM_PROMPT}\n\nEsto es lo que ya sabes de este usuario (úsalo si es relevante, no lo repitas sin que aporte):\n${facts}`;
+    } catch {
+      return SYSTEM_PROMPT;
     }
   }
 }

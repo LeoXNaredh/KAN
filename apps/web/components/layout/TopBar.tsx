@@ -1,17 +1,30 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { Menu } from "lucide-react";
+import { Menu, LogOut } from "lucide-react";
+import type { UserIdentity } from "@kan/core";
 import { StatusDot, type StatusLevel } from "@/components/ui/StatusDot";
 import { useSystemStatus } from "@/lib/status/useSystemStatus";
+import { signOutAction } from "@/lib/auth/actions";
+
+// `getSnapshot()` debe devolver el mismo valor entre llamadas hasta que el
+// store realmente cambie — React vuelve a llamarlo justo después de
+// renderizar para detectar tearing, y si devolviera Date.now() en vivo casi
+// siempre difiere por unos milisegundos, forzando un re-render que se repite
+// sin fin ("Maximum update depth exceeded"). Por eso el timestamp solo se
+// actualiza dentro del propio tick del intervalo, nunca al leerlo.
+let cachedNow = Date.now();
 
 function subscribeToClock(callback: () => void) {
-  const interval = setInterval(callback, 1000);
+  const interval = setInterval(() => {
+    cachedNow = Date.now();
+    callback();
+  }, 1000);
   return () => clearInterval(interval);
 }
 
 function getClockSnapshot(): number {
-  return Date.now();
+  return cachedNow;
 }
 
 function getServerClockSnapshot(): number {
@@ -39,7 +52,7 @@ function overallConnection(
   return { level: "online", label: "Todo en línea" };
 }
 
-export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
+export function TopBar({ onOpenMenu, user }: { onOpenMenu: () => void; user: UserIdentity | undefined }) {
   const now = useClock();
   const { status } = useSystemStatus();
   const connection = overallConnection(status);
@@ -71,6 +84,20 @@ export function TopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
           </p>
         </div>
         <StatusDot level={connection.level} label={connection.label} />
+        {user && (
+          <div className="flex items-center gap-2 border-l border-line pl-4">
+            <span className="hidden text-sm text-ink-muted sm:inline">{user.email}</span>
+            <form action={signOutAction}>
+              <button
+                type="submit"
+                aria-label="Cerrar sesión"
+                className="rounded-lg p-2 text-ink-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </form>
+          </div>
+        )}
       </div>
     </header>
   );

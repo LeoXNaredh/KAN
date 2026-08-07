@@ -4,17 +4,18 @@ import { toGeminiContent, toGeminiSchema, mapSchemaType, toFunctionDeclaration }
 
 describe("toGeminiContent", () => {
   it("mapea un mensaje de usuario a role 'user'", () => {
-    const message: Message = { role: "user", content: "hola", createdAt: "2026-01-01T00:00:00.000Z" };
+    const message: Message = { id: "m1", role: "user", content: "hola", createdAt: "2026-01-01T00:00:00.000Z" };
     expect(toGeminiContent(message)).toEqual({ role: "user", parts: [{ text: "hola" }] });
   });
 
   it("mapea un mensaje assistant sin toolCall a role 'model' con texto", () => {
-    const message: Message = { role: "assistant", content: "respuesta", createdAt: "2026-01-01T00:00:00.000Z" };
+    const message: Message = { id: "m2", role: "assistant", content: "respuesta", createdAt: "2026-01-01T00:00:00.000Z" };
     expect(toGeminiContent(message)).toEqual({ role: "model", parts: [{ text: "respuesta" }] });
   });
 
   it("mapea un mensaje assistant CON toolCall a un functionCall part (no texto plano)", () => {
     const message: Message = {
+      id: "m3",
       role: "assistant",
       content: "",
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -28,6 +29,7 @@ describe("toGeminiContent", () => {
 
   it("mapea un mensaje 'tool' a role 'user' con functionResponse (la API rechaza role 'function')", () => {
     const message: Message = {
+      id: "m4",
       role: "tool",
       content: "Resultado: 23",
       createdAt: "2026-01-01T00:00:00.000Z",
