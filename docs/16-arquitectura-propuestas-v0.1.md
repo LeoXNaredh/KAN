@@ -52,15 +52,13 @@
 
 **Resuelto.** `express-rate-limit` en `createRoutes()` (`apps/gateway`), aplicado antes del chequeo de token — 120 req/min por IP por defecto, configurable vía env. `WsConnectionManager` gana un cap de conexiones concurrentes (default 50), aplicado en `handleUpgrade()`. **Precisión sobre la propuesta original:** el cap es **global**, no "por token" — hoy el Gateway usa un único token compartido para todos los Edge Agents, sin identidad por token; un límite "por token" no tiene sentido hasta que exista esa identidad (P2). Ver ADR-025 (`docs/00`).
 
-## P7 — Streaming de respuestas del chat
+## P7 — Streaming de respuestas del chat — ✅ Implementado, alcance parcial (2026-08-07, ADR-027)
 
-**Problema.** `SendMessageUseCase.execute()` devuelve la conversación completa solo al terminar todas las rondas de tool-calling — con el simulador esto es casi instantáneo, pero en cuanto una capability real tarde segundos/minutos (una impresión 3D, un corte de CNC), el usuario se queda mirando "KAN está pensando…" sin ninguna señal de progreso intermedio.
+**Problema (histórico).** `SendMessageUseCase.execute()` devolvía la conversación completa solo al terminar todas las rondas de tool-calling — con el simulador esto era casi instantáneo, pero en cuanto una capability real tarda segundos/minutos, el usuario se quedaba mirando "KAN está pensando…" sin ninguna señal de progreso intermedio.
 
-**Propuesta.** `/api/chat` como respuesta streaming (Server-Sent Events o `ReadableStream` de Next.js) en vez de JSON de una sola pieza; `SendMessageUseCase` emite eventos incrementales (tool propuesta → tool ejecutándose → tool completada → respuesta final) que la ruta traduce a chunks SSE. El Gateway ya tiene la pieza que falta del lado servidor: `TaskOrchestrator` descarta hoy la telemetría de tipo `"progress"` (`handleTelemetry`, `if (message.status === "progress") return`) — literalmente reservado para esto y sin usar.
+**Resuelto (streaming a nivel de loop, no intra-capability).** `/api/chat` responde con SSE; `SendMessageUseCase.execute()` gana un callback opcional (`onEvent`) que emite `tool_call`/`tool_result`/`final` a medida que el loop ya existente los produce. **Corrección sobre la propuesta original:** el seam de `"progress"` que se asumía como "la pieza que falta del lado del Gateway" está vacío en los dos extremos — nadie lo emite nunca, ni el Edge Agent ni ningún plugin, y `TelemetryMessage` tampoco tiene un shape para progreso incremental. Construir eso de verdad (progreso *dentro* de una sola capability) habría exigido protocolo nuevo + cambios en cada plugin + `CapabilityRegistry`/`ToolExecutor`/`GatewayToolProvider`, muy por encima del costo estimado — se implementó en su lugar el streaming de eventos del loop, que sí es proporcional al costo original. `ToolProviderPort.executeTool()` sigue siendo una única espera bloqueante; la línea `if (message.status === "progress") return;` en `TaskOrchestrator` queda intacta, seam reservado y sin uso, ahora documentado como tal explícitamente.
 
-**Costo estimado:** medio — cambia la forma de `SendMessageUseCase` (de retornar una promesa a exponer un iterable/callback de progreso) y la ruta HTTP de `apps/web`.
-
-**Prioridad:** baja para v0.1 (el simulador no lo necesita), **sube a alta en cuanto exista el primer dispositivo con operaciones de duración real** (impresión 3D, corte CNC) — momento en que un chat sin feedback de progreso se sentiría roto, no solo mejorable.
+**Hallazgo adicional, arreglado en el mismo incremento:** `TaskOrchestrator.TASK_TIMEOUT_MS` (15s) era menor que `plugin-gcode`'s `HOME_TIMEOUT_MS` (30s) — `home_axes`, el caso real de "operación de 30s+" que motivó este pedido, ya fallaba por timeout antes de completarse, sin relación con el streaming. Subidos en cadena: Gateway 40s, `GatewayToolProvider` 45s, `SendMessageUseCase` 90s. Ver ADR-027 (`docs/00`) para el detalle, el riesgo de duración de función serverless sin resolver, y la verificación manual realizada contra la API real de Gemini.
 
 ## P8 — `LoggerPort` para `gateway-core` (consistencia con `edge-agent-core`)
 
@@ -83,6 +81,6 @@
 | P3 | Persistencia real del Gateway | ✅ Implementado, alcance parcial (ADR-026) | Multi-instancia (Redis para Agent/Capability Registry) queda pendiente |
 | P4 | Auditoría de invocaciones manuales | ✅ Implementado, alcance parcial (ADR-025) | Auditar confirmaciones manuales queda pendiente |
 | P6 | Rate limiting | ✅ Implementado (ADR-025) | — |
-| P7 | Streaming del chat | Baja → Alta | El primer dispositivo con operaciones largas |
+| P7 | Streaming del chat | ✅ Implementado, alcance parcial (ADR-027) | Progreso real intra-capability queda pendiente |
 | P5 | Multi-dispositivo / tareas compuestas | Baja | Un caso de uso real con >1 dispositivo del mismo tipo |
 | P8 | `LoggerPort` compartido | Muy baja | Nada — higiene de consistencia |

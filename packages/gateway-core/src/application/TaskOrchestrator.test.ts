@@ -141,7 +141,7 @@ describe("TaskOrchestrator", () => {
     const ref = registerOnlineAgent(agentRegistry, capabilityRegistry, "agent-1");
 
     const resultPromise = orchestrator.submit({ capabilityRef: ref, input: {} });
-    vi.advanceTimersByTime(15_001);
+    vi.advanceTimersByTime(40_001);
 
     await expect(resultPromise).resolves.toEqual({
       status: "failed",

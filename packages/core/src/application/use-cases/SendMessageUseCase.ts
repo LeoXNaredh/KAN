@@ -19,7 +19,10 @@ const MAX_TOOL_ROUNDS = 4;
 // llamada individual): evita que una cadena de rondas se acerque al límite
 // de duración de una función serverless (ADR-001, docs/00) — hallazgo A11
 // de docs/13. No aborta una llamada en curso, solo impide iniciar otra ronda.
-const MAX_TOTAL_DURATION_MS = 45_000;
+// 90s (ADR-027, docs/16 P7): presupuesto para una tool call lenta (el
+// Gateway ya puede tardar hasta ~40s en TaskOrchestrator, ver
+// GatewayToolProvider) más una ronda final del LLM.
+const MAX_TOTAL_DURATION_MS = 90_000;
 
 export interface SendMessageInput {
   conversationId?: string;
@@ -31,6 +34,17 @@ export interface SendMessageInput {
 export interface SendMessageOutput {
   conversation: Conversation;
 }
+
+/**
+ * Eventos incrementales del loop de function-calling (ADR-027, docs/16 P7)
+ * — streaming a nivel de "qué está haciendo el loop", no progreso fino
+ * dentro de una sola capability (`ToolProviderPort.executeTool()` sigue
+ * siendo una única espera bloqueante).
+ */
+export type ChatStreamEvent =
+  | { type: "tool_call"; name: string; args: unknown }
+  | { type: "tool_result"; name: string; success: boolean; data?: unknown; error?: string }
+  | { type: "final"; content: string };
 
 /**
  * Versión con function-calling del Agent Orchestrator (docs/03, docs/05):
@@ -47,7 +61,7 @@ export class SendMessageUseCase {
     private readonly personalityContext?: PersonalityContextPort,
   ) {}
 
-  async execute(input: SendMessageInput): Promise<SendMessageOutput> {
+  async execute(input: SendMessageInput, onEvent?: (event: ChatStreamEvent) => void): Promise<SendMessageOutput> {
     let conversation = input.conversationId
       ? (await this.conversationRepository.getById(input.conversationId)) ?? createConversation()
       : createConversation();
@@ -78,8 +92,16 @@ export class SendMessageUseCase {
             toolCall: call,
           };
           conversation = appendMessage(conversation, assistantMessage);
+          onEvent?.({ type: "tool_call", name: call.name, args: call.args });
 
           const result = await this.toolProvider.executeTool(call.name, call.args);
+          onEvent?.({
+            type: "tool_result",
+            name: call.name,
+            success: result.success,
+            data: result.data,
+            error: result.error,
+          });
           const toolMessage: Message = {
             id: randomUUID(),
             role: "tool",
@@ -93,15 +115,15 @@ export class SendMessageUseCase {
       }
 
       conversation = appendMessage(conversation, createMessage("assistant", response.content ?? ""));
+      onEvent?.({ type: "final", content: response.content ?? "" });
       finished = true;
       break;
     }
 
     if (!finished) {
-      conversation = appendMessage(
-        conversation,
-        createMessage("assistant", "No pude completar la solicitud usando las herramientas disponibles tras varios intentos."),
-      );
+      const fallbackContent = "No pude completar la solicitud usando las herramientas disponibles tras varios intentos.";
+      conversation = appendMessage(conversation, createMessage("assistant", fallbackContent));
+      onEvent?.({ type: "final", content: fallbackContent });
     }
 
     await this.conversationRepository.save(conversation);

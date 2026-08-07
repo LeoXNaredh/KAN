@@ -6,13 +6,14 @@ export interface GatewayToolProviderConfig {
   internalToken: string;
 }
 
-// El Gateway resuelve execute-tool en hasta ~15s (timeout interno de su
-// TaskOrchestrator) — este límite debe ser mayor para no cortarlo antes de
-// tiempo. listTools solo lee un registro en memoria, así que puede ser corto.
-// Sin esto, un Gateway que acepta la conexión TCP pero no responde dejaba el
-// chat colgado indefinidamente (hallazgo A7 de docs/13).
+// El Gateway resuelve execute-tool en hasta ~40s (timeout interno de su
+// TaskOrchestrator, ADR-027 — antes 15s, insuficiente para home_axes/plugin-gcode)
+// — este límite debe ser mayor para no cortarlo antes de tiempo. listTools
+// solo lee un registro en memoria, así que puede ser corto. Sin esto, un
+// Gateway que acepta la conexión TCP pero no responde dejaba el chat colgado
+// indefinidamente (hallazgo A7 de docs/13).
 const LIST_TOOLS_TIMEOUT_MS = 5_000;
-const EXECUTE_TOOL_TIMEOUT_MS = 20_000;
+const EXECUTE_TOOL_TIMEOUT_MS = 45_000;
 
 /**
  * Implementación HTTP de ToolProviderPort (docs/12): apps/web nunca habla

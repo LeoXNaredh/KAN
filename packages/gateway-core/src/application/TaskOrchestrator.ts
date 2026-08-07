@@ -6,7 +6,10 @@ import type { AgentRegistry } from "./AgentRegistry";
 import type { GlobalCapabilityRegistry } from "./GlobalCapabilityRegistry";
 import type { GatewayBus } from "./GatewayBus";
 
-const TASK_TIMEOUT_MS = 15_000;
+// 40s (ADR-027, docs/16 P7): cubre la operación más lenta conocida hoy
+// (`home_axes` en plugin-gcode, HOME_TIMEOUT_MS=30s) más margen de
+// red/dispatch — antes 15s, insuficiente para esa capability.
+const TASK_TIMEOUT_MS = 40_000;
 /** Cuánto se conserva una tarea resuelta para poder consultarla vía getTask() antes de purgarla (evita crecimiento sin límite — hallazgo A3 de docs/13). */
 const TASK_RETENTION_MS = 5 * 60_000;
 

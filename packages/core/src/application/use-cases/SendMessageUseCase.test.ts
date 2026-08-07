@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SendMessageUseCase } from "./SendMessageUseCase";
+import { SendMessageUseCase, type ChatStreamEvent } from "./SendMessageUseCase";
 import { InMemoryConversationRepository } from "../../infra/InMemoryConversationRepository";
 import type { AIProviderPort, ChatRequest, ChatResponse } from "../../domain/ports/AIProviderPort";
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
@@ -71,6 +71,54 @@ describe("SendMessageUseCase", () => {
     expect(conversation.messages[2].toolResult).toMatchObject({ name: "read_sensor", success: true });
     expect(conversation.messages[3].content).toBe("El sensor marca 23°C.");
     expect(toolProvider.executedCalls).toEqual([{ name: "read_sensor", args: {} }]);
+  });
+
+  it("emite tool_call -> tool_result -> final en orden vía onEvent (ADR-027, docs/16 P7)", async () => {
+    const ai = new ScriptedAIProvider([
+      { toolCalls: [{ name: "read_sensor", args: { unit: "celsius" } }] },
+      { content: "El sensor marca 23°C." },
+    ]);
+    const toolProvider = new FakeToolProvider(
+      [{ name: "read_sensor", description: "...", inputSchema: {} }],
+      { success: true, data: { temperatureC: 23 } },
+    );
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), toolProvider);
+    const events: ChatStreamEvent[] = [];
+
+    await useCase.execute({ userMessage: "lee el sensor" }, (event) => events.push(event));
+
+    expect(events).toEqual([
+      { type: "tool_call", name: "read_sensor", args: { unit: "celsius" } },
+      { type: "tool_result", name: "read_sensor", success: true, data: { temperatureC: 23 }, error: undefined },
+      { type: "final", content: "El sensor marca 23°C." },
+    ]);
+  });
+
+  it("sin onEvent, el comportamiento es idéntico a no pasarlo (aditivo, no rompe llamadas existentes)", async () => {
+    const ai = new ScriptedAIProvider([{ content: "hola" }]);
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository());
+
+    const { conversation } = await useCase.execute({ userMessage: "hola" });
+
+    expect(conversation.messages.at(-1)?.content).toBe("hola");
+  });
+
+  it("emite un evento final también en el fallback de MAX_TOOL_ROUNDS, con el mismo texto persistido", async () => {
+    const alwaysToolCalls = Array.from({ length: 10 }, () => ({
+      toolCalls: [{ name: "read_sensor", args: {} }],
+    }));
+    const ai = new ScriptedAIProvider(alwaysToolCalls);
+    const toolProvider = new FakeToolProvider(
+      [{ name: "read_sensor", description: "...", inputSchema: {} }],
+      { success: true, data: {} },
+    );
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), toolProvider);
+    const events: ChatStreamEvent[] = [];
+
+    const { conversation } = await useCase.execute({ userMessage: "hola" }, (event) => events.push(event));
+
+    const finalEvent = events.at(-1);
+    expect(finalEvent).toEqual({ type: "final", content: conversation.messages.at(-1)?.content });
   });
 
   it("pasa el catálogo de tools al proveedor de IA en cada ronda", async () => {

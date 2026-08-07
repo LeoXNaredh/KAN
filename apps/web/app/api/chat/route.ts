@@ -1,5 +1,5 @@
 import { GeminiProvider, ModelRouter } from "@kan/ai-abstraction";
-import type { SendMessageUseCase } from "@kan/core";
+import type { ChatStreamEvent, Conversation, SendMessageUseCase } from "@kan/core";
 import { NextResponse } from "next/server";
 import { GatewayToolProvider } from "@/lib/gateway/GatewayToolProvider";
 import { buildSendMessageUseCase } from "@/lib/chat/composition";
@@ -62,6 +62,22 @@ function parseImage(body: unknown): ImageParseResult {
   return { ok: true, image: { data, mimeType } };
 }
 
+/**
+ * Eventos que viajan por el stream SSE (ADR-027, docs/16 P7): los
+ * `ChatStreamEvent` que ya emite `SendMessageUseCase` (tool_call/tool_result/
+ * final) más un evento de cierre `done` — la conversación persistida
+ * completa, o un error si algo falló dentro de `execute()`. El status HTTP
+ * ya no puede cambiar una vez que el stream arrancó (siempre 200), así que
+ * un error dentro del loop viaja como dato del stream, no como código de
+ * estado — a diferencia de los errores de validación/configuración de abajo,
+ * que ocurren *antes* de abrir el stream y sí devuelven un status normal.
+ */
+type ChatSseEvent = ChatStreamEvent | { type: "done"; conversation: Conversation } | { type: "done"; error: string };
+
+function sseChunk(event: ChatSseEvent): string {
+  return `data: ${JSON.stringify(event)}\n\n`;
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const userMessage = typeof body?.message === "string" ? body.message.trim() : "";
@@ -75,22 +91,46 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: imageResult.error }, { status: 400 });
   }
 
+  let useCase: SendMessageUseCase;
   try {
-    const useCase = await buildUseCase();
-    const { conversation } = await useCase.execute({
-      conversationId: typeof body?.conversationId === "string" ? body.conversationId : undefined,
-      userMessage,
-      image: imageResult.image,
-    });
-    return NextResponse.json({ conversation });
+    useCase = await buildUseCase();
   } catch (error) {
     if (error instanceof MissingApiKeyError) {
       return NextResponse.json({ error: error.message }, { status: 412 });
     }
-    console.error("[/api/chat] error inesperado:", error);
+    console.error("[/api/chat] error inesperado construyendo el caso de uso:", error);
     return NextResponse.json(
       { error: "Error inesperado al hablar con el proveedor de IA. Revisa los logs del servidor." },
       { status: 502 },
     );
   }
+
+  const conversationId = typeof body?.conversationId === "string" ? body.conversationId : undefined;
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: ChatSseEvent) => controller.enqueue(encoder.encode(sseChunk(event)));
+      try {
+        const { conversation } = await useCase.execute(
+          { conversationId, userMessage, image: imageResult.image },
+          send,
+        );
+        send({ type: "done", conversation });
+      } catch (error) {
+        console.error("[/api/chat] error inesperado durante el streaming:", error);
+        send({ type: "done", error: "Error inesperado al hablar con el proveedor de IA. Revisa los logs del servidor." });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
 }

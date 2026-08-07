@@ -2,12 +2,24 @@
 
 import { useCallback, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ImagePlus, Send, Wrench, X } from "lucide-react";
+import type { ChatStreamEvent, Conversation } from "@kan/core";
 import { Card } from "@/components/ui/Card";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
 import { useVoiceInput } from "@/lib/voice/useVoiceInput";
 import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
+import { readSseStream } from "@/lib/chat/parseSseStream";
 
 type ChatRole = "user" | "assistant" | "tool";
+
+// Mismo shape que ChatSseEvent en apps/web/app/api/chat/route.ts (ADR-027,
+// docs/16 P7) — no se comparte el tipo entre server/cliente porque route.ts
+// no es un módulo importable desde un componente "use client".
+type ChatSseEvent = ChatStreamEvent | { type: "done"; conversation: Conversation } | { type: "done"; error: string };
+
+function summarizeToolResultForDisplay(event: Extract<ChatStreamEvent, { type: "tool_result" }>): string {
+  if (!event.success) return `Error ejecutando ${event.name}: ${event.error ?? "desconocido"}`;
+  return `Resultado de ${event.name}: ${JSON.stringify(event.data)}`;
+}
 
 interface ChatImage {
   data: string;
@@ -49,6 +61,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
   const [input, setInput] = useState("");
   const [pendingImage, setPendingImage] = useState<ChatImage | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { speak } = useSpeechSynthesis();
@@ -63,6 +76,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
       setInput("");
       setPendingImage(null);
       setIsSending(true);
+      setStreamingStatus(null);
       setError(null);
 
       try {
@@ -71,25 +85,45 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: trimmed, conversationId, image }),
         });
-        const data = await response.json();
 
         if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
           throw new Error(data.error ?? "Error desconocido");
         }
 
-        setConversationId(data.conversation.id);
+        // Streaming (ADR-027, docs/16 P7): tool_call/tool_result llegan en
+        // vivo mientras el loop corre; "done" trae la conversación
+        // persistida completa, que reemplaza cualquier burbuja provisional
+        // agregada durante el streaming — nunca queda divergiendo de lo real.
+        let finalConversation: Conversation | undefined;
+        let streamError: string | undefined;
 
-        // El mensaje de usuario ya se mostró de forma optimista; el resto
-        // (rondas de herramientas + respuesta final) se añade tal cual llega,
-        // así el usuario ve con transparencia qué herramienta se llamó.
-        const newMessages: ChatMessage[] = data.conversation.messages
+        for await (const event of readSseStream<ChatSseEvent>(response)) {
+          if (event.type === "tool_call") {
+            setStreamingStatus(`Llamando a ${event.name}…`);
+          } else if (event.type === "tool_result") {
+            setStreamingStatus(null);
+            setMessages((prev) => [...prev, { role: "tool", content: summarizeToolResultForDisplay(event) }]);
+          } else if (event.type === "final") {
+            setStreamingStatus(null);
+          } else if (event.type === "done") {
+            if ("error" in event) streamError = event.error;
+            else finalConversation = event.conversation;
+          }
+        }
+
+        if (streamError) throw new Error(streamError);
+        if (!finalConversation) throw new Error("El servidor cerró la conexión sin una respuesta final.");
+
+        setConversationId(finalConversation.id);
+
+        const newMessages: ChatMessage[] = finalConversation.messages
           .slice(preSubmitCount + 1)
-          .map((m: { role: ChatRole; content: string; toolCall?: { name: string; args: unknown } }) => ({
-            role: m.role,
-            content: m.content,
-            toolCall: m.toolCall,
-          }));
-        setMessages((prev) => [...prev, ...newMessages]);
+          .map((m) => ({ role: m.role as ChatRole, content: m.content, toolCall: m.toolCall }));
+        // Descarta las burbujas provisionales de tool_result y deja solo lo
+        // realmente persistido — mismo criterio de "el server es la fuente
+        // de verdad" que ya usaba la versión no-streaming.
+        setMessages((prev) => [...prev.slice(0, preSubmitCount + 1), ...newMessages]);
 
         const lastAssistantMessage = [...newMessages].reverse().find((m) => m.role === "assistant");
         if (lastAssistantMessage?.content) speak(lastAssistantMessage.content);
@@ -97,6 +131,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         setError(err instanceof Error ? err.message : "Error desconocido");
       } finally {
         setIsSending(false);
+        setStreamingStatus(null);
       }
     },
     [conversationId, isSending, messages.length, pendingImage, speak],
@@ -139,7 +174,12 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         {messages.map((message, index) => (
           <MessageBubble key={index} message={message} />
         ))}
-        {isSending && <p className="text-sm text-ink-faint">KAN está pensando…</p>}
+        {isSending && (
+          <p className="flex items-center gap-1.5 text-sm text-ink-faint">
+            {streamingStatus && <Wrench className="h-3.5 w-3.5" aria-hidden="true" />}
+            {streamingStatus ?? "KAN está pensando…"}
+          </p>
+        )}
       </div>
 
       {(error || voice.error) && (
