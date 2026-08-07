@@ -60,15 +60,11 @@
 
 **Hallazgo adicional, arreglado en el mismo incremento:** `TaskOrchestrator.TASK_TIMEOUT_MS` (15s) era menor que `plugin-gcode`'s `HOME_TIMEOUT_MS` (30s) — `home_axes`, el caso real de "operación de 30s+" que motivó este pedido, ya fallaba por timeout antes de completarse, sin relación con el streaming. Subidos en cadena: Gateway 40s, `GatewayToolProvider` 45s, `SendMessageUseCase` 90s. Ver ADR-027 (`docs/00`) para el detalle, el riesgo de duración de función serverless sin resolver, y la verificación manual realizada contra la API real de Gemini.
 
-## P8 — `LoggerPort` para `gateway-core` (consistencia con `edge-agent-core`)
+## P8 — `LoggerPort` para `gateway-core` (consistencia con `edge-agent-core`) — ✅ Implementado (2026-08-07, ADR-028)
 
-**Problema.** `packages/edge-agent-core` tiene un `LoggerPort` propio con adaptador `FileAndConsoleLogger`, testeable y sustituible. `packages/gateway-core` usa `console.log`/`console.error`/`console.warn` directo en `NoopScheduler`, `JsonlAuditStore` y `apps/gateway/src/server.ts` — funciona, pero no es consistente con el patrón ya establecido, y dificulta capturar logs del Gateway en tests (hoy no se prueba lo que se loguea, solo el comportamiento).
+**Problema (histórico).** `packages/edge-agent-core` tenía un `LoggerPort` propio con adaptador `FileAndConsoleLogger`, testeable y sustituible. `packages/gateway-core` usaba `console.log`/`console.error`/`console.warn` directo en `NoopScheduler`, `JsonlAuditStore`, `ConsoleNotificationService`, `NodeCronScheduler` y `apps/gateway/src/server.ts` — funcionaba, pero no era consistente con el patrón ya establecido, y no había forma de verificar qué se logueaba en un test.
 
-**Propuesta.** Extraer un `LoggerPort` compartido (candidato natural para vivir en `packages/plugin-contract`, ya que tanto `edge-agent-core` como `gateway-core` lo necesitarían) y un adaptador `ConsoleLogger` simple para el Gateway (sin necesidad del archivo local que sí tiene sentido para el Edge Agent, dado que el Gateway ya persiste su audit trail aparte).
-
-**Costo estimado:** bajo (una tarde) — mueve interfaz, sin lógica nueva.
-
-**Prioridad:** muy baja — es higiene de consistencia, no resuelve ningún bug ni riesgo real.
+**Resuelto.** `LoggerPort`/`LogLevel` se relocalizaron a `@kan/plugin-contract` (dueño neutral del que ya dependían ambos paquetes) en vez de que `gateway-core` importara el tipo desde `@kan/edge-agent-core` — acoplamiento cruzado entre dominios que no tenía otra razón de ser. `packages/edge-agent-core`'s `LoggerPort.ts` quedó como re-export, sin tocar sus ~10 consumidores internos. Nuevo adaptador `ConsoleLogger` (`packages/gateway-core/src/infra/`), deliberadamente sin el archivo local ni el bus que sí tiene sentido en `FileAndConsoleLogger` (nadie del lado del Gateway necesita logs en vivo en una UI, y ya persiste su audit trail aparte). Inyectado como último parámetro opcional con default en los 4 archivos que usaban `console.*`, sin romper ningún call site existente. Ver ADR-028 (`docs/00`) para el detalle y las alternativas descartadas.
 
 ---
 
@@ -83,4 +79,4 @@
 | P6 | Rate limiting | ✅ Implementado (ADR-025) | — |
 | P7 | Streaming del chat | ✅ Implementado, alcance parcial (ADR-027) | Progreso real intra-capability queda pendiente |
 | P5 | Multi-dispositivo / tareas compuestas | Baja | Un caso de uso real con >1 dispositivo del mismo tipo |
-| P8 | `LoggerPort` compartido | Muy baja | Nada — higiene de consistencia |
+| P8 | `LoggerPort` compartido | ✅ Implementado (ADR-028) | — |

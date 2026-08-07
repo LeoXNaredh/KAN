@@ -8,3 +8,4 @@ export * from "./protocol";
 export * from "./tool";
 export * from "./auth";
 export * from "./schemaValidation";
+export * from "./logger";

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { LoggerPort } from "@kan/plugin-contract";
 import { NodeCronScheduler } from "./NodeCronScheduler";
 import { InMemoryScheduledJobStore } from "./InMemoryScheduledJobStore";
 import type { ScheduledJob } from "../domain/entities/ScheduledJob";
@@ -14,6 +15,10 @@ function recordingDispatch() {
     calls.push(job);
   };
   return { calls, dispatch };
+}
+
+function fakeLogger(): LoggerPort {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
 describe("NodeCronScheduler", () => {
@@ -142,7 +147,8 @@ describe("NodeCronScheduler", () => {
     };
     store.save(staleJob);
 
-    const scheduler = new NodeCronScheduler(store);
+    const logger = fakeLogger();
+    const scheduler = new NodeCronScheduler(store, logger);
     const { calls, dispatch } = recordingDispatch();
     scheduler.start(dispatch);
 
@@ -151,6 +157,9 @@ describe("NodeCronScheduler", () => {
     expect(calls).toHaveLength(0);
     expect(scheduler.list()).toEqual([]);
     expect(store.load()).toEqual([]);
+    // docs/16 P8, ADR-028: antes solo era visible en la salida de consola,
+    // ahora es verificable con un LoggerPort inyectado.
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("stale-1"));
   });
 
   it("stop() detiene los jobs cron activos", async () => {

@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import cron, { type ScheduledTask } from "node-cron";
+import type { LoggerPort } from "@kan/plugin-contract";
 import type { ScheduledJob } from "../domain/entities/ScheduledJob";
 import type { SchedulerDispatch, SchedulerPort } from "../domain/ports/SchedulerPort";
 import type { ScheduledJobStorePort } from "../domain/ports/ScheduledJobStorePort";
+import { ConsoleLogger } from "./ConsoleLogger";
 
 interface WiredJob {
   job: ScheduledJob;
@@ -26,7 +28,10 @@ export class NodeCronScheduler implements SchedulerPort {
   private readonly wired = new Map<string, WiredJob>();
   private dispatch: SchedulerDispatch | undefined;
 
-  constructor(private readonly store: ScheduledJobStorePort) {
+  constructor(
+    private readonly store: ScheduledJobStorePort,
+    private readonly logger: LoggerPort = new ConsoleLogger(),
+  ) {
     for (const job of this.store.load()) {
       this.wired.set(job.id, { job });
     }
@@ -59,7 +64,7 @@ export class NodeCronScheduler implements SchedulerPort {
     this.dispatch = dispatch;
     for (const wired of Array.from(this.wired.values())) {
       if (wired.job.runAt && new Date(wired.job.runAt).getTime() <= Date.now()) {
-        console.warn(
+        this.logger.warn(
           `[NodeCronScheduler] Job ${wired.job.id} (runAt=${wired.job.runAt}) venció mientras el Gateway estaba apagado — se descarta sin disparar.`,
         );
         this.wired.delete(wired.job.id);
@@ -87,7 +92,7 @@ export class NodeCronScheduler implements SchedulerPort {
     if (job.cron) {
       wired.cronTask = cron.schedule(job.cron, () => {
         dispatch(job).catch((error) => {
-          console.error(`[NodeCronScheduler] job ${job.id} falló al despachar:`, error);
+          this.logger.error(`[NodeCronScheduler] job ${job.id} falló al despachar:`, { error });
         });
       });
       return;
@@ -99,7 +104,7 @@ export class NodeCronScheduler implements SchedulerPort {
         this.wired.delete(job.id);
         this.store.remove(job.id);
         dispatch(job).catch((error) => {
-          console.error(`[NodeCronScheduler] job ${job.id} falló al despachar:`, error);
+          this.logger.error(`[NodeCronScheduler] job ${job.id} falló al despachar:`, { error });
         });
       }, delay);
     }

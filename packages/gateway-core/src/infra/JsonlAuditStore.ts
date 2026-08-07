@@ -1,7 +1,9 @@
 import { appendFile, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { LoggerPort } from "@kan/plugin-contract";
 import type { AuditEntry } from "../domain/entities/AuditEntry";
 import type { AuditStorePort } from "../domain/ports/AuditStorePort";
+import { ConsoleLogger } from "./ConsoleLogger";
 
 /**
  * Un registro por línea, append-only, durable entre reinicios (docs/12 §6).
@@ -19,7 +21,10 @@ import type { AuditStorePort } from "../domain/ports/AuditStorePort";
 export class JsonlAuditStore implements AuditStorePort {
   private readonly entries: AuditEntry[] = [];
 
-  constructor(private readonly filePath: string) {
+  constructor(
+    private readonly filePath: string,
+    private readonly logger: LoggerPort = new ConsoleLogger(),
+  ) {
     const dir = dirname(filePath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     this.entries = this.loadFromDisk();
@@ -28,7 +33,7 @@ export class JsonlAuditStore implements AuditStorePort {
   async append(entry: AuditEntry): Promise<void> {
     this.entries.push(entry);
     appendFile(this.filePath, JSON.stringify(entry) + "\n", "utf-8", (error) => {
-      if (error) console.error(`[JsonlAuditStore] no se pudo escribir a disco: ${error.message}`);
+      if (error) this.logger.error(`[JsonlAuditStore] no se pudo escribir a disco: ${error.message}`);
     });
   }
 

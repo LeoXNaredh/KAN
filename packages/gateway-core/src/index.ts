@@ -24,4 +24,5 @@ export * from "./infra/InMemoryScheduledJobStore";
 export * from "./infra/JsonFileScheduledJobStore";
 export * from "./infra/NodeCronScheduler";
 export * from "./infra/ConsoleNotificationService";
+export * from "./infra/ConsoleLogger";
 export * from "./Gateway";
