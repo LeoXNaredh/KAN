@@ -232,6 +232,20 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** Ninguna — es aditivo puro (`personalityContext` es un 5º parámetro opcional de `SendMessageUseCase`, nada que ya lo llamaba sin él se rompe).
 
+---
+
+### ADR-021: Jobs con múltiples `steps` ("acciones combinadas") + notificación — no un planner con dependencias
+
+**Contexto.** El usuario pidió extender el Scheduler (P6) para que un job pueda disparar "notificaciones o acciones combinadas". `docs/16` P5 ya había marcado un planner real (grafo de dependencias, desambiguación multi-dispositivo) como **prioridad baja / especulativo** sin un caso de uso real todavía — así que la pregunta de diseño era cómo dar esta capacidad sin construir eso.
+
+**Decisión.** `ScheduledJob.taskRequest` (un solo paso) pasa a `ScheduledJob.steps: TaskRequest[]` (uno o más) — no un grafo, una **secuencia estricta**: se ejecutan en orden, y el primer paso que falle detiene los siguientes (mismo criterio de seguridad física que el resto del proyecto: nunca seguir a ciegas después de un fallo). Un job de un solo paso es simplemente `steps` con un elemento, sin caso especial en el código. `ScheduledJob` gana `notification?: { title, body }`, disparada después de correr los `steps` (haya fallado o no, con severidad `warning`/`info` según el resultado) — reactiva el seam `NotificationServicePort` (docs/12 §9) con su primer disparador real, tal como anticipaba `docs/17` §3.5.
+
+**Por qué esto no es el planner que P5 de docs/16 descartó.** No hay grafo de dependencias, no hay desambiguación de "qué dispositivo", no hay branching ni condicionales — es una lista ordenada fija que el usuario arma a mano en el formulario. Sigue siendo una automatización simple, solo que con más de un paso. El día que aparezca un caso de uso real que necesite dependencias/condicionales, esa es la señal que `docs/16` pedía antes de construir el planner completo.
+
+**Limitación conocida: `notification.userId` es `"system"`.** El Gateway no tiene noción de usuario/sesión (vive en la LAN del Edge Agent, no en `apps/web` — mismo razonamiento que ADR-019 sobre la persistencia de jobs), así que no puede saber a qué usuario de Supabase pertenece una notificación disparada por un job. Hoy `ConsoleNotificationService` es la única implementación real (solo loguea), así que el valor inmediato y visible para el usuario es el registro en auditoría (`action: "job.notification"`), que ya aparece en el widget "Actividad reciente" del Dashboard (P4) sin código nuevo ahí. Cuando el Gateway gane un mapeo real de usuario↔instancia, `notify()` empieza a funcionar de verdad sin tocar `Gateway.bootstrap()` — es un swap de adaptador, no una rearquitectura.
+
+**Consecuencia.** Cambio de shape no retrocompatible en `ScheduledJob`/`SchedulerDispatch` (`taskRequest` → `steps`) — aceptable porque el Scheduler se construyó en esta misma sesión, sin consumidores externos todavía.
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

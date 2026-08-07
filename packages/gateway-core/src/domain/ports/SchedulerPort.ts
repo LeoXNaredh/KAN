@@ -1,8 +1,11 @@
 import type { ScheduledJob } from "../entities/ScheduledJob";
-import type { TaskRequest, TaskResult } from "../entities/GatewayTask";
 
-/** Invocado por el scheduler cuando un job vence — quien la implementa (Gateway) decide qué hacer con el resultado. */
-export type SchedulerDispatch = (taskRequest: TaskRequest, jobId: string) => Promise<TaskResult>;
+/**
+ * Invocado por el scheduler cuando un job vence — recibe el job completo
+ * (todos sus `steps` + `notification`) porque quien la implementa (Gateway)
+ * es responsable de correr la secuencia y, si corresponde, notificar.
+ */
+export type SchedulerDispatch = (job: ScheduledJob) => Promise<void>;
 
 export interface SchedulerPort {
   /** Lanza si el job es inválido (ni cron ni runAt, ambos a la vez, cron mal formado, o runAt no futuro). */

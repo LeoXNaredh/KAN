@@ -3,27 +3,46 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { NodeCronScheduler } from "./NodeCronScheduler";
 import { InMemoryScheduledJobStore } from "./InMemoryScheduledJobStore";
 import type { ScheduledJob } from "../domain/entities/ScheduledJob";
-import type { TaskRequest, TaskResult } from "../domain/entities/GatewayTask";
-
-const DONE: TaskResult = { status: "done" };
 
 function futureIso(msFromNow: number): string {
   return new Date(Date.now() + msFromNow).toISOString();
 }
 
 function recordingDispatch() {
-  const calls: Array<{ taskRequest: TaskRequest; jobId: string }> = [];
-  const dispatch = async (taskRequest: TaskRequest, jobId: string) => {
-    calls.push({ taskRequest, jobId });
-    return DONE;
+  const calls: ScheduledJob[] = [];
+  const dispatch = async (job: ScheduledJob) => {
+    calls.push(job);
   };
   return { calls, dispatch };
 }
 
 describe("NodeCronScheduler", () => {
+  it("schedule() lanza si no hay steps", () => {
+    const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
+    expect(() => scheduler.schedule({ steps: [], runAt: futureIso(1000) })).toThrow("al menos un paso");
+  });
+
+  it("schedule() lanza si algún paso no tiene capabilityRef", () => {
+    const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
+    expect(() =>
+      scheduler.schedule({ steps: [{ capabilityRef: "", input: {} }], runAt: futureIso(1000) }),
+    ).toThrow("capabilityRef");
+  });
+
+  it("schedule() lanza si la notificación tiene title o body vacíos", () => {
+    const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
+    expect(() =>
+      scheduler.schedule({
+        steps: [{ capabilityRef: "x", input: {} }],
+        notification: { title: "", body: "algo" },
+        runAt: futureIso(1000),
+      }),
+    ).toThrow("title");
+  });
+
   it("schedule() lanza si no hay cron ni runAt", () => {
     const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
-    expect(() => scheduler.schedule({ taskRequest: { capabilityRef: "x", input: {} } })).toThrow(
+    expect(() => scheduler.schedule({ steps: [{ capabilityRef: "x", input: {} }] })).toThrow(
       "necesita 'cron' o 'runAt'",
     );
   });
@@ -31,13 +50,13 @@ describe("NodeCronScheduler", () => {
   it("schedule() lanza si hay cron Y runAt a la vez", () => {
     const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
     expect(() =>
-      scheduler.schedule({ taskRequest: { capabilityRef: "x", input: {} }, cron: "* * * * *", runAt: futureIso(1000) }),
+      scheduler.schedule({ steps: [{ capabilityRef: "x", input: {} }], cron: "* * * * *", runAt: futureIso(1000) }),
     ).toThrow("no puede tener 'cron' y 'runAt'");
   });
 
   it("schedule() lanza si el cron es inválido", () => {
     const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
-    expect(() => scheduler.schedule({ taskRequest: { capabilityRef: "x", input: {} }, cron: "no-es-cron" })).toThrow(
+    expect(() => scheduler.schedule({ steps: [{ capabilityRef: "x", input: {} }], cron: "no-es-cron" })).toThrow(
       "Expresión cron inválida",
     );
   });
@@ -45,23 +64,44 @@ describe("NodeCronScheduler", () => {
   it("schedule() lanza si runAt no es una fecha futura", () => {
     const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
     expect(() =>
-      scheduler.schedule({ taskRequest: { capabilityRef: "x", input: {} }, runAt: new Date(Date.now() - 1000).toISOString() }),
+      scheduler.schedule({ steps: [{ capabilityRef: "x", input: {} }], runAt: new Date(Date.now() - 1000).toISOString() }),
     ).toThrow("fecha futura");
   });
 
-  it("un job runAt se dispara una vez, con el jobId correcto, y desaparece de list()", async () => {
+  it("un job runAt se dispara una vez, con sus steps y jobId correctos, y desaparece de list()", async () => {
     const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
     const { calls, dispatch } = recordingDispatch();
     scheduler.start(dispatch);
 
-    const jobId = scheduler.schedule({ taskRequest: { capabilityRef: "laser.cut", input: { depth: 1 } }, runAt: futureIso(150) });
+    const jobId = scheduler.schedule({ steps: [{ capabilityRef: "laser.cut", input: { depth: 1 } }], runAt: futureIso(150) });
     expect(scheduler.list().map((j) => j.id)).toContain(jobId);
 
     await sleep(400);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual({ taskRequest: { capabilityRef: "laser.cut", input: { depth: 1 } }, jobId });
+    expect(calls[0]).toEqual({ id: jobId, steps: [{ capabilityRef: "laser.cut", input: { depth: 1 } }], runAt: expect.any(String) });
     expect(scheduler.list().map((j) => j.id)).not.toContain(jobId);
+  });
+
+  it("un job con múltiples steps ('acciones combinadas') y notificación llega completo al dispatch", async () => {
+    const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
+    const { calls, dispatch } = recordingDispatch();
+    scheduler.start(dispatch);
+
+    scheduler.schedule({
+      steps: [
+        { capabilityRef: "riego.abrir_valvula", input: {} },
+        { capabilityRef: "riego.cerrar_valvula", input: {} },
+      ],
+      notification: { title: "Riego listo", body: "Se regó el jardín." },
+      runAt: futureIso(150),
+    });
+
+    await sleep(400);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].steps).toHaveLength(2);
+    expect(calls[0].notification).toEqual({ title: "Riego listo", body: "Se regó el jardín." });
   });
 
   it("un job cron se dispara repetidamente hasta cancel()", async () => {
@@ -69,11 +109,11 @@ describe("NodeCronScheduler", () => {
     const { calls, dispatch } = recordingDispatch();
     scheduler.start(dispatch);
 
-    const jobId = scheduler.schedule({ taskRequest: { capabilityRef: "ping", input: {} }, cron: "*/1 * * * * *" });
+    const jobId = scheduler.schedule({ steps: [{ capabilityRef: "ping", input: {} }], cron: "*/1 * * * * *" });
 
     await sleep(2500);
     expect(calls.length).toBeGreaterThanOrEqual(2);
-    expect(calls.every((call) => call.jobId === jobId)).toBe(true);
+    expect(calls.every((call) => call.id === jobId)).toBe(true);
 
     scheduler.cancel(jobId);
     const countAtCancel = calls.length;
@@ -85,7 +125,7 @@ describe("NodeCronScheduler", () => {
   it("un job persiste entre instancias del scheduler que comparten store (sobrevive un reinicio)", () => {
     const store = new InMemoryScheduledJobStore();
     const schedulerA = new NodeCronScheduler(store);
-    const jobId = schedulerA.schedule({ taskRequest: { capabilityRef: "riego.diario", input: {} }, cron: "0 8 * * *" });
+    const jobId = schedulerA.schedule({ steps: [{ capabilityRef: "riego.diario", input: {} }], cron: "0 8 * * *" });
 
     const schedulerB = new NodeCronScheduler(store);
     expect(schedulerB.list().map((j) => j.id)).toContain(jobId);
@@ -97,7 +137,7 @@ describe("NodeCronScheduler", () => {
     // (se guarda directo en el store, sin pasar por schedule(), que rechazaría un runAt pasado).
     const staleJob: ScheduledJob = {
       id: "stale-1",
-      taskRequest: { capabilityRef: "printer.start", input: {} },
+      steps: [{ capabilityRef: "printer.start", input: {} }],
       runAt: new Date(Date.now() - 60_000).toISOString(),
     };
     store.save(staleJob);
@@ -117,7 +157,7 @@ describe("NodeCronScheduler", () => {
     const scheduler = new NodeCronScheduler(new InMemoryScheduledJobStore());
     const { calls, dispatch } = recordingDispatch();
     scheduler.start(dispatch);
-    scheduler.schedule({ taskRequest: { capabilityRef: "ping", input: {} }, cron: "*/1 * * * * *" });
+    scheduler.schedule({ steps: [{ capabilityRef: "ping", input: {} }], cron: "*/1 * * * * *" });
 
     await sleep(1200);
     scheduler.stop();

@@ -9,7 +9,7 @@ import type { ScheduledJob } from "../domain/entities/ScheduledJob";
 function job(overrides: Partial<ScheduledJob> = {}): ScheduledJob {
   return {
     id: randomUUID(),
-    taskRequest: { capabilityRef: "some_capability", input: {} },
+    steps: [{ capabilityRef: "some_capability", input: {} }],
     cron: "0 8 * * *",
     ...overrides,
   };

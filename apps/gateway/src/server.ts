@@ -38,6 +38,10 @@ bus.on("task.dispatched", ({ taskId, capabilityRef }) =>
 bus.on("task.completed", ({ taskId, result }) => console.log(`[gateway] Tarea ${taskId} completada:`, result));
 bus.on("task.failed", ({ taskId, error }) => console.error(`[gateway] Tarea ${taskId} falló: ${error}`));
 bus.on("job.fired", ({ jobId, capabilityRef }) => console.log(`[gateway] Job ${jobId} disparado: ${capabilityRef}`));
+bus.on("job.step_failed", ({ jobId, capabilityRef, error }) =>
+  console.error(`[gateway] Job ${jobId} falló en el paso ${capabilityRef}: ${error}`),
+);
+bus.on("job.notification", ({ jobId, title }) => console.log(`[gateway] Job ${jobId} notificó: ${title}`));
 
 const app = express();
 app.use(express.json());

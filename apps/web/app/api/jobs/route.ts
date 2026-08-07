@@ -26,9 +26,18 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
-  const capabilityRef = typeof body?.capabilityRef === "string" ? body.capabilityRef.trim() : "";
-  if (!capabilityRef) {
-    return NextResponse.json({ error: "'capabilityRef' es requerido." }, { status: 400 });
+
+  const rawSteps = Array.isArray(body?.steps) ? body.steps : [];
+  const steps: Array<{ capabilityRef: string; input: unknown }> = [];
+  for (const rawStep of rawSteps) {
+    const capabilityRef = typeof rawStep?.capabilityRef === "string" ? rawStep.capabilityRef.trim() : "";
+    if (!capabilityRef) {
+      return NextResponse.json({ error: "Cada paso ('steps') necesita 'capabilityRef'." }, { status: 400 });
+    }
+    steps.push({ capabilityRef, input: rawStep?.input ?? {} });
+  }
+  if (steps.length === 0) {
+    return NextResponse.json({ error: "El job necesita al menos un paso ('steps')." }, { status: 400 });
   }
 
   const cron = typeof body?.cron === "string" && body.cron.trim() ? body.cron.trim() : undefined;
@@ -37,11 +46,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Elegí exactamente un tipo de programación: cron o una vez." }, { status: 400 });
   }
 
+  const rawNotification = body?.notification;
+  const notification =
+    rawNotification && typeof rawNotification.title === "string" && typeof rawNotification.body === "string" && rawNotification.title.trim() && rawNotification.body.trim()
+      ? { title: rawNotification.title.trim(), body: rawNotification.body.trim() }
+      : undefined;
+
   try {
     const response = await gatewayFetch("/v1/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskRequest: { capabilityRef, input: body?.input ?? {} }, cron, runAt }),
+      body: JSON.stringify({ steps, notification, cron, runAt }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {

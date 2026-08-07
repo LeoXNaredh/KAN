@@ -102,15 +102,42 @@ export class Gateway {
 
     this.deps.connectionManager.start();
 
-    this.deps.scheduler.start(async (taskRequest, jobId) => {
-      this.bus.emit("job.fired", { jobId, capabilityRef: taskRequest.capabilityRef });
-      this.auditService.record({
-        actor: "system",
-        action: "job.fired",
-        subject: taskRequest.capabilityRef,
-        metadata: { jobId },
-      });
-      return this.taskOrchestrator.submit(taskRequest);
+    this.deps.scheduler.start(async (job) => {
+      let failed = false;
+
+      for (const step of job.steps) {
+        this.bus.emit("job.fired", { jobId: job.id, capabilityRef: step.capabilityRef });
+        this.auditService.record({
+          actor: "system",
+          action: "job.fired",
+          subject: step.capabilityRef,
+          metadata: { jobId: job.id },
+        });
+
+        const result = await this.taskOrchestrator.submit(step);
+        if (result.status === "failed") {
+          failed = true;
+          this.bus.emit("job.step_failed", { jobId: job.id, capabilityRef: step.capabilityRef, error: result.error ?? "error desconocido" });
+          break; // "acciones combinadas" se ejecutan en orden; un paso fallido no dispara los siguientes (ADR-021).
+        }
+      }
+
+      if (job.notification) {
+        this.bus.emit("job.notification", { jobId: job.id, title: job.notification.title });
+        this.auditService.record({
+          actor: "system",
+          action: "job.notification",
+          subject: job.notification.title,
+          metadata: { jobId: job.id, body: job.notification.body, failed },
+        });
+        await this.deps.notificationService.notify({
+          userId: "system",
+          channel: "chat",
+          title: job.notification.title,
+          body: job.notification.body,
+          severity: failed ? "warning" : "info",
+        });
+      }
     });
   }
 

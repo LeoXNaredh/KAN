@@ -86,7 +86,7 @@ export class NodeCronScheduler implements SchedulerPort {
 
     if (job.cron) {
       wired.cronTask = cron.schedule(job.cron, () => {
-        dispatch(job.taskRequest, job.id).catch((error) => {
+        dispatch(job).catch((error) => {
           console.error(`[NodeCronScheduler] job ${job.id} falló al despachar:`, error);
         });
       });
@@ -98,7 +98,7 @@ export class NodeCronScheduler implements SchedulerPort {
       wired.timeout = setTimeout(() => {
         this.wired.delete(job.id);
         this.store.remove(job.id);
-        dispatch(job.taskRequest, job.id).catch((error) => {
+        dispatch(job).catch((error) => {
           console.error(`[NodeCronScheduler] job ${job.id} falló al despachar:`, error);
         });
       }, delay);
@@ -107,6 +107,17 @@ export class NodeCronScheduler implements SchedulerPort {
 }
 
 function validateJobInput(input: Omit<ScheduledJob, "id">): void {
+  if (!input.steps || input.steps.length === 0) {
+    throw new Error("Un job programado necesita al menos un paso ('steps').");
+  }
+  for (const step of input.steps) {
+    if (!step.capabilityRef || !step.capabilityRef.trim()) {
+      throw new Error("Cada paso necesita un 'capabilityRef' no vacío.");
+    }
+  }
+  if (input.notification && (!input.notification.title.trim() || !input.notification.body.trim())) {
+    throw new Error("La notificación necesita 'title' y 'body' no vacíos.");
+  }
   if (!input.cron && !input.runAt) {
     throw new Error("Un job programado necesita 'cron' o 'runAt'.");
   }

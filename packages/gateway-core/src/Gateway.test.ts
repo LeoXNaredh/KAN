@@ -7,6 +7,7 @@ import type { AgentConnectionInfo, ConnectionManagerPort, Unsubscribe } from "./
 import type { AuditStorePort } from "./domain/ports/AuditStorePort";
 import type { SchedulerDispatch, SchedulerPort } from "./domain/ports/SchedulerPort";
 import type { NotificationServicePort } from "./domain/ports/NotificationServicePort";
+import type { Notification } from "./domain/entities/Notification";
 import type { AuditEntry } from "./domain/entities/AuditEntry";
 
 /**
@@ -90,8 +91,11 @@ class FakeSchedulerStub implements SchedulerPort {
   }
 }
 
-class NoopNotificationStub implements NotificationServicePort {
-  async notify(): Promise<void> {}
+class RecordingNotificationStub implements NotificationServicePort {
+  readonly sent: Notification[] = [];
+  async notify(notification: Notification): Promise<void> {
+    this.sent.push(notification);
+  }
 }
 
 function buildGateway() {
@@ -99,15 +103,16 @@ function buildGateway() {
   const connectionManager = new FakeConnectionManager();
   const auditStore = new InMemoryAuditStore();
   const scheduler = new FakeSchedulerStub();
+  const notificationService = new RecordingNotificationStub();
   const gateway = new Gateway({
     bus,
     connectionManager,
     auditStore,
     scheduler,
-    notificationService: new NoopNotificationStub(),
+    notificationService,
   });
   gateway.bootstrap();
-  return { gateway, connectionManager, auditStore, bus, scheduler };
+  return { gateway, connectionManager, auditStore, bus, scheduler, notificationService };
 }
 
 function helloFor(edgeAgentId: string): HelloMessage {
@@ -223,13 +228,13 @@ describe("Gateway (integración, transporte simulado)", () => {
     expect(auditStore.entries).toHaveLength(1);
   });
 
-  it("bootstrap() arranca el scheduler; un job disparado se somete al Task Orchestrator y queda auditado (P6)", async () => {
+  it("bootstrap() arranca el scheduler; un job de un paso se somete al Task Orchestrator y queda auditado (P6)", async () => {
     const { gateway, connectionManager, auditStore, scheduler } = buildGateway();
     connectionManager.simulateAgentConnect(helloFor(randomUUID()));
     const [tool] = gateway.listTools();
 
     expect(scheduler.dispatch).toBeDefined();
-    const resultPromise = scheduler.dispatch!({ capabilityRef: tool.name, input: {} }, "job-1");
+    const dispatchPromise = scheduler.dispatch!({ id: "job-1", steps: [{ capabilityRef: tool.name, input: {} }] });
 
     const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
     connectionManager.simulateTelemetry(gateway.agentRegistry.list()[0].edgeAgentId, {
@@ -240,13 +245,71 @@ describe("Gateway (integración, transporte simulado)", () => {
       at: new Date().toISOString(),
     });
 
-    const result = await resultPromise;
-    expect(result).toEqual({ status: "done", data: { ok: true }, error: undefined, confirmationId: undefined });
+    await dispatchPromise;
     expect(auditStore.entries.map((entry) => entry.action)).toContain("job.fired");
     expect(auditStore.entries.find((entry) => entry.action === "job.fired")).toMatchObject({
       actor: "system",
       subject: tool.name,
       metadata: { jobId: "job-1" },
+    });
+  });
+
+  it("un job de varias 'acciones combinadas' se detiene en el primer paso que falla, sin ejecutar los siguientes", async () => {
+    const { gateway, connectionManager, scheduler, auditStore } = buildGateway();
+    connectionManager.simulateAgentConnect(helloFor(randomUUID()));
+    const [tool] = gateway.listTools();
+
+    const dispatchPromise = scheduler.dispatch!({
+      id: "job-2",
+      steps: [
+        { capabilityRef: tool.name, input: {} },
+        { capabilityRef: tool.name, input: {} },
+      ],
+    });
+
+    const firstTaskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+    connectionManager.simulateTelemetry(gateway.agentRegistry.list()[0].edgeAgentId, {
+      type: "telemetry",
+      taskId: firstTaskId,
+      status: "failed",
+      error: "el driver explotó",
+      at: new Date().toISOString(),
+    });
+
+    await dispatchPromise;
+
+    expect(connectionManager.dispatched).toHaveLength(1);
+    expect(auditStore.entries.filter((entry) => entry.action === "job.fired")).toHaveLength(1);
+  });
+
+  it("una notificación configurada se dispara después de correr los steps, con severidad según el resultado", async () => {
+    const { gateway, connectionManager, scheduler, notificationService, auditStore } = buildGateway();
+    connectionManager.simulateAgentConnect(helloFor(randomUUID()));
+    const [tool] = gateway.listTools();
+
+    const dispatchPromise = scheduler.dispatch!({
+      id: "job-3",
+      steps: [{ capabilityRef: tool.name, input: {} }],
+      notification: { title: "Riego completado", body: "Se regó el jardín." },
+    });
+
+    const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+    connectionManager.simulateTelemetry(gateway.agentRegistry.list()[0].edgeAgentId, {
+      type: "telemetry",
+      taskId,
+      status: "done",
+      data: {},
+      at: new Date().toISOString(),
+    });
+
+    await dispatchPromise;
+
+    expect(notificationService.sent).toEqual([
+      { userId: "system", channel: "chat", title: "Riego completado", body: "Se regó el jardín.", severity: "info" },
+    ]);
+    expect(auditStore.entries.find((entry) => entry.action === "job.notification")).toMatchObject({
+      subject: "Riego completado",
+      metadata: { jobId: "job-3", body: "Se regó el jardín.", failed: false },
     });
   });
 

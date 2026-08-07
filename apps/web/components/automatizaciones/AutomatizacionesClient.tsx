@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Clock, Loader2, Repeat, Trash2, TriangleAlert } from "lucide-react";
+import { Bell, Clock, Loader2, Plus, Repeat, Trash2, TriangleAlert, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import type { ScheduledJobView } from "@/lib/jobs/types";
 
 interface ToolOption {
   name: string;
   description: string;
+}
+
+interface StepDraft {
+  capabilityRef: string;
+  inputJson: string;
 }
 
 type ScheduleType = "cron" | "once";
@@ -19,6 +24,10 @@ const CRON_PRESETS: Array<{ label: string; value: string }> = [
   { label: "Cada lunes 9:00", value: "0 9 * * 1" },
 ];
 
+function emptyStep(): StepDraft {
+  return { capabilityRef: "", inputJson: "{}" };
+}
+
 function formatSchedule(job: ScheduledJobView): string {
   if (job.cron) return `Cron: ${job.cron}`;
   if (job.runAt) return `Una vez: ${new Date(job.runAt).toLocaleString()}`;
@@ -26,13 +35,14 @@ function formatSchedule(job: ScheduledJobView): string {
 }
 
 /**
- * UI de Automatizaciones (P6): conecta con /api/jobs y /api/tools, que a su
- * vez son BFFs finos sobre GET/POST /v1/jobs, DELETE /v1/jobs/:id y
- * GET /v1/tools del Gateway (docs/12 §10). El formulario de argumentos usa
- * un textarea JSON libre en vez de un formulario generado por inputSchema —
- * las capabilities reales de hoy son mayormente sin argumentos o muy
- * simples; un generador dinámico de formularios queda para cuando haya un
- * caso de uso real que lo justifique (mismo criterio que ADR-015 con RAG).
+ * UI de Automatizaciones (P6/ADR-021): conecta con /api/jobs y /api/tools,
+ * BFFs finos sobre GET/POST /v1/jobs, DELETE /v1/jobs/:id y GET /v1/tools
+ * del Gateway (docs/12 §10). Un job puede tener varios `steps` ("acciones
+ * combinadas", ejecutados en orden, se detiene en el primer fallo) y una
+ * notificación opcional que se dispara al terminar. Los argumentos de cada
+ * step usan un textarea JSON libre en vez de un formulario generado por
+ * inputSchema — mismo criterio que ADR-015 con RAG, no sobre-construir
+ * antes de que el caso de uso real lo pida.
  */
 export function AutomatizacionesClient() {
   const [jobs, setJobs] = useState<ScheduledJobView[]>([]);
@@ -40,11 +50,13 @@ export function AutomatizacionesClient() {
   const [gatewayOnline, setGatewayOnline] = useState(true);
   const [loading, setLoading] = useState(true);
 
-  const [capabilityRef, setCapabilityRef] = useState("");
+  const [steps, setSteps] = useState<StepDraft[]>([emptyStep()]);
   const [scheduleType, setScheduleType] = useState<ScheduleType>("cron");
   const [cron, setCron] = useState(CRON_PRESETS[0].value);
   const [runAtLocal, setRunAtLocal] = useState("");
-  const [inputJson, setInputJson] = useState("{}");
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const [notifyTitle, setNotifyTitle] = useState("");
+  const [notifyBody, setNotifyBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   // Bump para forzar un refetch desde un event handler (crear/cancelar) sin
@@ -81,27 +93,47 @@ export function AutomatizacionesClient() {
     };
   }, [reloadKey]);
 
+  function updateStep(index: number, patch: Partial<StepDraft>) {
+    setSteps((prev) => prev.map((step, i) => (i === index ? { ...step, ...patch } : step)));
+  }
+
+  function addStep() {
+    setSteps((prev) => [...prev, emptyStep()]);
+  }
+
+  function removeStep(index: number) {
+    setSteps((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  }
+
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
     setFormError(null);
 
-    if (!capabilityRef) {
-      setFormError("Elegí una capability.");
-      return;
-    }
-
-    let input: unknown = {};
-    if (inputJson.trim()) {
-      try {
-        input = JSON.parse(inputJson);
-      } catch {
-        setFormError("El campo 'Argumentos' no es JSON válido.");
+    const parsedSteps: Array<{ capabilityRef: string; input: unknown }> = [];
+    for (const [index, step] of steps.entries()) {
+      if (!step.capabilityRef) {
+        setFormError(`Elegí una capability para el paso ${index + 1}.`);
         return;
       }
+      let input: unknown = {};
+      if (step.inputJson.trim()) {
+        try {
+          input = JSON.parse(step.inputJson);
+        } catch {
+          setFormError(`Los argumentos del paso ${index + 1} no son JSON válido.`);
+          return;
+        }
+      }
+      parsedSteps.push({ capabilityRef: step.capabilityRef, input });
     }
 
     if (scheduleType === "once" && !runAtLocal) {
       setFormError("Elegí una fecha y hora.");
+      return;
+    }
+
+    if (notifyEnabled && (!notifyTitle.trim() || !notifyBody.trim())) {
+      setFormError("La notificación necesita título y mensaje.");
       return;
     }
 
@@ -111,8 +143,8 @@ export function AutomatizacionesClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          capabilityRef,
-          input,
+          steps: parsedSteps,
+          notification: notifyEnabled ? { title: notifyTitle.trim(), body: notifyBody.trim() } : undefined,
           cron: scheduleType === "cron" ? cron : undefined,
           runAt: scheduleType === "once" ? new Date(runAtLocal).toISOString() : undefined,
         }),
@@ -120,9 +152,11 @@ export function AutomatizacionesClient() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Error desconocido");
 
-      setCapabilityRef("");
-      setInputJson("{}");
+      setSteps([emptyStep()]);
       setRunAtLocal("");
+      setNotifyEnabled(false);
+      setNotifyTitle("");
+      setNotifyBody("");
       setReloadKey((key) => key + 1);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Error desconocido");
@@ -145,7 +179,9 @@ export function AutomatizacionesClient() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">Automatizaciones</h1>
-        <p className="text-sm text-ink-faint">Programa capabilities para que KAN las ejecute sola, en un horario o de forma recurrente.</p>
+        <p className="text-sm text-ink-faint">
+          Programa una o varias capabilities para que KAN las ejecute sola, en orden, con una notificación opcional al terminar.
+        </p>
       </div>
 
       {!gatewayOnline && (
@@ -157,23 +193,54 @@ export function AutomatizacionesClient() {
 
       <Card>
         <h2 className="mb-3 text-sm font-medium text-ink-muted">Programar un job nuevo</h2>
-        <form onSubmit={handleCreate} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-ink-muted">Capability</span>
-            <select
-              className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-              value={capabilityRef}
-              onChange={(event) => setCapabilityRef(event.target.value)}
-              disabled={!gatewayOnline || tools.length === 0}
+        <form onSubmit={handleCreate} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-ink-muted">Pasos (se ejecutan en orden; se detiene si uno falla)</span>
+            {steps.map((step, index) => (
+              <div key={index} className="flex flex-col gap-2 rounded-lg border border-line bg-surface-3 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="shrink-0 text-xs font-medium text-ink-faint">#{index + 1}</span>
+                  <select
+                    className="flex-1 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                    value={step.capabilityRef}
+                    onChange={(event) => updateStep(index, { capabilityRef: event.target.value })}
+                    disabled={!gatewayOnline || tools.length === 0}
+                  >
+                    <option value="">{tools.length === 0 ? "Sin capabilities disponibles" : "Elegí una capability..."}</option>
+                    {tools.map((tool) => (
+                      <option key={tool.name} value={tool.name}>
+                        {tool.description || tool.name}
+                      </option>
+                    ))}
+                  </select>
+                  {steps.length > 1 && (
+                    <button
+                      type="button"
+                      aria-label={`Quitar paso ${index + 1}`}
+                      onClick={() => removeStep(index)}
+                      className="shrink-0 rounded-md p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  className="min-h-[3rem] rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-xs text-ink outline-none focus:border-accent"
+                  placeholder="Argumentos (JSON, opcional)"
+                  value={step.inputJson}
+                  onChange={(event) => updateStep(index, { inputJson: event.target.value })}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addStep}
+              className="flex items-center gap-1.5 self-start rounded-lg border border-dashed border-line px-3 py-1.5 text-xs text-ink-muted hover:border-accent hover:text-accent"
             >
-              <option value="">{tools.length === 0 ? "Sin capabilities disponibles" : "Elegí una capability..."}</option>
-              {tools.map((tool) => (
-                <option key={tool.name} value={tool.name}>
-                  {tool.description || tool.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Agregar paso
+            </button>
+          </div>
 
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5 text-ink-muted">
@@ -218,14 +285,28 @@ export function AutomatizacionesClient() {
             />
           )}
 
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-ink-muted">Argumentos (JSON, opcional)</span>
-            <textarea
-              className="min-h-[4.5rem] rounded-lg border border-line bg-surface-3 px-3 py-2 font-mono text-sm text-ink outline-none focus:border-accent"
-              value={inputJson}
-              onChange={(event) => setInputJson(event.target.value)}
-            />
-          </label>
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <label className="flex items-center gap-1.5 text-sm text-ink-muted">
+              <input type="checkbox" checked={notifyEnabled} onChange={(event) => setNotifyEnabled(event.target.checked)} />
+              Enviar una notificación al terminar
+            </label>
+            {notifyEnabled && (
+              <div className="flex flex-col gap-2">
+                <input
+                  className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  placeholder="Título (ej. Riego completado)"
+                  value={notifyTitle}
+                  onChange={(event) => setNotifyTitle(event.target.value)}
+                />
+                <input
+                  className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  placeholder="Mensaje (ej. Se regó el jardín sin problemas)"
+                  value={notifyBody}
+                  onChange={(event) => setNotifyBody(event.target.value)}
+                />
+              </div>
+            )}
+          </div>
 
           {formError && (
             <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">{formError}</p>
@@ -254,10 +335,20 @@ export function AutomatizacionesClient() {
             {jobs.map((job) => (
               <li key={job.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-3 px-3 py-2 text-sm">
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-ink">{toolLabel(job.taskRequest.capabilityRef)}</span>
-                  <span className="flex items-center gap-1 text-xs text-ink-faint">
-                    {job.cron ? <Repeat className="h-3 w-3" aria-hidden="true" /> : <Clock className="h-3 w-3" aria-hidden="true" />}
-                    {formatSchedule(job)}
+                  <span className="truncate text-ink">
+                    {job.steps.map((step) => toolLabel(step.capabilityRef)).join(" → ")}
+                  </span>
+                  <span className="flex items-center gap-2 text-xs text-ink-faint">
+                    <span className="flex items-center gap-1">
+                      {job.cron ? <Repeat className="h-3 w-3" aria-hidden="true" /> : <Clock className="h-3 w-3" aria-hidden="true" />}
+                      {formatSchedule(job)}
+                    </span>
+                    {job.notification && (
+                      <span className="flex items-center gap-1" title={job.notification.body}>
+                        <Bell className="h-3 w-3" aria-hidden="true" />
+                        {job.notification.title}
+                      </span>
+                    )}
                   </span>
                 </div>
                 <button

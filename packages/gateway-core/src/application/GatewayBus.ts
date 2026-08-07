@@ -14,6 +14,8 @@ export interface GatewayEvents {
   "tool.executed": { name: string; result: ToolExecutionResult };
   "audit.recorded": { entry: AuditEntry };
   "job.fired": { jobId: string; capabilityRef: string };
+  "job.step_failed": { jobId: string; capabilityRef: string; error: string };
+  "job.notification": { jobId: string; title: string };
 }
 
 /** Mismo patrón que EdgeAgentBus (packages/edge-agent-core) — docs/12 §7. */

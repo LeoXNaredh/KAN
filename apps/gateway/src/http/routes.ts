@@ -40,15 +40,31 @@ export function createRoutes(gateway: Gateway, internalToken: string): Router {
   });
 
   router.post("/v1/jobs", (req, res) => {
-    const capabilityRef = req.body?.taskRequest?.capabilityRef;
-    if (typeof capabilityRef !== "string" || !capabilityRef.trim()) {
-      res.status(400).json({ error: "'taskRequest.capabilityRef' es requerido." });
+    const rawSteps = Array.isArray(req.body?.steps) ? req.body.steps : [];
+    const steps: Array<{ capabilityRef: string; input: unknown }> = [];
+    for (const rawStep of rawSteps) {
+      const capabilityRef = rawStep?.capabilityRef;
+      if (typeof capabilityRef !== "string" || !capabilityRef.trim()) {
+        res.status(400).json({ error: "Cada paso ('steps') necesita 'capabilityRef'." });
+        return;
+      }
+      steps.push({ capabilityRef, input: rawStep?.input ?? {} });
+    }
+    if (steps.length === 0) {
+      res.status(400).json({ error: "El job necesita al menos un paso ('steps')." });
       return;
     }
 
+    const rawNotification = req.body?.notification;
+    const notification =
+      rawNotification && typeof rawNotification.title === "string" && typeof rawNotification.body === "string"
+        ? { title: rawNotification.title, body: rawNotification.body }
+        : undefined;
+
     try {
       const jobId = gateway.scheduler.schedule({
-        taskRequest: { capabilityRef, input: req.body?.taskRequest?.input ?? {} },
+        steps,
+        notification,
         cron: typeof req.body?.cron === "string" ? req.body.cron : undefined,
         runAt: typeof req.body?.runAt === "string" ? req.body.runAt : undefined,
       });

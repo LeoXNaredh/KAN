@@ -103,7 +103,7 @@ describe("Gateway HTTP routes", () => {
     expect(response.body).toEqual({ jobs: [{ id: "job-1" }] });
   });
 
-  it("POST /v1/jobs rechaza sin taskRequest.capabilityRef", async () => {
+  it("POST /v1/jobs rechaza sin steps", async () => {
     const app = appWith(fakeGateway());
     const response = await request(app)
       .post("/v1/jobs")
@@ -112,7 +112,16 @@ describe("Gateway HTTP routes", () => {
     expect(response.status).toBe(400);
   });
 
-  it("POST /v1/jobs delega en scheduler.schedule() y devuelve el jobId", async () => {
+  it("POST /v1/jobs rechaza un step sin capabilityRef", async () => {
+    const app = appWith(fakeGateway());
+    const response = await request(app)
+      .post("/v1/jobs")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send({ steps: [{ input: {} }], cron: "0 8 * * *" });
+    expect(response.status).toBe(400);
+  });
+
+  it("POST /v1/jobs delega en scheduler.schedule() con steps (posible >1, 'acciones combinadas') y devuelve el jobId", async () => {
     let received: unknown;
     const gateway = fakeGateway({
       scheduler: {
@@ -129,11 +138,26 @@ describe("Gateway HTTP routes", () => {
     const response = await request(app)
       .post("/v1/jobs")
       .set("Authorization", `Bearer ${TOKEN}`)
-      .send({ taskRequest: { capabilityRef: "laser.cut", input: { depth: 1 } }, cron: "0 8 * * *" });
+      .send({
+        steps: [
+          { capabilityRef: "riego.abrir_valvula", input: {} },
+          { capabilityRef: "riego.cerrar_valvula", input: {} },
+        ],
+        notification: { title: "Riego listo", body: "Se regó el jardín." },
+        cron: "0 8 * * *",
+      });
 
     expect(response.status).toBe(201);
     expect(response.body).toEqual({ jobId: "job-42" });
-    expect(received).toEqual({ taskRequest: { capabilityRef: "laser.cut", input: { depth: 1 } }, cron: "0 8 * * *", runAt: undefined });
+    expect(received).toEqual({
+      steps: [
+        { capabilityRef: "riego.abrir_valvula", input: {} },
+        { capabilityRef: "riego.cerrar_valvula", input: {} },
+      ],
+      notification: { title: "Riego listo", body: "Se regó el jardín." },
+      cron: "0 8 * * *",
+      runAt: undefined,
+    });
   });
 
   it("POST /v1/jobs traduce un error de validación del scheduler a 400", async () => {
@@ -151,7 +175,7 @@ describe("Gateway HTTP routes", () => {
     const response = await request(app)
       .post("/v1/jobs")
       .set("Authorization", `Bearer ${TOKEN}`)
-      .send({ taskRequest: { capabilityRef: "x" }, cron: "nope" });
+      .send({ steps: [{ capabilityRef: "x" }], cron: "nope" });
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "Expresión cron inválida: nope" });
