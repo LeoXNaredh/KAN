@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, type FormEvent } from "react";
-import { Send, Wrench } from "lucide-react";
+import { useCallback, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { ImagePlus, Send, Wrench, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
 import { useVoiceInput } from "@/lib/voice/useVoiceInput";
@@ -9,10 +9,30 @@ import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
 
 type ChatRole = "user" | "assistant" | "tool";
 
+interface ChatImage {
+  data: string;
+  mimeType: string;
+}
+
 interface ChatMessage {
   role: ChatRole;
   content: string;
   toolCall?: { name: string; args: unknown };
+  image?: ChatImage;
+}
+
+// Mismo límite que /api/chat (ADR-018) — se valida acá también para dar
+// feedback inmediato en vez de esperar el viaje de ida y vuelta al servidor.
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error ?? new Error("No se pudo leer el archivo"));
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
@@ -20,23 +40,28 @@ interface ChatMessage {
  * /api/chat, mismo estado) — ahora reutilizable: compacta dentro del
  * Dashboard, a tamaño completo en /conversacion. Desde P1, también acepta
  * voz: transcribir (ADR-014) reutiliza este mismo sendMessage() sin
- * cambios, y la respuesta final se lee en voz alta.
+ * cambios, y la respuesta final se lee en voz alta. Desde P3 (ADR-018),
+ * también acepta una imagen adjunta por mensaje.
  */
 export function ConversationPanel({ compact = false }: { compact?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [input, setInput] = useState("");
+  const [pendingImage, setPendingImage] = useState<ChatImage | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { speak } = useSpeechSynthesis();
 
   const sendMessage = useCallback(
     async (userMessage: string) => {
       if (!userMessage.trim() || isSending) return;
       const trimmed = userMessage.trim();
+      const image = pendingImage ?? undefined;
       const preSubmitCount = messages.length;
-      setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+      setMessages((prev) => [...prev, { role: "user", content: trimmed, image }]);
       setInput("");
+      setPendingImage(null);
       setIsSending(true);
       setError(null);
 
@@ -44,7 +69,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: trimmed, conversationId }),
+          body: JSON.stringify({ message: trimmed, conversationId, image }),
         });
         const data = await response.json();
 
@@ -74,10 +99,29 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         setIsSending(false);
       }
     },
-    [conversationId, isSending, messages.length, speak],
+    [conversationId, isSending, messages.length, pendingImage, speak],
   );
 
   const voice = useVoiceInput(sendMessage);
+
+  async function handleImageSelect(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(file.type)) {
+      setError("Formato de imagen no soportado. Usa PNG, JPEG, WEBP o GIF.");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError("La imagen supera el límite de 4 MB.");
+      return;
+    }
+
+    setError(null);
+    const data = await fileToBase64(file);
+    setPendingImage({ data, mimeType: file.type });
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -104,11 +148,47 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         </p>
       )}
 
+      {pendingImage && (
+        <div className="flex items-center gap-2 self-start rounded-md border border-line bg-surface-3 px-2 py-1.5">
+          <img
+            src={`data:${pendingImage.mimeType};base64,${pendingImage.data}`}
+            alt="Imagen a adjuntar"
+            className="h-10 w-10 rounded object-cover"
+          />
+          <span className="text-xs text-ink-muted">Imagen lista para enviar</span>
+          <button
+            type="button"
+            aria-label="Quitar imagen"
+            onClick={() => setPendingImage(null)}
+            className="rounded p-1 text-ink-faint hover:bg-surface-2 hover:text-ink"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="flex gap-2">
         <VoiceButton
           status={voice.status}
           onClick={voice.status === "recording" ? voice.stop : voice.start}
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
+        <button
+          type="button"
+          aria-label="Adjuntar imagen"
+          title="Adjuntar imagen"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isSending}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink-muted transition-colors duration-fast hover:bg-surface-3 hover:text-ink disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <ImagePlus className="h-4 w-4" aria-hidden="true" />
+        </button>
         <input
           className="flex-1 rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           placeholder="Escribe un mensaje..."
@@ -150,6 +230,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         <div className="mb-1 flex items-center gap-1 text-xs opacity-70">
           <Wrench className="h-3 w-3" aria-hidden="true" /> llamando a {message.toolCall.name}
         </div>
+      )}
+      {message.image && (
+        <img
+          src={`data:${message.image.mimeType};base64,${message.image.data}`}
+          alt="Imagen adjunta"
+          className="mb-1.5 max-h-48 rounded-md"
+        />
       )}
       {message.content}
     </div>

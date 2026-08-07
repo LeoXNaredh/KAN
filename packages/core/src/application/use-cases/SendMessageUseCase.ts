@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendMessage, createConversation, type Conversation } from "../../domain/entities/Conversation";
-import { createMessage, type Message } from "../../domain/entities/Message";
+import { createMessage, type Message, type MessageImage } from "../../domain/entities/Message";
 import type { AIProviderPort } from "../../domain/ports/AIProviderPort";
 import type { ConversationRepositoryPort } from "../../domain/ports/ConversationRepositoryPort";
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
@@ -23,6 +23,8 @@ const MAX_TOTAL_DURATION_MS = 45_000;
 export interface SendMessageInput {
   conversationId?: string;
   userMessage: string;
+  /** Imagen adjunta al mensaje (P3, Visión) — opcional, ver ADR-018. */
+  image?: MessageImage;
 }
 
 export interface SendMessageOutput {
@@ -48,7 +50,7 @@ export class SendMessageUseCase {
       ? (await this.conversationRepository.getById(input.conversationId)) ?? createConversation()
       : createConversation();
 
-    conversation = appendMessage(conversation, createMessage("user", input.userMessage));
+    conversation = appendMessage(conversation, createMessage("user", input.userMessage, input.image));
 
     const tools = await this.safeListTools();
     const systemPrompt = await this.buildSystemPrompt();

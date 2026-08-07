@@ -105,9 +105,14 @@ export function toGeminiContent(message: Message): Content {
     };
   }
 
+  const parts: Content["parts"] = [{ text: message.content }];
+  if (message.image) {
+    parts.push({ inlineData: { mimeType: message.image.mimeType, data: message.image.data } });
+  }
+
   return {
     role: message.role === "assistant" ? "model" : "user",
-    parts: [{ text: message.content }],
+    parts,
   };
 }
 

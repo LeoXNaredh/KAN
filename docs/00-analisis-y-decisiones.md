@@ -187,6 +187,20 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** La síntesis de voz depende del navegador del usuario (no todos soportan `SpeechSynthesis` igual, ej. Firefox Android) — se degrada en silencio si no está disponible, nunca rompe el chat. Es una limitación real y documentada, no oculta.
 
+---
+
+### ADR-018: Visión Fase 1 — imagen inline en `Message`, base64 en la fila (no Supabase Storage todavía)
+
+**Contexto.** P3 (`docs/17` §3.3) pide imágenes en el chat: el usuario sube una foto (ej. de un dispositivo, un documento, una etiqueta) y el modelo la analiza. Hay dos formas razonables de llevar el bytes de la imagen desde el navegador hasta el proveedor de IA y, si hay sesión, hasta persistencia: (a) subirla a un bucket de Supabase Storage y pasar solo una URL/path por todo el sistema, o (b) viajar como base64 inline en el propio `Message`, igual que ya viaja `content`.
+
+**Decisión.** (b) para esta fase: `Message` gana un campo opcional `image?: { data: string; mimeType: string }` (base64 sin prefijo `data:`), igual de simple que el resto del dominio (`content: string`). `SupabaseConversationRepository` lo persiste en dos columnas nuevas de `messages` (`image_data text`, `image_mime_type text`) vía la migración `0006_messages_image.sql`. `GeminiProvider` lo manda como `inlineData` en el mismo `Content` del mensaje. El límite de tamaño (4 MB) se aplica en el borde (`apps/web`, tanto en el input del navegador como en `/api/chat`), no en el dominio.
+
+**Alternativas consideradas.**
+- *Supabase Storage con URL firmada.* Es la opción correcta a mediano plazo (no infla la tabla `messages`, permite CDN, thumbnails, borrado independiente) pero añade un adaptador nuevo (`StoragePort`), un bucket con su propia política RLS, y lógica de subida/firma que ningún otro incremento de Fase 1 necesita todavía. Mismo criterio que ADR-015 con RAG: no sobre-construir antes de que el caso de uso real lo exija.
+- *Base64 solo en memoria, sin persistir la imagen.* Descartada — rompe la promesa ya hecha en P0.2 de que una conversación persistida se puede releer completa; una respuesta del modelo que cita "la imagen que subiste" sin la imagen disponible al recargar es una regresión de UX.
+
+**Consecuencia.** Un `messages.image_data` de varios MB en Postgres no escala indefinidamente — es una limitación conocida, no oculta. Si el uso real de Visión crece (muchas imágenes grandes, galería, recorte/preview), la migración a Supabase Storage es un cambio de adaptador (`SupabaseConversationRepository` implementa `ConversationRepositoryPort` igual, solo cambia qué guarda en `image_data`) — el dominio (`Message.image`) y el puerto no necesitan tocarse, así que no es una rearquitectura, es un swap de adaptador como los que ya viene haciendo el proyecto (`InMemoryConversationRepository` → `SupabaseConversationRepository`).
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

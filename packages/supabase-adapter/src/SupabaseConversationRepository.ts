@@ -14,6 +14,8 @@ interface MessageRow {
   tool_call: unknown;
   tool_result: unknown;
   created_at: string;
+  image_data: string | null;
+  image_mime_type: string | null;
 }
 
 function toMessage(row: MessageRow): Message {
@@ -24,6 +26,7 @@ function toMessage(row: MessageRow): Message {
     createdAt: row.created_at,
     toolCall: (row.tool_call as Message["toolCall"]) ?? undefined,
     toolResult: (row.tool_result as Message["toolResult"]) ?? undefined,
+    image: row.image_data && row.image_mime_type ? { data: row.image_data, mimeType: row.image_mime_type } : undefined,
   };
 }
 
@@ -95,6 +98,8 @@ export class SupabaseConversationRepository implements ConversationRepositoryPor
         tool_call: message.toolCall ?? null,
         tool_result: message.toolResult ?? null,
         created_at: message.createdAt,
+        image_data: message.image?.data ?? null,
+        image_mime_type: message.image?.mimeType ?? null,
       })),
     );
     if (insertError) throw new Error(insertError.message);

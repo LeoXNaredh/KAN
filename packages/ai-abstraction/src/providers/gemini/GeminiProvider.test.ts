@@ -27,6 +27,23 @@ describe("toGeminiContent", () => {
     });
   });
 
+  it("mapea un mensaje de usuario CON imagen a un part de texto + inlineData (P3, ADR-018)", () => {
+    const message: Message = {
+      id: "m5",
+      role: "user",
+      content: "¿qué dispositivo es este?",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      image: { data: "ZmFrZS1iYXNlNjQ=", mimeType: "image/png" },
+    };
+    expect(toGeminiContent(message)).toEqual({
+      role: "user",
+      parts: [
+        { text: "¿qué dispositivo es este?" },
+        { inlineData: { mimeType: "image/png", data: "ZmFrZS1iYXNlNjQ=" } },
+      ],
+    });
+  });
+
   it("mapea un mensaje 'tool' a role 'user' con functionResponse (la API rechaza role 'function')", () => {
     const message: Message = {
       id: "m4",
