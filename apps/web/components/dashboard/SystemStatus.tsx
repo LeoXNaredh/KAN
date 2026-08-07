@@ -1,14 +1,6 @@
 import { Card } from "@/components/ui/Card";
 import type { SystemStatusResponse } from "@/lib/status/types";
-
-function formatRelativeTime(iso: string | undefined): string {
-  if (!iso) return "—";
-  const diffSec = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diffSec < 60) return `hace ${Math.max(diffSec, 0)}s`;
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `hace ${diffMin} min`;
-  return `hace ${Math.round(diffMin / 60)} h`;
-}
+import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 
 export function SystemStatus({ status }: { status: SystemStatusResponse | null }) {
   const totalDevices = status?.edgeAgents.reduce((sum, agent) => sum + agent.devices.length, 0) ?? 0;

@@ -12,10 +12,18 @@ export interface EdgeAgentStatus {
   installedPlugins: Array<{ id: string; displayName: string }>;
 }
 
+/** Entrada de auditoría del Gateway ya traducida a texto legible (P4) — la traducción vive server-side, ver app/api/status/route.ts. */
+export interface ActivityEntry {
+  id: string;
+  at: string;
+  label: string;
+}
+
 export interface SystemStatusResponse {
   gateway: "online" | "offline";
   ai: "configured" | "not-configured";
   edgeAgents: EdgeAgentStatus[];
   capabilitiesCount: number;
   version: string;
+  recentActivity: ActivityEntry[];
 }

@@ -8,6 +8,7 @@ import { DeviceCard } from "@/components/dashboard/DeviceCard";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { SystemStatus } from "@/components/dashboard/SystemStatus";
 import { PluginCard } from "@/components/dashboard/PluginCard";
+import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { ConversationPanel } from "@/components/dashboard/ConversationPanel";
 import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
 import type { StatusLevel } from "@/components/ui/StatusDot";
@@ -103,6 +104,7 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
         </div>
         <div className="flex flex-col gap-4">
           <SystemStatus status={status} />
+          <ActivityFeed activity={status?.recentActivity ?? []} />
           <PluginCard plugins={allPlugins} />
         </div>
       </DashboardGrid>
