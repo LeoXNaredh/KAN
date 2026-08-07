@@ -3,11 +3,14 @@ packages:
   - "packages/*"
   - "plugins/*"
 allowBuilds:
+  '@abandonware/bluetooth-hci-socket': false
+  '@abandonware/noble': false
   '@google/genai': true
   '@serialport/bindings-cpp': true
   electron: true
   esbuild: true
   protobufjs: true
   unrs-resolver: true
+  usb: false
 minimumReleaseAgeExclude:
   - '@google/genai@2.16.0'

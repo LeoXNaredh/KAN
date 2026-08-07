@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { Esp32ArduinoPlugin } from "./index";
 import { FakeSerialTransport, type FakeDevice } from "./infra/FakeSerialTransport";
+import { FakeNetworkTransport, type FakeNetworkDevice } from "./infra/FakeNetworkTransport";
 
 function createEsp32Device(path: string): FakeDevice {
   const digitalState = new Map<number, boolean>();
@@ -39,12 +40,36 @@ function createUnresponsiveAfterPingDevice(path: string): FakeDevice {
   };
 }
 
+function createEsp32NetworkDevice(host: string, port: number): FakeNetworkDevice {
+  const digitalState = new Map<number, boolean>();
+  return {
+    host,
+    port,
+    handle(command) {
+      switch (command.cmd) {
+        case "ping":
+          return { ok: true, device: "kan-esp32" };
+        case "read_digital":
+          return { ok: true, value: digitalState.get(command.pin as number) ? 1 : 0 };
+        case "write_digital":
+          digitalState.set(command.pin as number, command.value as boolean);
+          return { ok: true };
+        default:
+          return { ok: false, error: "comando desconocido" };
+      }
+    },
+  };
+}
+
 describe("Esp32ArduinoPlugin", () => {
   const originalPort = process.env.KAN_ESP32_PORT;
+  const originalWifiHosts = process.env.KAN_ESP32_WIFI_HOSTS;
 
   afterEach(() => {
     if (originalPort === undefined) delete process.env.KAN_ESP32_PORT;
     else process.env.KAN_ESP32_PORT = originalPort;
+    if (originalWifiHosts === undefined) delete process.env.KAN_ESP32_WIFI_HOSTS;
+    else process.env.KAN_ESP32_WIFI_HOSTS = originalWifiHosts;
   });
 
   it("discover() encuentra solo los puertos que responden el protocolo KAN, ignora dispositivos ajenos", async () => {
@@ -192,4 +217,65 @@ describe("Esp32ArduinoPlugin", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/no respondió a tiempo/);
   }, 5000);
+
+  describe("por WiFi (KAN_ESP32_WIFI_HOSTS)", () => {
+    beforeEach(() => {
+      delete process.env.KAN_ESP32_PORT;
+    });
+
+    it("discover() encuentra dispositivos en los hosts configurados, nunca escanea la LAN", async () => {
+      process.env.KAN_ESP32_WIFI_HOSTS = "192.168.1.50:8266";
+      const serialTransport = new FakeSerialTransport([]);
+      const networkTransport = new FakeNetworkTransport([createEsp32NetworkDevice("192.168.1.50", 8266)]);
+      const plugin = new Esp32ArduinoPlugin(serialTransport, networkTransport);
+
+      const devices = await plugin.discover();
+      expect(devices).toHaveLength(1);
+      expect(devices[0].name).toContain("WiFi 192.168.1.50:8266");
+    });
+
+    it("usa el puerto por defecto (8266) si el host no especifica uno", async () => {
+      process.env.KAN_ESP32_WIFI_HOSTS = "192.168.1.50";
+      const networkTransport = new FakeNetworkTransport([createEsp32NetworkDevice("192.168.1.50", 8266)]);
+      const plugin = new Esp32ArduinoPlugin(new FakeSerialTransport([]), networkTransport);
+
+      const devices = await plugin.discover();
+      expect(devices).toHaveLength(1);
+    });
+
+    it("ignora hosts que no responden el protocolo KAN", async () => {
+      process.env.KAN_ESP32_WIFI_HOSTS = "192.168.1.99:8266";
+      const networkTransport = new FakeNetworkTransport([
+        { host: "192.168.1.99", port: 8266, handle: () => undefined },
+      ]);
+      const plugin = new Esp32ArduinoPlugin(new FakeSerialTransport([]), networkTransport);
+
+      expect(await plugin.discover()).toHaveLength(0);
+    });
+
+    it("connect()/invoke() funcionan de punta a punta sobre una conexión WiFi", async () => {
+      process.env.KAN_ESP32_WIFI_HOSTS = "192.168.1.50:8266";
+      const networkTransport = new FakeNetworkTransport([createEsp32NetworkDevice("192.168.1.50", 8266)]);
+      const plugin = new Esp32ArduinoPlugin(new FakeSerialTransport([]), networkTransport);
+
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+
+      await plugin.invoke(device.id, "write_digital_pin", { pin: 5, value: true });
+      const result = await plugin.invoke(device.id, "read_digital_pin", { pin: 5 });
+      expect(result).toEqual({ success: true, data: { value: 1 } });
+    });
+
+    it("puede combinar un dispositivo Serial y uno WiFi al mismo tiempo", async () => {
+      process.env.KAN_ESP32_WIFI_HOSTS = "192.168.1.50:8266";
+      const serialTransport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const networkTransport = new FakeNetworkTransport([createEsp32NetworkDevice("192.168.1.50", 8266)]);
+      const plugin = new Esp32ArduinoPlugin(serialTransport, networkTransport);
+
+      const devices = await plugin.discover();
+      expect(devices).toHaveLength(2);
+      expect(devices.some((d) => d.name.includes("Serial COM3"))).toBe(true);
+      expect(devices.some((d) => d.name.includes("WiFi 192.168.1.50"))).toBe(true);
+    });
+  });
 });

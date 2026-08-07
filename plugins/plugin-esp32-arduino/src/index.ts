@@ -2,13 +2,33 @@ import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescript
 import { KanDeviceDriverPlugin, defineCapability } from "@kan/plugin-sdk-ts";
 import { ESP32_PIN_MAP, defaultSeverityFor, findPin, type PinInfo } from "./pinMap";
 import { NodeSerialTransport } from "./infra/NodeSerialTransport";
-import type { SerialConnection, SerialTransportPort } from "./SerialTransportPort";
-import { sendCommand, SerialTimeoutError } from "./wireProtocol";
+import { NodeTcpTransport } from "./infra/NodeTcpTransport";
+import type { SerialTransportPort } from "./SerialTransportPort";
+import type { LineConnection } from "./LineConnection";
+import type { NetworkTransportPort } from "./NetworkTransportPort";
+import { sendCommand, SerialTimeoutError, ConnectionNotReadyError } from "./wireProtocol";
 
 const BAUD_RATE = 115200;
 const PROBE_TIMEOUT_MS = 500;
 const COMMAND_TIMEOUT_MS = 2000;
 const EXPECTED_DEVICE_ID = "kan-esp32";
+const DEFAULT_WIFI_PORT = 8266;
+
+type ConnectionSource = { kind: "serial"; path: string } | { kind: "network"; host: string; port: number };
+
+/** `KAN_ESP32_WIFI_HOSTS=192.168.1.50,192.168.1.51:9000` — puerto por defecto si se omite. */
+function parseWifiHosts(envValue: string | undefined): Array<{ host: string; port: number }> {
+  if (!envValue) return [];
+  return envValue
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [host, portText] = entry.split(":");
+      const port = portText ? Number(portText) : DEFAULT_WIFI_PORT;
+      return { host, port: Number.isFinite(port) ? port : DEFAULT_WIFI_PORT };
+    });
+}
 
 type PinRequirement = "any" | "write" | "analogWrite";
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -55,8 +75,8 @@ function validateAnalogValue(input: unknown): ValidationResult<number> {
   return ok(value);
 }
 
-function sanitizeDeviceId(path: string): string {
-  return `esp32_${path.replace(/[^a-zA-Z0-9]/g, "_")}`;
+function sanitizeDeviceId(raw: string): string {
+  return `esp32_${raw.replace(/[^a-zA-Z0-9]/g, "_")}`;
 }
 
 /**
@@ -81,32 +101,50 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
     runtime: "in-process-ts",
   };
 
-  private readonly devicePaths = new Map<string, string>();
-  private readonly connections = new Map<string, SerialConnection>();
+  private readonly connectionSources = new Map<string, ConnectionSource>();
+  private readonly connections = new Map<string, LineConnection>();
 
-  constructor(private readonly transport: SerialTransportPort = new NodeSerialTransport()) {
+  constructor(
+    private readonly transport: SerialTransportPort = new NodeSerialTransport(),
+    private readonly networkTransport: NetworkTransportPort = new NodeTcpTransport(),
+  ) {
     super();
   }
 
   async discover(): Promise<DeviceDescriptor[]> {
-    const forcedPath = process.env.KAN_ESP32_PORT;
-    const candidatePaths = forcedPath ? [forcedPath] : (await this.transport.list()).map((port) => port.path);
-
     const found: DeviceDescriptor[] = [];
-    for (const path of candidatePaths) {
-      const isKanDevice = await this.probe(path);
+
+    const forcedPath = process.env.KAN_ESP32_PORT;
+    const serialCandidates = forcedPath ? [forcedPath] : (await this.transport.list()).map((port) => port.path);
+    for (const path of serialCandidates) {
+      const isKanDevice = await this.probeConnection(() => this.transport.open(path, BAUD_RATE));
       if (!isKanDevice) continue;
-      const deviceId = sanitizeDeviceId(path);
-      this.devicePaths.set(deviceId, path);
-      found.push({ id: deviceId, name: `ESP32/Arduino (${path})`, kind: this.kind });
+      const deviceId = sanitizeDeviceId(`serial_${path}`);
+      this.connectionSources.set(deviceId, { kind: "serial", path });
+      found.push({ id: deviceId, name: `ESP32/Arduino (Serial ${path})`, kind: this.kind });
     }
+
+    // Nunca escanea la LAN entera — solo los hosts que el usuario configuró
+    // explícitamente, mismo criterio pragmático que KAN_ESP32_PORT.
+    const wifiCandidates = parseWifiHosts(process.env.KAN_ESP32_WIFI_HOSTS);
+    for (const { host, port } of wifiCandidates) {
+      const isKanDevice = await this.probeConnection(() => this.networkTransport.open(host, port));
+      if (!isKanDevice) continue;
+      const deviceId = sanitizeDeviceId(`wifi_${host}_${port}`);
+      this.connectionSources.set(deviceId, { kind: "network", host, port });
+      found.push({ id: deviceId, name: `ESP32/Arduino (WiFi ${host}:${port})`, kind: this.kind });
+    }
+
     return found;
   }
 
   async connect(deviceId: string): Promise<void> {
-    const path = this.devicePaths.get(deviceId);
-    if (!path) throw new Error(`Dispositivo desconocido: ${deviceId}`);
-    const connection = await this.transport.open(path, BAUD_RATE);
+    const source = this.connectionSources.get(deviceId);
+    if (!source) throw new Error(`Dispositivo desconocido: ${deviceId}`);
+    const connection =
+      source.kind === "serial"
+        ? await this.transport.open(source.path, BAUD_RATE)
+        : await this.networkTransport.open(source.host, source.port);
     this.connections.set(deviceId, connection);
   }
 
@@ -201,10 +239,11 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
     }
   }
 
-  private async probe(path: string): Promise<boolean> {
-    let connection: SerialConnection | undefined;
+  /** Abre, manda un ping, cierra — nunca deja una conexión de sondeo abierta ni le escribe nada más a un puerto/host que no confirme ser un dispositivo KAN. */
+  private async probeConnection(open: () => Promise<LineConnection>): Promise<boolean> {
+    let connection: LineConnection | undefined;
     try {
-      connection = await this.transport.open(path, BAUD_RATE);
+      connection = await open();
       const response = await sendCommand(connection, { cmd: "ping" }, PROBE_TIMEOUT_MS);
       return response.ok === true && response.device === EXPECTED_DEVICE_ID;
     } catch {
@@ -214,7 +253,7 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
     }
   }
 
-  private async exchange(connection: SerialConnection, command: Record<string, unknown>): Promise<CapabilityResult> {
+  private async exchange(connection: LineConnection, command: Record<string, unknown>): Promise<CapabilityResult> {
     try {
       const response = await sendCommand(connection, command, COMMAND_TIMEOUT_MS);
       if (response.ok !== true) {
@@ -227,7 +266,11 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
       return { success: true, data };
     } catch (error) {
       const message =
-        error instanceof SerialTimeoutError ? error.message : error instanceof Error ? error.message : String(error);
+        error instanceof SerialTimeoutError || error instanceof ConnectionNotReadyError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : String(error);
       return { success: false, error: message };
     }
   }
@@ -236,5 +279,10 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
 export { ESP32_PIN_MAP, findPin, defaultSeverityFor } from "./pinMap";
 export type { PinInfo } from "./pinMap";
 export type { SerialConnection, SerialTransportPort, PortInfo } from "./SerialTransportPort";
+export type { LineConnection, LineConnectionState } from "./LineConnection";
+export type { NetworkTransportPort, TransportOptions } from "./NetworkTransportPort";
 export { NodeSerialTransport } from "./infra/NodeSerialTransport";
 export { FakeSerialTransport, type FakeDevice } from "./infra/FakeSerialTransport";
+export { NodeTcpTransport, type NodeTcpTransportTuning } from "./infra/NodeTcpTransport";
+export { FakeNetworkTransport, type FakeNetworkDevice } from "./infra/FakeNetworkTransport";
+export { ConnectionNotReadyError, SerialTimeoutError } from "./wireProtocol";

@@ -1,10 +1,16 @@
 import { SerialPort, ReadlineParser } from "serialport";
 import type { PortInfo, SerialConnection, SerialTransportPort } from "../SerialTransportPort";
+import type { LineConnectionState } from "../LineConnection";
 
 /**
  * Transporte serial real sobre `serialport` (recomendado en docs/08 §3).
  * No hay hardware disponible para probarlo en esta sesión — queda listo
  * para que el usuario lo use al flashear un ESP32/Arduino real.
+ *
+ * Sin reconexión automática (a diferencia de NodeTcpTransport) — una
+ * desconexión de un puerto serial (cable desenchufado) normalmente implica
+ * que el dispositivo físico ya no está ahí, no tiene sentido reintentar
+ * como sí lo tiene una caída de WiFi transitoria.
  */
 export class NodeSerialTransport implements SerialTransportPort {
   async list(): Promise<PortInfo[]> {
@@ -20,7 +26,21 @@ export class NodeSerialTransport implements SerialTransportPort {
       port.open((error) => (error ? reject(error) : resolve()));
     });
 
+    let state: LineConnectionState = "connected";
+    const stateHandlers: Array<(state: LineConnectionState) => void> = [];
+    const setState = (next: LineConnectionState) => {
+      if (state === next) return;
+      state = next;
+      stateHandlers.forEach((handler) => handler(state));
+    };
+
+    port.on("close", () => setState("disconnected"));
+    port.on("error", () => setState("disconnected"));
+
     return {
+      get state() {
+        return state;
+      },
       write: (line: string) => {
         port.write(`${line}\n`);
       },
@@ -31,13 +51,28 @@ export class NodeSerialTransport implements SerialTransportPort {
           parser.off("data", listener);
         };
       },
+      onStateChange: (handler: (state: LineConnectionState) => void) => {
+        stateHandlers.push(handler);
+        return () => {
+          const index = stateHandlers.indexOf(handler);
+          if (index !== -1) stateHandlers.splice(index, 1);
+        };
+      },
       close: () =>
         new Promise<void>((resolve, reject) => {
           if (!port.isOpen) {
+            setState("disconnected");
             resolve();
             return;
           }
-          port.close((error) => (error ? reject(error) : resolve()));
+          port.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            setState("disconnected");
+            resolve();
+          });
         }),
     };
   }

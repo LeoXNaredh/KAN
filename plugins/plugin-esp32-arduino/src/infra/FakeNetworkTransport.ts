@@ -1,30 +1,26 @@
-import type { PortInfo, SerialConnection, SerialTransportPort } from "../SerialTransportPort";
-import type { LineConnectionState } from "../LineConnection";
+import type { LineConnection, LineConnectionState } from "../LineConnection";
+import type { NetworkTransportPort } from "../NetworkTransportPort";
 
 /**
- * Transporte serial simulado para tests (ADR-012: probar contra un "cliente
- * real" — aquí, un dispositivo que habla el protocolo de verdad — en vez de
- * mockear la lógica interna). Cada `FakeDevice` decide qué responder a cada
- * comando, igual que respondería el firmware real sobre `Serial`.
+ * Transporte de red simulado para tests del plugin (mismo rol que
+ * FakeSerialTransport para el camino Serial) — la resiliencia real
+ * (reconexión/backoff) se prueba aparte contra un servidor TCP real en
+ * NodeTcpTransport.test.ts (ADR-012); esto es solo para probar
+ * discover()/connect()/invoke() del plugin sobre WiFi sin red real.
  */
-export interface FakeDevice {
-  path: string;
-  manufacturer?: string;
-  /** `undefined` simula un dispositivo serial ajeno a KAN que no responde nuestro protocolo. */
+export interface FakeNetworkDevice {
+  host: string;
+  port: number;
   handle(command: Record<string, unknown>): Record<string, unknown> | undefined;
 }
 
-export class FakeSerialTransport implements SerialTransportPort {
-  constructor(private readonly devices: FakeDevice[]) {}
+export class FakeNetworkTransport implements NetworkTransportPort {
+  constructor(private readonly devices: FakeNetworkDevice[]) {}
 
-  async list(): Promise<PortInfo[]> {
-    return this.devices.map((device) => ({ path: device.path, manufacturer: device.manufacturer }));
-  }
-
-  async open(path: string): Promise<SerialConnection> {
-    const device = this.devices.find((d) => d.path === path);
+  async open(host: string, port: number): Promise<LineConnection> {
+    const device = this.devices.find((d) => d.host === host && d.port === port);
     if (!device) {
-      throw new Error(`Puerto no encontrado: ${path}`);
+      throw new Error(`No hay nada escuchando en ${host}:${port}`);
     }
 
     const lineHandlers: Array<(line: string) => void> = [];

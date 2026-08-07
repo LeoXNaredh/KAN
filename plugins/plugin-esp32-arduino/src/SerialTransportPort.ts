@@ -1,3 +1,5 @@
+import type { LineConnection } from "./LineConnection";
+
 /**
  * Abstracción del transporte serial (ADR-012: testeable sin hardware real
  * con un fake que implementa el mismo contrato — ver infra/FakeSerialTransport.ts).
@@ -8,12 +10,8 @@ export interface PortInfo {
   manufacturer?: string;
 }
 
-export interface SerialConnection {
-  write(line: string): void;
-  /** Devuelve una función para dejar de escuchar — evita acumular listeners entre comandos (half-duplex, uno en vuelo a la vez). */
-  onLine(handler: (line: string) => void): () => void;
-  close(): Promise<void>;
-}
+/** Alias histórico — el shape real vive en LineConnection.ts, compartido con el transporte de red. */
+export type SerialConnection = LineConnection;
 
 export interface SerialTransportPort {
   list(): Promise<PortInfo[]>;
