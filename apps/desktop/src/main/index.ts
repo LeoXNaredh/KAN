@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { platform } from "node:os";
 import { app, BrowserWindow, ipcMain } from "electron";
 import {
   EdgeAgent,
@@ -60,6 +61,7 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   const agent = new EdgeAgent({
     edgeAgentId,
     agentVersion: app.getVersion(),
+    os: platform(),
     bus,
     logger,
     configStore,
@@ -68,6 +70,19 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   });
 
   await agent.registerPlugin(new DeviceSimulatorPlugin());
+
+  // Import dinámico + try/catch (ADR-038): `onoff` trae una dependencia
+  // nativa transitiva (`epoll`) — si su binding no carga en este proceso de
+  // Electron (ABI distinto al Node del sistema), esto no debe tumbar el
+  // resto del Edge Agent (simulador incluido) para quien ni siquiera tiene
+  // una Raspberry Pi.
+  try {
+    const { RaspberryPiGpioPlugin } = await import("@kan/plugin-raspberry-pi");
+    await agent.registerPlugin(new RaspberryPiGpioPlugin());
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de Raspberry Pi (¿falta compilar una dependencia nativa?): ${error}`);
+  }
+
   await agent.bootstrap();
 
   for (const eventName of FORWARDED_EVENTS) {

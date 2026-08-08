@@ -8,6 +8,14 @@ allowBuilds:
   '@google/genai': true
   '@serialport/bindings-cpp': true
   electron: true
+  # Dependencia transitiva de `onoff` (@kan/plugin-raspberry-pi, ADR-038) —
+  # usada para detección de interrupciones por cambio de pin (gpio.watch()),
+  # que este plugin no llama. `false` a propósito, mismo criterio que
+  # `@abandonware/noble`/`usb` en este archivo: es un binding nativo
+  # Linux/Pi-específico (epoll de Linux) que no compila en Windows/Mac (sin
+  # toolchain de C++ para eso acá) ni hace falta en desarrollo — se resuelve
+  # en la Pi real donde corre de verdad, no en la máquina de desarrollo.
+  epoll: false
   esbuild: true
   protobufjs: true
   unrs-resolver: true

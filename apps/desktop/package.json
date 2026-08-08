@@ -14,6 +14,7 @@
     "@kan/edge-agent-core": "workspace:*",
     "@kan/plugin-contract": "workspace:*",
     "@kan/plugin-device-simulator": "workspace:*",
+    "@kan/plugin-raspberry-pi": "workspace:*",
     "@kan/plugin-sdk-ts": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
