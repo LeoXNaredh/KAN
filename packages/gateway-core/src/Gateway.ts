@@ -70,6 +70,7 @@ export class Gateway {
         installedPlugins: info.hello.installedPlugins,
         devices: dedupeDevices(info.hello.capabilities),
         lastSeenAt: info.connectedAt,
+        ownerId: info.ownerId,
       };
       this.agentRegistry.upsert(record);
       this.agentRegistry.markOnline(info.edgeAgentId);

@@ -339,6 +339,9 @@ importers:
 
   packages/gateway-core:
     dependencies:
+      '@kan/core':
+        specifier: workspace:*
+        version: link:../core
       '@kan/plugin-contract':
         specifier: workspace:*
         version: link:../plugin-contract

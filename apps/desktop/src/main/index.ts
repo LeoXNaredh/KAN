@@ -15,6 +15,8 @@ import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
 
 let mainWindow: BrowserWindow | null = null;
 let edgeAgent: EdgeAgent | undefined;
+let configStore: JsonFileConfigStore | undefined;
+let edgeAgentId: string | undefined;
 
 const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "plugin.loaded",
@@ -43,7 +45,8 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   const userDataDir = app.getPath("userData");
   const bus = new EdgeAgentBus();
   const logger = new FileAndConsoleLogger(join(userDataDir, "logs", "edge-agent.log"), bus);
-  const configStore = new JsonFileConfigStore(join(userDataDir, "config.json"));
+  configStore = new JsonFileConfigStore(join(userDataDir, "config.json"));
+  edgeAgentId = getOrCreateEdgeAgentId(configStore);
 
   // Sin servidor de Core todavía (ADR-009): esto reintentará indefinidamente
   // con backoff. Es el comportamiento esperado (Modo Offline, requisito 14).
@@ -55,7 +58,7 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   );
 
   const agent = new EdgeAgent({
-    edgeAgentId: getOrCreateEdgeAgentId(configStore),
+    edgeAgentId,
     agentVersion: app.getVersion(),
     bus,
     logger,
@@ -105,6 +108,44 @@ function registerIpcHandlers(): void {
       return edgeAgent.setSafetyPolicy(deviceId, target, severity, alias);
     },
   );
+  ipcMain.handle("kan:getPairingStatus", () => ({ paired: Boolean(configStore?.get<string>("pairingToken")) }));
+  ipcMain.handle("kan:pair", (_event, code: string) => pairAgent(code));
+}
+
+/**
+ * Reclama un código de pairing contra el Gateway (docs/19 P2, incremento 3)
+ * — HTTP plano, no WS: no hace falta ningún cliente nuevo, Electron ya
+ * tiene `fetch` global. Sin token interno: esta ruta no lo exige (ver
+ * apps/gateway/src/http/pairingRoutes.ts), a propósito, porque este proceso
+ * nunca tiene ese secreto de servidor.
+ */
+async function pairAgent(code: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!configStore || !edgeAgentId) {
+    return { ok: false, error: "El Edge Agent todavía no terminó de arrancar." };
+  }
+
+  try {
+    const gatewayHttpUrl = process.env.KAN_GATEWAY_HTTP_URL ?? "http://localhost:8787";
+    const response = await fetch(`${gatewayHttpUrl}/v1/pairing/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairingCode: code, edgeAgentId }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string; secret?: string };
+    if (!response.ok) {
+      return { ok: false, error: body.error ?? "No se pudo vincular." };
+    }
+
+    configStore.set("pairingToken", body.secret);
+    // El hello ya enviado en esta sesión no lleva el pairingToken — más
+    // simple y seguro reiniciar que mutar en caliente la conexión ya
+    // establecida. El próximo arranque lo manda desde el primer hello.
+    app.relaunch();
+    app.exit(0);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo contactar al Gateway." };
+  }
 }
 
 function createWindow(): void {

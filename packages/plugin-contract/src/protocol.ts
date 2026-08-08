@@ -17,6 +17,13 @@ export interface HelloMessage {
   agentVersion?: string;
   installedPlugins: PluginManifest[];
   capabilities: Array<{ deviceId: string; deviceName: string; capability: CapabilityDescriptor }>;
+  /**
+   * Secreto de pairing (docs/19 P2, incremento 3) — presente solo si este
+   * Edge Agent ya fue vinculado a un usuario. El Gateway lo resuelve a un
+   * `ownerId` en `onHello()`; ausente, la conexión sigue funcionando igual
+   * que antes (retrocompatible, sin `ownerId`).
+   */
+  pairingToken?: string;
 }
 
 export interface HeartbeatMessage {

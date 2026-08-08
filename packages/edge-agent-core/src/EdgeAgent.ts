@@ -92,6 +92,10 @@ export class EdgeAgent {
           capabilities: this.capabilityRegistry
             .list()
             .map((c) => ({ deviceId: c.deviceId, deviceName: c.deviceName, capability: c.capability })),
+          // Presente solo si este agente ya fue vinculado a un usuario
+          // (docs/19 P2, incremento 3) — ausente, se conecta igual que
+          // siempre, sin ownerId.
+          pairingToken: this.deps.configStore.get<string>("pairingToken"),
         });
       }
     });

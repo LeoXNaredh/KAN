@@ -5,6 +5,8 @@ export interface AgentConnectionInfo {
   protocolVersion: string;
   connectedAt: string;
   hello: HelloMessage;
+  /** Resuelto desde `hello.pairingToken` (docs/19 P2, incremento 3) — `undefined` si el agente no está vinculado a ningún usuario todavía. */
+  ownerId?: string;
 }
 
 export type Unsubscribe = () => void;

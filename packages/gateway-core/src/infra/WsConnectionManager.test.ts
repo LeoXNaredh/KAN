@@ -2,19 +2,29 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket } from "ws";
 import { PROTOCOL_VERSION } from "@kan/plugin-contract";
+import type { PairingPort } from "@kan/core";
 import { WsConnectionManager } from "./WsConnectionManager";
 import type { AgentConnectionInfo } from "../domain/ports/ConnectionManagerPort";
 
 const TOKEN = "test-token";
 
-function hello(edgeAgentId: string, protocolVersion = PROTOCOL_VERSION) {
+function hello(edgeAgentId: string, protocolVersion = PROTOCOL_VERSION, pairingToken?: string) {
   return JSON.stringify({
     type: "hello",
     protocolVersion,
     edgeAgentId,
     installedPlugins: [],
     capabilities: [],
+    pairingToken,
   });
+}
+
+function fakePairingPort(resolveOwner: PairingPort["resolveOwner"]): PairingPort {
+  return {
+    generateCode: async () => ({ code: "", expiresAt: "" }),
+    claim: async () => undefined,
+    resolveOwner,
+  };
 }
 
 function waitFor<T>(fn: (resolve: (value: T) => void) => void, timeoutMs = 2000): Promise<T> {
@@ -205,6 +215,130 @@ describe("WsConnectionManager (integración WS real)", () => {
     } finally {
       cappedManager.stop();
       await new Promise<void>((resolve) => cappedServer.close(() => resolve()));
+    }
+  });
+
+  it("un hello con pairingToken válido resuelve el ownerId (docs/19 P2, incremento 3)", async () => {
+    const pairingManager = new WsConnectionManager(
+      TOKEN,
+      undefined,
+      fakePairingPort(async (secret, edgeAgentId) => (secret === "secreto-valido" && edgeAgentId === "agent-paired" ? "user-1" : undefined)),
+    );
+    pairingManager.start();
+    const pairingServer = createServer();
+    pairingServer.on("upgrade", (request, socket, head) => {
+      if (request.url === "/edge") pairingManager.handleUpgrade(request, socket, head);
+      else socket.destroy();
+    });
+    await new Promise<void>((resolve) => pairingServer.listen(0, resolve));
+    const pairingPort = (pairingServer.address() as { port: number }).port;
+
+    try {
+      const ws = new WebSocket(`ws://localhost:${pairingPort}/edge`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      await waitForOpen(ws);
+      const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => pairingManager.onAgentConnected(resolve));
+      ws.send(hello("agent-paired", PROTOCOL_VERSION, "secreto-valido"));
+
+      const info = await connectedPromise;
+      expect(info.ownerId).toBe("user-1");
+      ws.close();
+    } finally {
+      pairingManager.stop();
+      await new Promise<void>((resolve) => pairingServer.close(() => resolve()));
+    }
+  });
+
+  it("un pairingToken que no resuelve NO rechaza la conexión — sigue conectando sin ownerId", async () => {
+    const pairingManager = new WsConnectionManager(TOKEN, undefined, fakePairingPort(async () => undefined));
+    pairingManager.start();
+    const pairingServer = createServer();
+    pairingServer.on("upgrade", (request, socket, head) => {
+      if (request.url === "/edge") pairingManager.handleUpgrade(request, socket, head);
+      else socket.destroy();
+    });
+    await new Promise<void>((resolve) => pairingServer.listen(0, resolve));
+    const pairingPort = (pairingServer.address() as { port: number }).port;
+
+    try {
+      const ws = new WebSocket(`ws://localhost:${pairingPort}/edge`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      await waitForOpen(ws);
+      const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => pairingManager.onAgentConnected(resolve));
+      ws.send(hello("agent-unresolved", PROTOCOL_VERSION, "secreto-invalido"));
+
+      const info = await connectedPromise;
+      expect(info.ownerId).toBeUndefined();
+      expect(pairingManager.getState("agent-unresolved")).toBe("connected");
+      ws.close();
+    } finally {
+      pairingManager.stop();
+      await new Promise<void>((resolve) => pairingServer.close(() => resolve()));
+    }
+  });
+
+  it("si resolveOwner() lanza (ej. Supabase caído), la conexión sigue igual, sin ownerId", async () => {
+    const pairingManager = new WsConnectionManager(
+      TOKEN,
+      undefined,
+      fakePairingPort(async () => {
+        throw new Error("network error");
+      }),
+    );
+    pairingManager.start();
+    const pairingServer = createServer();
+    pairingServer.on("upgrade", (request, socket, head) => {
+      if (request.url === "/edge") pairingManager.handleUpgrade(request, socket, head);
+      else socket.destroy();
+    });
+    await new Promise<void>((resolve) => pairingServer.listen(0, resolve));
+    const pairingPort = (pairingServer.address() as { port: number }).port;
+
+    try {
+      const ws = new WebSocket(`ws://localhost:${pairingPort}/edge`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      await waitForOpen(ws);
+      const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => pairingManager.onAgentConnected(resolve));
+      ws.send(hello("agent-error", PROTOCOL_VERSION, "cualquier-secreto"));
+
+      const info = await connectedPromise;
+      expect(info.ownerId).toBeUndefined();
+      ws.close();
+    } finally {
+      pairingManager.stop();
+      await new Promise<void>((resolve) => pairingServer.close(() => resolve()));
+    }
+  });
+
+  it("sin pairingToken en el hello, no se llama a resolveOwner() y el agente conecta sin ownerId (retrocompatible)", async () => {
+    let called = false;
+    const pairingManager = new WsConnectionManager(
+      TOKEN,
+      undefined,
+      fakePairingPort(async () => {
+        called = true;
+        return "user-1";
+      }),
+    );
+    pairingManager.start();
+    const pairingServer = createServer();
+    pairingServer.on("upgrade", (request, socket, head) => {
+      if (request.url === "/edge") pairingManager.handleUpgrade(request, socket, head);
+      else socket.destroy();
+    });
+    await new Promise<void>((resolve) => pairingServer.listen(0, resolve));
+    const pairingPort = (pairingServer.address() as { port: number }).port;
+
+    try {
+      const ws = new WebSocket(`ws://localhost:${pairingPort}/edge`, { headers: { authorization: `Bearer ${TOKEN}` } });
+      await waitForOpen(ws);
+      const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => pairingManager.onAgentConnected(resolve));
+      ws.send(hello("agent-no-token"));
+
+      const info = await connectedPromise;
+      expect(info.ownerId).toBeUndefined();
+      expect(called).toBe(false);
+      ws.close();
+    } finally {
+      pairingManager.stop();
+      await new Promise<void>((resolve) => pairingServer.close(() => resolve()));
     }
   });
 

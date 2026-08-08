@@ -8,6 +8,7 @@ import {
   type EdgeToCoreMessage,
   type HelloMessage,
 } from "@kan/plugin-contract";
+import type { PairingPort } from "@kan/core";
 import type { AgentConnectionInfo, ConnectionManagerPort, Unsubscribe } from "../domain/ports/ConnectionManagerPort";
 
 const HELLO_TIMEOUT_MS = 10_000;
@@ -27,8 +28,17 @@ const DEFAULT_MAX_CONNECTIONS = 50;
 interface TrackedConnection {
   socket: WebSocket;
   edgeAgentId?: string;
+  ownerId?: string;
   lastSeen: number;
   helloTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * `onHello()` es async (resuelve el `ownerId` antes de terminar, docs/19
+   * P2 incremento 3) — este flag cubre la ventana entre que llega un
+   * "hello" y que `conn.edgeAgentId` queda seteado, para que un segundo
+   * "hello" en esa ventana siga detectándose como duplicado (hallazgo A4
+   * de docs/13, antes garantizado gratis por ser todo síncrono).
+   */
+  helloInFlight?: boolean;
 }
 
 function majorVersion(version: string): string {
@@ -58,6 +68,7 @@ export class WsConnectionManager implements ConnectionManagerPort {
   constructor(
     private readonly authToken: string,
     private readonly maxConnections: number = DEFAULT_MAX_CONNECTIONS,
+    private readonly pairingPort?: PairingPort,
   ) {}
 
   start(): void {
@@ -141,12 +152,13 @@ export class WsConnectionManager implements ConnectionManagerPort {
     }
 
     if (message.type === "hello") {
-      if (conn.edgeAgentId) {
-        // Un socket ya autenticado no debería volver a mandar "hello" — protocolo violado (hallazgo A4).
+      if (conn.edgeAgentId || conn.helloInFlight) {
+        // Un socket ya autenticado (o con un hello ya en curso) no debería volver a mandar "hello" — protocolo violado (hallazgo A4).
         conn.socket.close(4003, "hello duplicado en la misma conexión");
         return;
       }
-      this.onHello(conn, message);
+      conn.helloInFlight = true;
+      void this.onHello(conn, message);
       return;
     }
 
@@ -154,11 +166,26 @@ export class WsConnectionManager implements ConnectionManagerPort {
     this.messageHandlers.forEach((handler) => handler(conn.edgeAgentId!, message));
   }
 
-  private onHello(conn: TrackedConnection, hello: HelloMessage): void {
+  private async onHello(conn: TrackedConnection, hello: HelloMessage): Promise<void> {
     if (majorVersion(hello.protocolVersion) !== majorVersion(PROTOCOL_VERSION)) {
       conn.socket.close(4001, "versión de protocolo incompatible");
       this.pending.delete(conn);
       return;
+    }
+
+    // Resuelve el ownerId antes de dar por conectado el agente (docs/19 P2,
+    // incremento 3). Si el pairingToken no resuelve (revocado, corrupto, o
+    // Supabase caído) la conexión NO se rechaza — sigue igual que hoy, sin
+    // ownerId. Rechazar tumbaría un dispositivo físico por un problema de
+    // identidad que todavía no bloquea nada (la autorización real es un
+    // incremento posterior).
+    let ownerId: string | undefined;
+    if (hello.pairingToken && this.pairingPort) {
+      try {
+        ownerId = await this.pairingPort.resolveOwner(hello.pairingToken, hello.edgeAgentId);
+      } catch {
+        ownerId = undefined;
+      }
     }
 
     // Si otro socket ya reclamaba este edgeAgentId (reconexión o colisión), se cierra
@@ -171,6 +198,7 @@ export class WsConnectionManager implements ConnectionManagerPort {
     clearTimeout(conn.helloTimer);
     this.pending.delete(conn);
     conn.edgeAgentId = hello.edgeAgentId;
+    conn.ownerId = ownerId;
     this.byAgentId.set(hello.edgeAgentId, conn);
 
     const info: AgentConnectionInfo = {
@@ -178,6 +206,7 @@ export class WsConnectionManager implements ConnectionManagerPort {
       protocolVersion: hello.protocolVersion,
       connectedAt: new Date().toISOString(),
       hello,
+      ownerId,
     };
     this.connectedHandlers.forEach((handler) => handler(info));
   }

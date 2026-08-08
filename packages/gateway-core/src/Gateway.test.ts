@@ -46,12 +46,13 @@ class FakeConnectionManager implements ConnectionManagerPort {
   }
 
   /** Simula que un Edge Agent real se conecta y manda su hello. */
-  simulateAgentConnect(hello: HelloMessage): void {
+  simulateAgentConnect(hello: HelloMessage, ownerId?: string): void {
     const info: AgentConnectionInfo = {
       edgeAgentId: hello.edgeAgentId,
       protocolVersion: hello.protocolVersion,
       connectedAt: new Date().toISOString(),
       hello,
+      ownerId,
     };
     this.connectedHandlers.forEach((handler) => handler(info));
   }
@@ -136,6 +137,24 @@ function helloFor(edgeAgentId: string): HelloMessage {
 }
 
 describe("Gateway (integración, transporte simulado)", () => {
+  it("el ownerId resuelto en la conexión (docs/19 P2, incremento 3) queda en el AgentRecord", async () => {
+    const { gateway, connectionManager } = buildGateway();
+    const edgeAgentId = randomUUID();
+
+    connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+
+    expect(gateway.agentRegistry.get(edgeAgentId)?.ownerId).toBe("user-1");
+  });
+
+  it("sin ownerId resuelto (agente no vinculado todavía), el AgentRecord queda con ownerId undefined", async () => {
+    const { gateway, connectionManager } = buildGateway();
+    const edgeAgentId = randomUUID();
+
+    connectionManager.simulateAgentConnect(helloFor(edgeAgentId));
+
+    expect(gateway.agentRegistry.get(edgeAgentId)?.ownerId).toBeUndefined();
+  });
+
   it("ciclo completo: agente conecta -> capability disponible como tool -> ejecutar -> telemetría -> resultado", async () => {
     const { gateway, connectionManager, auditStore } = buildGateway();
 

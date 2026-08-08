@@ -17,6 +17,9 @@ const kanApi = {
   listSafetyTargets: (deviceId: string) => ipcRenderer.invoke("kan:listSafetyTargets", deviceId),
   setSafetyPolicy: (deviceId: string, target: string, severity: ActionSeverity, alias?: string) =>
     ipcRenderer.invoke("kan:setSafetyPolicy", deviceId, target, severity, alias),
+  getPairingStatus: (): Promise<{ paired: boolean }> => ipcRenderer.invoke("kan:getPairingStatus"),
+  pairAgent: (code: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("kan:pair", code),
   onEvent: (handler: (event: BusEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: BusEvent) => handler(data);
     ipcRenderer.on("kan:event", listener);

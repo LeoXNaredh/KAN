@@ -45,6 +45,7 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [coreStatus, setCoreStatus] = useState<CoreConnectionStatus>("disconnected");
   const [safetyTargets, setSafetyTargets] = useState<Record<string, SafetyTargetListing[]>>({});
+  const [paired, setPaired] = useState<boolean | null>(null);
 
   function loadSafetyTargets(deviceId: string) {
     window.kan.listSafetyTargets(deviceId).then((targets: SafetyTargetListing[]) => {
@@ -59,6 +60,7 @@ export default function App() {
       setCapabilities(await window.kan.listCapabilities());
       setCoreStatus(await window.kan.getCoreStatus());
       loadedDevices.forEach((device) => loadSafetyTargets(device.id));
+      setPaired((await window.kan.getPairingStatus()).paired);
     })();
 
     const unsubscribe = window.kan.onEvent((event: BusEvent) => {
@@ -123,6 +125,8 @@ export default function App() {
           {STATUS_LABEL[coreStatus]}
         </div>
       </header>
+
+      {paired !== null && <PairingPanel paired={paired} onPaired={() => setPaired(true)} />}
 
       <div className="grid flex-1 grid-cols-[1.4fr_1fr] gap-4 overflow-hidden">
         <section className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-zinc-800 p-4">
@@ -274,6 +278,57 @@ function SafetyPolicyPanel({ deviceId, targets }: { deviceId: string; targets: S
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Vinculación con una cuenta (docs/19 P2, incremento 3) — siempre visible,
+ * no bloquea el resto de la UI: un Edge Agent sin vincular sigue
+ * funcionando igual que hoy, esto solo agrega la identidad. Tras un
+ * pairing exitoso, el proceso principal reinicia la app (ver
+ * apps/desktop/src/main/index.ts) — `onPaired` es un fallback defensivo
+ * por si la respuesta llega antes de que el proceso termine de cerrar.
+ */
+function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => void }) {
+  const [code, setCode] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  async function submit() {
+    setPending(true);
+    setError(undefined);
+    const result = await window.kan.pairAgent(code.trim());
+    if (result.ok) {
+      onPaired();
+    } else {
+      setError(result.error);
+      setPending(false);
+    }
+  }
+
+  if (paired) {
+    return (
+      <div className="rounded-lg border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">
+        Vinculado con tu cuenta.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
+      <span className="text-sm text-zinc-400">Vincular con tu cuenta:</span>
+      <input
+        className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm uppercase tracking-widest"
+        placeholder="Código de 8 caracteres"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        maxLength={8}
+      />
+      <button className="btn" disabled={pending || code.trim().length === 0} onClick={submit}>
+        {pending ? "Vinculando…" : "Vincular"}
+      </button>
+      {error && <span className="text-sm text-red-400">{error}</span>}
     </div>
   );
 }

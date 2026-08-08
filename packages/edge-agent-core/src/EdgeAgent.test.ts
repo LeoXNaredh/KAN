@@ -84,20 +84,26 @@ class FakeDriver extends KanDeviceDriverPlugin {
   }
 }
 
-async function buildEdgeAgent() {
+async function buildEdgeAgent(configStore: ConfigStorePort = createInMemoryConfigStore()) {
   const coreConnection = createFakeCoreConnection();
   const edgeAgent = new EdgeAgent({
     edgeAgentId: "edge-1",
     agentVersion: "0.0.1",
     bus: new EdgeAgentBus(),
     logger: createLogger(),
-    configStore: createInMemoryConfigStore(),
+    configStore,
     coreConnection,
     updater: createNoopUpdater(),
   });
   await edgeAgent.registerPlugin(new FakeDriver());
   await edgeAgent.bootstrap();
   return { edgeAgent, coreConnection };
+}
+
+function statusChangeHandler(coreConnection: CoreConnectionPort): (status: string) => void {
+  const handler = (coreConnection.onStatusChange as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+  if (!handler) throw new Error("onStatusChange no fue registrado");
+  return handler;
 }
 
 function auditLocalMessages(coreConnection: { send: ReturnType<typeof vi.fn> }): EdgeToCoreMessage[] {
@@ -174,5 +180,25 @@ describe("EdgeAgent.invokeCapability() — auditoría de invocaciones manuales (
     expect(coreConnection.send).toHaveBeenCalledWith(expect.objectContaining({ type: "telemetry", taskId: "t1" }));
 
     void edgeAgent;
+  });
+});
+
+describe("EdgeAgent.bootstrap() — pairingToken en el hello (docs/19 P2, incremento 3)", () => {
+  it("incluye pairingToken en el hello si configStore lo tiene guardado", async () => {
+    const configStore = createInMemoryConfigStore();
+    configStore.set("pairingToken", "secreto-guardado");
+    const { coreConnection } = await buildEdgeAgent(configStore);
+
+    statusChangeHandler(coreConnection)("connected");
+
+    expect(coreConnection.send).toHaveBeenCalledWith(expect.objectContaining({ type: "hello", pairingToken: "secreto-guardado" }));
+  });
+
+  it("no incluye pairingToken (undefined) si configStore no lo tiene — agente todavía no vinculado", async () => {
+    const { coreConnection } = await buildEdgeAgent();
+
+    statusChangeHandler(coreConnection)("connected");
+
+    expect(coreConnection.send).toHaveBeenCalledWith(expect.objectContaining({ type: "hello", pairingToken: undefined }));
   });
 });

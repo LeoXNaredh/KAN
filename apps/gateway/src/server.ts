@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
-import { SupabaseAuditStore, SupabaseAuthAdapter } from "@kan/supabase-adapter";
+import { SupabaseAuditStore, SupabaseAuthAdapter, SupabasePairingStore } from "@kan/supabase-adapter";
 import {
   Gateway,
   GatewayBus,
@@ -13,6 +13,7 @@ import {
   ConsoleLogger,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
+import { createPairingRoutes } from "./http/pairingRoutes";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -33,7 +34,6 @@ const MAX_WS_CONNECTIONS = Number(process.env.KAN_GATEWAY_MAX_WS_CONNECTIONS) ||
 
 const logger = new ConsoleLogger();
 const bus = new GatewayBus();
-const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS);
 // service_role key (no anon): el Gateway no tiene sesión de usuario, así que
 // no hay auth.uid() para las RLS policies — audit_entries no tiene ninguna
 // policy para anon/authenticated a propósito (docs/16 P3, ADR-026).
@@ -42,6 +42,10 @@ const auditStore = new SupabaseAuditStore(supabaseClient);
 // P2 incremento 1 (docs/19): mismo cliente, sin credenciales nuevas — solo
 // para verificar el JWT que venga en X-User-Token, todavía sin autorización.
 const authPort = new SupabaseAuthAdapter(supabaseClient);
+// P2 incremento 3 (docs/19): mismo cliente otra vez — resuelve el ownerId de
+// un Edge Agent ya vinculado a partir del pairingToken de su hello.
+const pairingPort = new SupabasePairingStore(supabaseClient);
+const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS, pairingPort);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );
@@ -68,6 +72,10 @@ bus.on("job.notification", ({ jobId, title }) => logger.info(`[gateway] Job ${jo
 
 const app = express();
 app.use(express.json());
+// Antes de createRoutes(): esta ruta no lleva el token interno a propósito
+// (apps/desktop nunca lo tiene, ver pairingRoutes.ts) — su única defensa es
+// el código de pairing + un rate limit propio, más estricto.
+app.use(createPairingRoutes(pairingPort));
 app.use(createRoutes(gateway, INTERNAL_TOKEN, { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX }, authPort));
 
 const httpServer = createServer(app);

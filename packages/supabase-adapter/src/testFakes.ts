@@ -15,9 +15,9 @@ export type FakeTableResolver = FakeQueryResult | ((calls: RecordedCall[]) => Fa
 
 /**
  * Fake del query builder fluido de supabase-js — es "thenable" (awaitable
- * directo, como hace `countRows`) y encadena `.select()/.eq()/.order()/
- * .insert()/.update()/.upsert()` hasta `.single()`/`.maybeSingle()` o hasta
- * que se le hace `await` directo. Graba las llamadas encadenadas para que un
+ * directo, como hace `countRows`) y encadena `.select()/.eq()/.is()/.gt()/
+ * .order()/.insert()/.update()/.upsert()` hasta `.single()`/`.maybeSingle()`
+ * o hasta que se le hace `await` directo. Graba las llamadas encadenadas para que un
  * resolver dinámico pueda decidir la respuesta según qué se le pidió (ej.
  * distinguir un `select` de comprobación de un `insert` real sobre la misma
  * tabla dentro del mismo test).
@@ -37,6 +37,12 @@ export class FakeQueryBuilder implements PromiseLike<FakeQueryResult> {
   }
   eq(...args: unknown[]) {
     return this.record("eq", args);
+  }
+  is(...args: unknown[]) {
+    return this.record("is", args);
+  }
+  gt(...args: unknown[]) {
+    return this.record("gt", args);
   }
   order(...args: unknown[]) {
     return this.record("order", args);
