@@ -571,6 +571,22 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-042: `GeminiTtsProvider` reemplaza a OpenAI como TTS por defecto + selector de voz en `/configuracion`
+
+**Contexto.** ADR-034 dejó OpenAI TTS como default, con fallback silencioso a `SpeechSynthesis` nativo si `OPENAI_API_KEY` no está configurada. En la práctica, ese es el estado de este proyecto: nunca se configuró una key de OpenAI, así que la voz venía sonando robótica (nativa) todo este tiempo, no por una falla — el mecanismo funcionaba exactamente como estaba diseñado. Mientras tanto, `GEMINI_API_KEY` ya está configurada y en uso (chat) y Google ofrece un modelo de TTS (`gemini-2.5-flash-preview-tts`) gratuito (en Preview) con 30 voces prebuilt — evitando pedirle al usuario una key nueva.
+
+**Decisión.** `GeminiTtsProvider` (paquete `@kan/voice-abstraction`, `Pick<VoiceProviderPort, "synthesize">`, mismo criterio que `OpenAiTtsProvider`/ADR-011): `fetch` directo contra `generateContent` (mismo endpoint que ya usa `GeminiProvider` para chat) con `generationConfig.responseModalities: ["AUDIO"]` y `speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName`. A diferencia de OpenAI (mp3 listo), Gemini devuelve PCM crudo en base64 (24kHz/mono/16-bit) — `pcmToWav()` le agrega un header WAV mínimo de 44 bytes sin librerías nuevas. El catálogo de las 30 voces (`GEMINI_TTS_VOICES`, con su adjetivo de estilo) vive en el mismo archivo, para que el selector de `/configuracion` no duplique la lista. Voz por defecto: `"Charon"` ("Informative"), mismo criterio que "onyx" en OpenAI.
+
+`apps/web/lib/voice/composition.ts`: `buildSynthesizeSpeechUseCase(userId)` prueba Gemini primero (si hay `GEMINI_API_KEY`), cae a OpenAI solo si configurás `OPENAI_API_KEY` y no hay Gemini, y lanza `MissingVoiceConfigError` (412) si no hay ninguna — que a su vez dispara el fallback nativo ya existente en `useSpeechSynthesis.ts`, sin tocar ese archivo.
+
+**Selector de voz — reusa `UserPreferencesPort` sin tocarlo.** Nueva key de preferencia `"ttsVoice"` (mismo mecanismo ya usado por `"personality"` — sin migración nueva, `user_preferences` ya es genérica). Nueva sección "Voz" en `/configuracion` (mismo patrón que la sección "Personalidad": `<select>` + server action `updateVoiceAction`). `GeminiTtsProvider` en sí **no habla con Supabase ni sabe qué es un usuario** — mismo criterio de pureza que ya rige todos los adapters del proyecto; la resolución de "qué voz usar" pasa en la composition root (`buildSynthesizeSpeechUseCase`), que se reconstruye de cero en cada `POST /api/voice/synthesize`, así que la preferencia se relee de verdad en cada síntesis sin necesitar que el provider mismo dependa de otro adapter.
+
+**Alternativas descartadas:** hacer que `GeminiTtsProvider` lea la preferencia directamente de Supabase — descartado por romper la frontera adapter↔adapter que se respeta en todo el proyecto (ningún otro provider de `@kan/voice-abstraction`/`@kan/ai-abstraction` conoce Supabase).
+
+**Consecuencia.** `OpenAiTtsProvider` queda en el repo sin cambios ni borrar — sigue siendo una alternativa válida, ahora secundaria. Sin `GEMINI_API_KEY` ni `OPENAI_API_KEY`, el comportamiento es idéntico a antes de este incremento (voz nativa). El modelo de TTS de Gemini está en Preview — mismo riesgo de catálogo cambiante ya documentado para el modelo de chat en `GeminiProvider`.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

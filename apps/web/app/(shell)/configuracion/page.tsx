@@ -1,4 +1,5 @@
-import { User, Brain, Sparkles } from "lucide-react";
+import { User, Brain, Sparkles, Volume2 } from "lucide-react";
+import { GEMINI_TTS_VOICES, DEFAULT_VOICE } from "@kan/voice-abstraction";
 import { Card } from "@/components/ui/Card";
 import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
@@ -8,7 +9,7 @@ import { updateDisplayNameAction } from "@/lib/auth/actions";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 import { buildMemoryUseCases } from "@/lib/memory/composition";
 import { buildPreferencesUseCases } from "@/lib/preferences/composition";
-import { updatePersonalityAction } from "@/lib/preferences/actions";
+import { updatePersonalityAction, updateVoiceAction } from "@/lib/preferences/actions";
 
 export default async function ConfiguracionPage({
   searchParams,
@@ -22,6 +23,8 @@ export default async function ConfiguracionPage({
   const preferences = user ? await (await buildPreferencesUseCases()).listPreferences.execute(user.userId) : [];
   const personalityPreference = preferences.find((preference) => preference.key === "personality")?.value;
   const personality = typeof personalityPreference === "string" ? personalityPreference : "";
+  const voicePreference = preferences.find((preference) => preference.key === "ttsVoice")?.value;
+  const voice = typeof voicePreference === "string" ? voicePreference : DEFAULT_VOICE;
 
   return (
     <div className="flex flex-col gap-6">
@@ -86,6 +89,31 @@ export default async function ConfiguracionPage({
               placeholder="Ej: Sé directo y breve, sin rodeos. Tono técnico. Nunca uses emojis."
               className={`min-h-[5rem] ${INPUT_CLASSES}`}
             />
+            <button type="submit" className={`self-start ${PRIMARY_BUTTON_CLASSES}`}>
+              Guardar
+            </button>
+          </form>
+        </Card>
+      )}
+
+      {user && (
+        <Card className="fade-in flex flex-col gap-4">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+            <Volume2 className="h-4 w-4" aria-hidden="true" />
+            Voz
+          </h2>
+          <p className="text-xs text-ink-faint">
+            La voz que usa KAN para leerte sus respuestas en voz alta (ADR-042).
+          </p>
+
+          <form action={updateVoiceAction} className="flex flex-col gap-2">
+            <select name="voice" defaultValue={voice} className={INPUT_CLASSES}>
+              {GEMINI_TTS_VOICES.map((v) => (
+                <option key={v.name} value={v.name}>
+                  {v.name} — {v.style}
+                </option>
+              ))}
+            </select>
             <button type="submit" className={`self-start ${PRIMARY_BUTTON_CLASSES}`}>
               Guardar
             </button>

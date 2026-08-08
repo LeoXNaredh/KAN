@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { buildSynthesizeSpeechUseCase, MissingOpenAiConfigError } from "@/lib/voice/composition";
+import { buildSynthesizeSpeechUseCase, MissingVoiceConfigError } from "@/lib/voice/composition";
+import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -10,11 +11,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const useCase = buildSynthesizeSpeechUseCase();
+    const user = await getCurrentUserCached();
+    const useCase = await buildSynthesizeSpeechUseCase(user?.userId);
     const audio = await useCase.execute(text);
     return new NextResponse(audio, { status: 200, headers: { "Content-Type": audio.type || "audio/mpeg" } });
   } catch (error) {
-    if (error instanceof MissingOpenAiConfigError) {
+    if (error instanceof MissingVoiceConfigError) {
       return NextResponse.json({ error: error.message }, { status: 412 });
     }
     console.error("[/api/voice/synthesize] error inesperado:", error);
