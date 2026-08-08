@@ -1,12 +1,12 @@
-import { User, Brain, Sparkles, Trash2 } from "lucide-react";
+import { User, Brain, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
+import { MemoryManager } from "@/components/configuracion/MemoryManager";
 import { buildAuthUseCases } from "@/lib/auth/composition";
 import { updateDisplayNameAction } from "@/lib/auth/actions";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 import { buildMemoryUseCases } from "@/lib/memory/composition";
-import { addMemoryAction, removeMemoryAction } from "@/lib/memory/actions";
 import { buildPreferencesUseCases } from "@/lib/preferences/composition";
 import { updatePersonalityAction } from "@/lib/preferences/actions";
 
@@ -100,50 +100,11 @@ export default async function ConfiguracionPage({
             Memoria
           </h2>
           <p className="text-xs text-ink-faint">
-            Hechos que KAN tiene en cuenta en cada conversación. Todavía se agregan a mano — el aprendizaje
-            automático es un incremento futuro.
+            Hechos que KAN tiene en cuenta en cada conversación. KAN los guarda solo cuando se lo pedís en el
+            chat (&quot;recordá que...&quot;) — acá podés agregarlos, editarlos o borrarlos a mano también.
           </p>
 
-          {memories.length === 0 ? (
-            <p className="text-sm text-ink-faint">Sin memorias guardadas todavía.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {memories.map((memory) => (
-                <li
-                  key={`${memory.category}:${memory.key}`}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-surface-3 px-3 py-2 text-sm"
-                >
-                  <div className="min-w-0">
-                    <span className="mr-2 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-accent uppercase">
-                      {memory.category}
-                    </span>
-                    <span className="font-medium text-ink">{memory.key}</span>
-                    <span className="ml-2 text-ink-muted">{String(memory.value)}</span>
-                  </div>
-                  <form action={removeMemoryAction}>
-                    <input type="hidden" name="category" value={memory.category} />
-                    <input type="hidden" name="key" value={memory.key} />
-                    <button
-                      type="submit"
-                      aria-label={`Eliminar memoria ${memory.key}`}
-                      className="shrink-0 rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                  </form>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <form action={addMemoryAction} className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row">
-            <input name="category" placeholder="Categoría (ej. preferencia)" required className={INPUT_CLASSES} />
-            <input name="key" placeholder="Clave (ej. unidad_temperatura)" required className={INPUT_CLASSES} />
-            <input name="value" placeholder="Valor (ej. celsius)" required className={INPUT_CLASSES} />
-            <button type="submit" className={PRIMARY_BUTTON_CLASSES}>
-              Agregar
-            </button>
-          </form>
+          <MemoryManager memories={memories} />
         </Card>
       )}
 

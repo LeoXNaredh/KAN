@@ -6,6 +6,7 @@ import type { ConversationRepositoryPort } from "../../domain/ports/Conversation
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
 import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
 import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
+import { MEMORY_TOOL_DESCRIPTORS, isMemoryToolName, executeMemoryTool } from "../memoryTools";
 
 const SYSTEM_PROMPT =
   "Eres KAN, un asistente de IA capaz de controlar dispositivos físicos a través de plugins " +
@@ -68,7 +69,7 @@ export class SendMessageUseCase {
 
     conversation = appendMessage(conversation, createMessage("user", input.userMessage, input.image));
 
-    const tools = await this.safeListTools();
+    const tools = await this.buildTools();
     const systemPrompt = await this.buildSystemPrompt();
     let finished = false;
     const startedAt = Date.now();
@@ -82,7 +83,7 @@ export class SendMessageUseCase {
         tools,
       });
 
-      if (response.toolCalls?.length && this.toolProvider) {
+      if (response.toolCalls?.length && (this.toolProvider || this.memoryContext)) {
         for (const call of response.toolCalls) {
           const assistantMessage: Message = {
             id: randomUUID(),
@@ -94,7 +95,14 @@ export class SendMessageUseCase {
           conversation = appendMessage(conversation, assistantMessage);
           onEvent?.({ type: "tool_call", name: call.name, args: call.args });
 
-          const result = await this.toolProvider.executeTool(call.name, call.args);
+          // Memoria (ADR-035) nunca pasa por toolProvider/Gateway — se
+          // despacha acá mismo, siempre que haya memoryContext.
+          const result =
+            isMemoryToolName(call.name) && this.memoryContext
+              ? await executeMemoryTool(this.memoryContext, call.name, call.args)
+              : this.toolProvider
+                ? await this.toolProvider.executeTool(call.name, call.args)
+                : { success: false as const, error: `Herramienta no disponible: ${call.name}` };
           onEvent?.({
             type: "tool_result",
             name: call.name,
@@ -139,6 +147,19 @@ export class SendMessageUseCase {
       // El Gateway no está disponible — el chat sigue funcionando sin tools.
       return undefined;
     }
+  }
+
+  /**
+   * Tools del Gateway (si hay) + tools internas de memoria (ADR-035, siempre
+   * que haya memoryContext, sin depender del Gateway) — `undefined` si el
+   * resultado queda vacío, para no cambiar el request cuando no hay nada
+   * que ofrecer (mismo comportamiento que antes de este método existir).
+   */
+  private async buildTools() {
+    const gatewayTools = (await this.safeListTools()) ?? [];
+    const memoryTools = this.memoryContext ? MEMORY_TOOL_DESCRIPTORS : [];
+    const tools = [...gatewayTools, ...memoryTools];
+    return tools.length ? tools : undefined;
   }
 
   /**

@@ -16,4 +16,12 @@ export class UserScopedMemoryContext implements MemoryContextPort {
   listRelevant(): Promise<MemoryEntry[]> {
     return this.store.list(this.userId);
   }
+
+  set(category: string, key: string, value: unknown): Promise<MemoryEntry> {
+    return this.store.set(this.userId, category, key, value);
+  }
+
+  remove(category: string, key: string): Promise<void> {
+    return this.store.remove(this.userId, category, key);
+  }
 }

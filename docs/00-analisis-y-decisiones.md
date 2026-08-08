@@ -465,6 +465,20 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 ---
 
+### ADR-035: Memoria activa — `kan_set_memory`/`kan_remove_memory` como tools internas del Core, nunca vía Gateway
+
+**Contexto.** ADR-015 dejó resuelta la mitad de lectura de memoria: `MemoryStorePort`, la tabla `memories`, y `UserScopedMemoryContext` inyectando hechos relevantes en el `systemPrompt` de `SendMessageUseCase`. Faltaba la mitad activa — que KAN pueda guardar/borrar un hecho durante la conversación ("recordá que mi impresora se llama Ender 3") sin que el usuario tenga que ir a `/configuracion` a mano.
+
+**Decisión.** `kan_set_memory` y `kan_remove_memory` se declaran (`ToolDescriptor[]`) y se despachan enteramente dentro de `SendMessageUseCase` (`packages/core/src/application/memoryTools.ts`), usando el mismo `MemoryContextPort` que ya inyecta el contexto de lectura — ahora ampliado con `set()`/`remove()`. Nunca pasan por `ToolProviderPort`/Gateway/Edge Agent: no son acciones físicas (no aplica ADR-004/ADR-010, la capa de confirmación para acciones irreversibles), son lectura/escritura de datos propios del usuario ya autorizados por su sesión — mismo criterio que ya separaba `MemoryContextPort` de `ToolProviderPort` desde que existe. Por eso están siempre disponibles: `SendMessageUseCase` las ofrece en cuanto hay un `memoryContext` inyectado, sin importar si el Gateway está configurado o caído (antes, el bloque de despacho de tools exigía `this.toolProvider`; ahora exige `this.toolProvider || this.memoryContext`).
+
+Las categorías quedan fijas (`MEMORY_CATEGORIES` en `@kan/core`: `dispositivos`, `preferencias`, `proyectos`, `general`) y compartidas entre el `enum` del `inputSchema` de las tools y el `<select>` de `/configuracion` — la misma taxonomía la use el modelo o un humano. `MemoryEntry.category` sigue siendo `string` (no se angosta al enum): es una convención hacia adelante, no una migración de datos existentes.
+
+**Por qué.** Forzar estas tools a pasar por el Gateway (como cualquier capability de hardware) las ataría a la disponibilidad de un servicio que no necesitan y que memoria nunca debería depender de tener corriendo. Reutilizar `MemoryContextPort` en vez de crear un tercer puerto de memoria evita duplicar la abstracción "ya escopeada a este usuario" que `UserScopedMemoryContext` ya resuelve para lectura.
+
+**Consecuencia.** `/configuracion` ya tenía alta/baja manual (el alta ya hacía `upsert` sobre `user_id,category,key`); lo que faltaba era la afordancia de edición — el nuevo `MemoryManager.tsx` la agrega reutilizando `addMemoryAction` tal cual (editar es re-enviar el mismo `category`+`key` con otro `value`), sin caso de uso nuevo. La memoria puede crecer sin límite por ahora — sin poda ni resumen — coherente con "estructurada antes que RAG" de ADR-015; queda como límite conocido, no oculto, a revisar si el volumen real de hechos por usuario lo justifica.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

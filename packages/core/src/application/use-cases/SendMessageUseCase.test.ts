@@ -5,6 +5,7 @@ import type { AIProviderPort, ChatRequest, ChatResponse } from "../../domain/por
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
 import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
 import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
+import type { MemoryEntry } from "../../domain/entities/MemoryEntry";
 import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
 
 class ScriptedAIProvider implements AIProviderPort {
@@ -197,12 +198,71 @@ describe("SendMessageUseCase", () => {
       listRelevant: async () => [
         { userId: "u1", category: "preferencia", key: "unidad_temperatura", value: "celsius", updatedAt: "2026-01-01T00:00:00.000Z" },
       ],
+      set: async (category, key, value) => ({ userId: "u1", category, key, value, updatedAt: "2026-01-01T00:00:00.000Z" }),
+      remove: async () => {},
     };
     const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), undefined, memoryContext);
 
     await useCase.execute({ userMessage: "hola" });
 
     expect(ai.requestsSeen[0].systemPrompt).toContain("unidad_temperatura");
+  });
+
+  it("kan_set_memory está disponible y se despacha sin ningún toolProvider configurado (ADR-035)", async () => {
+    const ai = new ScriptedAIProvider([
+      { toolCalls: [{ name: "kan_set_memory", args: { category: "dispositivos", key: "impresora_3d", value: "Ender 3" } }] },
+      { content: "Listo, lo recordaré." },
+    ]);
+    const stored: MemoryEntry[] = [];
+    const memoryContext: MemoryContextPort = {
+      listRelevant: async () => stored,
+      set: async (category, key, value) => {
+        const entry: MemoryEntry = { userId: "u1", category, key, value, updatedAt: "2026-01-01T00:00:00.000Z" };
+        stored.push(entry);
+        return entry;
+      },
+      remove: async () => {},
+    };
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), undefined, memoryContext);
+
+    const { conversation } = await useCase.execute({ userMessage: "recordá que mi impresora se llama Ender 3" });
+
+    expect(conversation.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(conversation.messages[2].toolResult).toMatchObject({ name: "kan_set_memory", success: true });
+    expect(stored).toHaveLength(1);
+  });
+
+  it("las tools de memoria se ofrecen al proveedor de IA cuando hay memoryContext, incluso sin toolProvider", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const memoryContext: MemoryContextPort = {
+      listRelevant: async () => [],
+      set: async (category, key, value) => ({ userId: "u1", category, key, value, updatedAt: "" }),
+      remove: async () => {},
+    };
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), undefined, memoryContext);
+
+    await useCase.execute({ userMessage: "hola" });
+
+    const toolNames = ai.requestsSeen[0].tools?.map((t) => t.name);
+    expect(toolNames).toEqual(["kan_set_memory", "kan_remove_memory"]);
+  });
+
+  it("una llamada a kan_set_memory nunca pasa por toolProvider.executeTool", async () => {
+    const ai = new ScriptedAIProvider([
+      { toolCalls: [{ name: "kan_set_memory", args: { category: "general", key: "k", value: "v" } }] },
+      { content: "listo" },
+    ]);
+    const toolProvider = new FakeToolProvider([], { success: true });
+    const memoryContext: MemoryContextPort = {
+      listRelevant: async () => [],
+      set: async (category, key, value) => ({ userId: "u1", category, key, value, updatedAt: "" }),
+      remove: async () => {},
+    };
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), toolProvider, memoryContext);
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(toolProvider.executedCalls).toEqual([]);
   });
 
   it("inyecta la personalidad configurada en el systemPrompt", async () => {
