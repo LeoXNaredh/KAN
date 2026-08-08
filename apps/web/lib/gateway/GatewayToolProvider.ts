@@ -4,6 +4,8 @@ import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
 export interface GatewayToolProviderConfig {
   baseUrl: string;
   internalToken: string;
+  /** P2 incremento 2 (docs/19): JWT del usuario, reenviado como `X-User-Token`. */
+  userToken?: string;
 }
 
 // El Gateway resuelve execute-tool en hasta ~40s (timeout interno de su
@@ -24,7 +26,10 @@ export class GatewayToolProvider implements ToolProviderPort {
 
   async listTools(): Promise<ToolDescriptor[]> {
     const response = await fetch(`${this.config.baseUrl}/v1/tools`, {
-      headers: { Authorization: `Bearer ${this.config.internalToken}` },
+      headers: {
+        Authorization: `Bearer ${this.config.internalToken}`,
+        ...(this.config.userToken ? { "X-User-Token": this.config.userToken } : {}),
+      },
       signal: AbortSignal.timeout(LIST_TOOLS_TIMEOUT_MS),
     });
     if (!response.ok) {
@@ -41,6 +46,7 @@ export class GatewayToolProvider implements ToolProviderPort {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.config.internalToken}`,
+          ...(this.config.userToken ? { "X-User-Token": this.config.userToken } : {}),
         },
         body: JSON.stringify({ args }),
         signal: AbortSignal.timeout(EXECUTE_TOOL_TIMEOUT_MS),

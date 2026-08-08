@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { gatewayFetch } from "@/lib/gateway/gatewayFetch";
+import { resolveUserToken } from "@/lib/auth/resolveUserToken";
 import type { JobsListResponse, ScheduledJobView } from "@/lib/jobs/types";
 
 /**
@@ -8,9 +9,10 @@ import type { JobsListResponse, ScheduledJobView } from "@/lib/jobs/types";
  * shape apto para el cliente. `gatewayOnline` permite a la UI distinguir
  * "sin automatizaciones todavía" de "no se pudo consultar al Gateway".
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const response = await gatewayFetch("/v1/jobs");
+    const userToken = await resolveUserToken(request);
+    const response = await gatewayFetch("/v1/jobs", { headers: userToken ? { "X-User-Token": userToken } : {} });
     if (!response.ok) {
       const body: JobsListResponse = { jobs: [], gatewayOnline: false };
       return NextResponse.json(body);
@@ -53,9 +55,10 @@ export async function POST(request: Request) {
       : undefined;
 
   try {
+    const userToken = await resolveUserToken(request);
     const response = await gatewayFetch("/v1/jobs", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(userToken ? { "X-User-Token": userToken } : {}) },
       body: JSON.stringify({ steps, notification, cron, runAt }),
     });
     const data = await response.json().catch(() => ({}));

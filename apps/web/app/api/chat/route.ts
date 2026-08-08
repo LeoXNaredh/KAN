@@ -3,6 +3,8 @@ import type { ChatStreamEvent, Conversation, SendMessageUseCase } from "@kan/cor
 import { NextResponse } from "next/server";
 import { GatewayToolProvider } from "@/lib/gateway/GatewayToolProvider";
 import { buildSendMessageUseCase } from "@/lib/chat/composition";
+import { extractBearerToken } from "@/lib/auth/extractBearerToken";
+import { resolveUserToken } from "@/lib/auth/resolveUserToken";
 
 /**
  * Composition root: único lugar donde se instancian implementaciones concretas
@@ -11,29 +13,22 @@ import { buildSendMessageUseCase } from "@/lib/chat/composition";
  * (Supabase, si hay sesión, o el fallback en memoria si no) se resuelve en
  * lib/chat/composition.ts (ADR-017, P0.2).
  */
-const toolProvider = new GatewayToolProvider({
-  baseUrl: process.env.KAN_GATEWAY_URL ?? "http://localhost:8787",
-  internalToken: process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-token",
-});
-
-async function buildUseCase(accessToken?: string): Promise<SendMessageUseCase> {
+// `toolProvider` se construye por request (no a nivel de módulo) porque
+// necesita el `X-User-Token` de esa request específica (P2 incremento 2,
+// docs/19) — a diferencia del token interno, que sí es fijo.
+async function buildUseCase(accessToken: string | undefined, gatewayUserToken: string | undefined): Promise<SendMessageUseCase> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new MissingApiKeyError();
   }
   const model = process.env.GEMINI_MODEL || undefined;
   const aiProvider = new ModelRouter(new GeminiProvider({ apiKey, model }));
+  const toolProvider = new GatewayToolProvider({
+    baseUrl: process.env.KAN_GATEWAY_URL ?? "http://localhost:8787",
+    internalToken: process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-token",
+    userToken: gatewayUserToken,
+  });
   return buildSendMessageUseCase(aiProvider, toolProvider, accessToken);
-}
-
-// ADR-029 (docs/00): un cliente sin cookies (ej. la app móvil, roadmap P7)
-// manda su sesión de Supabase como Authorization: Bearer <access_token> en
-// vez de cookies — apps/web (con cookies) no manda este header y sigue
-// exactamente igual.
-function extractBearerToken(request: Request): string | undefined {
-  const header = request.headers.get("authorization");
-  if (!header?.startsWith("Bearer ")) return undefined;
-  return header.slice("Bearer ".length).trim() || undefined;
 }
 
 class MissingApiKeyError extends Error {
@@ -103,7 +98,7 @@ export async function POST(request: Request) {
 
   let useCase: SendMessageUseCase;
   try {
-    useCase = await buildUseCase(extractBearerToken(request));
+    useCase = await buildUseCase(extractBearerToken(request), await resolveUserToken(request));
   } catch (error) {
     if (error instanceof MissingApiKeyError) {
       return NextResponse.json({ error: error.message }, { status: 412 });

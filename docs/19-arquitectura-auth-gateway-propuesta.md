@@ -1,6 +1,6 @@
 # Propuesta de Arquitectura — Auth y autorización por usuario en el Gateway, roadmap P2
 
-> **Estado (2026-08-07): incremento 1 de 4 completo.** El Gateway (`apps/gateway`) ya puede verificar un JWT de Supabase si llega en el header `X-User-Token`, reutilizando `AuthPort.getCurrentUser()` (`@kan/supabase-adapter`, mismo mecanismo de ADR-029) sobre el cliente `service_role` que ya existía (ADR-026) — sin credenciales nuevas. Sin ese header, todo funciona exactamente igual que antes (retrocompatible, tests existentes sin cambios). Todavía sin autorización real ni pairing del Edge Agent — eso son los incrementos 2-4. `apps/web`/`apps/mobile` todavía no mandan el token; queda para el próximo incremento.
+> **Estado (2026-08-07): incrementos 1 y 2 de 5 completos.** El Gateway (`apps/gateway`) verifica un JWT de Supabase si llega en `X-User-Token`, reutilizando `AuthPort.getCurrentUser()` (mismo mecanismo de ADR-029) sobre el cliente `service_role` que ya existía (ADR-026) — sin credenciales nuevas (incremento 1). `apps/web` (BFF de `/api/jobs`, `/api/tools`, `/api/status`, y `GatewayToolProvider` del chat) y `apps/mobile` (mismas llamadas) ya mandan ese token — bearer explícito si lo hay (apps/mobile, mismo patrón de `/api/chat`/ADR-029), sesión de cookies si no (apps/web) (incremento 2). El plan original bundleaba este envío dentro del incremento 1; se separó en su propio incremento al implementar. El Gateway todavía no exige el token en ninguna ruta (retrocompatible) — sin pairing del Edge Agent ni autorización real todavía, eso son los incrementos 3 y 4.
 
 ## 0. Qué ya está decidido (no se reabre acá)
 
@@ -60,10 +60,13 @@ Este diseño reemplaza el secreto único por credenciales *por agente*, sin toca
 
 ## 6. Plan incremental (para implementación, cada uno con su propio `/plan`)
 
-1. **JWT en el Gateway (parte 1 sola).** Middleware de verificación con `getUser()` en las rutas HTTP; extrae `userId`, lo deja disponible en el request context. Sin cambios de autorización todavía — solo identidad. `apps/web`/`apps/mobile` empiezan a mandar el `access_token` en `Authorization` hacia sus propias rutas proxy, que lo reenvían al Gateway.
-2. **Pairing (parte 2).** Tabla nueva, endpoint `/v1/pairing/claim`, pantalla de vinculación en `apps/web`, `apps/desktop` guarda y usa la credencial nueva. `AgentRecord` gana `ownerId`.
-3. **Autorización real.** `TaskOrchestrator.submit()` valida `ownerId`; se propaga `userId` desde las rutas HTTP y desde el flujo de chat hasta ahí; `AgentRegistry`/`GlobalCapabilityRegistry` filtran por owner donde aplique.
-4. **Auditoría por usuario.** `AuditEntry.actor` o su `metadata` gana el `userId` real en lugar de los 3 valores genéricos actuales.
+Renumerado al implementar: el envío del token desde los clientes resultó ser su propio incremento, no parte del incremento 1.
+
+1. ✅ **JWT en el Gateway.** Middleware de verificación con `getUser()` en las rutas HTTP (`apps/gateway`); extrae `userId`, lo deja disponible en el request context. Sin cambios de autorización todavía — solo identidad, y retrocompatible (sin el header, cero cambios de comportamiento).
+2. ✅ **Envío del token desde los clientes.** `apps/web` (BFF de `/api/jobs`/`/api/tools`/`/api/status`, y `GatewayToolProvider` del chat) y `apps/mobile` (mismas llamadas) mandan el JWT como `X-User-Token` hacia el Gateway. El Gateway todavía no lo exige — el incremento anterior ya lo deja pasar sin romper nada.
+3. **Pairing.** Tabla nueva, endpoint `/v1/pairing/claim`, pantalla de vinculación en `apps/web`, `apps/desktop` guarda y usa la credencial nueva. `AgentRecord` gana `ownerId`.
+4. **Autorización real.** `TaskOrchestrator.submit()` valida `ownerId`; se propaga `userId` desde las rutas HTTP y desde el flujo de chat hasta ahí; `AgentRegistry`/`GlobalCapabilityRegistry` filtran por owner donde aplique.
+5. **Auditoría por usuario.** `AuditEntry.actor` o su `metadata` gana el `userId` real en lugar de los 3 valores genéricos actuales.
 
 ## 7. Riesgos / incógnitas abiertas
 
