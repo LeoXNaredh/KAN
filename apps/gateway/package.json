@@ -10,6 +10,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@kan/core": "workspace:*",
     "@kan/gateway-core": "workspace:*",
     "@kan/plugin-contract": "workspace:*",
     "@kan/supabase-adapter": "workspace:*",

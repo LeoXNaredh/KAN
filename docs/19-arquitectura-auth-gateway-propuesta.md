@@ -1,6 +1,6 @@
 # Propuesta de Arquitectura — Auth y autorización por usuario en el Gateway, roadmap P2
 
-> **Estado (2026-08-07): propuesta aprobada, implementación pendiente (0 de 4 incrementos).** Ningún código tocado todavía — este documento es el análisis/decisión, siguiendo el mismo proceso que `docs/18` (propuesta → aprobación → implementación incremental, cada incremento con su propio `/plan`).
+> **Estado (2026-08-07): incremento 1 de 4 completo.** El Gateway (`apps/gateway`) ya puede verificar un JWT de Supabase si llega en el header `X-User-Token`, reutilizando `AuthPort.getCurrentUser()` (`@kan/supabase-adapter`, mismo mecanismo de ADR-029) sobre el cliente `service_role` que ya existía (ADR-026) — sin credenciales nuevas. Sin ese header, todo funciona exactamente igual que antes (retrocompatible, tests existentes sin cambios). Todavía sin autorización real ni pairing del Edge Agent — eso son los incrementos 2-4. `apps/web`/`apps/mobile` todavía no mandan el token; queda para el próximo incremento.
 
 ## 0. Qué ya está decidido (no se reabre acá)
 

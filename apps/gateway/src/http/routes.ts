@@ -1,7 +1,9 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import type { Gateway } from "@kan/gateway-core";
+import type { AuthPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
+import { createUserAuthMiddleware } from "./userAuthMiddleware";
 
 export interface RateLimitOptions {
   windowMs?: number;
@@ -17,7 +19,12 @@ const DEFAULT_RATE_LIMIT_MAX = 120;
  * es la misma superficie que en el futuro consumirán apps de terceros del
  * marketplace — hoy la consume únicamente `apps/web`.
  */
-export function createRoutes(gateway: Gateway, internalToken: string, rateLimitOptions?: RateLimitOptions): Router {
+export function createRoutes(
+  gateway: Gateway,
+  internalToken: string,
+  rateLimitOptions?: RateLimitOptions,
+  authPort?: AuthPort,
+): Router {
   const router = Router();
 
   // Antes del chequeo de token: también acota intentos de fuerza bruta
@@ -38,6 +45,12 @@ export function createRoutes(gateway: Gateway, internalToken: string, rateLimitO
       return;
     }
     next();
+  });
+
+  router.use(createUserAuthMiddleware(authPort));
+
+  router.get("/v1/whoami", (req, res) => {
+    res.json({ userId: req.userId ?? null, email: req.userEmail ?? null });
   });
 
   router.get("/v1/tools", (_req, res) => {

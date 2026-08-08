@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
 import type { Gateway } from "@kan/gateway-core";
+import type { AuthPort } from "@kan/core";
 import { createRoutes, type RateLimitOptions } from "./routes";
 
 const TOKEN = "test-internal-token";
@@ -21,11 +22,15 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
   } as Gateway;
 }
 
-function appWith(gateway: Gateway, rateLimitOptions?: RateLimitOptions) {
+function appWith(gateway: Gateway, rateLimitOptions?: RateLimitOptions, authPort?: AuthPort) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN, rateLimitOptions));
+  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort));
   return app;
+}
+
+function fakeAuthPort(getCurrentUser: AuthPort["getCurrentUser"]): AuthPort {
+  return { getCurrentUser } as AuthPort;
 }
 
 describe("Gateway HTTP routes", () => {
@@ -210,5 +215,47 @@ describe("Gateway HTTP routes", () => {
 
     expect(response.status).toBe(204);
     expect(cancelledId).toBe("job-1");
+  });
+
+  it("sin authPort configurado (retrocompatibilidad), las rutas existentes funcionan igual que siempre", async () => {
+    const app = appWith(fakeGateway());
+    const response = await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`);
+    expect(response.status).toBe(200);
+  });
+
+  it("con authPort configurado pero sin X-User-Token, las rutas existentes no se ven afectadas", async () => {
+    const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "no-debería-llamarse", email: "" })));
+    const response = await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`);
+    expect(response.status).toBe(200);
+  });
+
+  it("GET /v1/whoami sin X-User-Token devuelve userId/email null", async () => {
+    const app = appWith(fakeGateway());
+    const response = await request(app).get("/v1/whoami").set("Authorization", `Bearer ${TOKEN}`);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ userId: null, email: null });
+  });
+
+  it("GET /v1/whoami con X-User-Token válido refleja la identidad verificada", async () => {
+    const app = appWith(
+      fakeGateway(),
+      undefined,
+      fakeAuthPort(async () => ({ userId: "user-1", email: "gio@example.com" })),
+    );
+    const response = await request(app)
+      .get("/v1/whoami")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", "jwt-valido");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ userId: "user-1", email: "gio@example.com" });
+  });
+
+  it("con X-User-Token inválido, rechaza con 401 aunque el token interno sea correcto", async () => {
+    const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => undefined));
+    const response = await request(app)
+      .get("/v1/tools")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", "jwt-invalido");
+    expect(response.status).toBe(401);
   });
 });

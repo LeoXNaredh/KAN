@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
-import { SupabaseAuditStore } from "@kan/supabase-adapter";
+import { SupabaseAuditStore, SupabaseAuthAdapter } from "@kan/supabase-adapter";
 import {
   Gateway,
   GatewayBus,
@@ -39,6 +39,9 @@ const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS
 // policy para anon/authenticated a propósito (docs/16 P3, ADR-026).
 const supabaseClient = createClient(requireEnv("KAN_SUPABASE_URL"), requireEnv("KAN_SUPABASE_SERVICE_ROLE_KEY"));
 const auditStore = new SupabaseAuditStore(supabaseClient);
+// P2 incremento 1 (docs/19): mismo cliente, sin credenciales nuevas — solo
+// para verificar el JWT que venga en X-User-Token, todavía sin autorización.
+const authPort = new SupabaseAuthAdapter(supabaseClient);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );
@@ -65,7 +68,7 @@ bus.on("job.notification", ({ jobId, title }) => logger.info(`[gateway] Job ${jo
 
 const app = express();
 app.use(express.json());
-app.use(createRoutes(gateway, INTERNAL_TOKEN, { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX }));
+app.use(createRoutes(gateway, INTERNAL_TOKEN, { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX }, authPort));
 
 const httpServer = createServer(app);
 
