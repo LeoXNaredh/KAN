@@ -3,7 +3,7 @@ import type {
   DeviceDescriptor,
   PluginManifest,
 } from "@kan/plugin-contract";
-import { KanDeviceDriverPlugin, defineCapability } from "@kan/plugin-sdk-ts";
+import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 
 const DEVICE_ID = "simulator-1";
 
@@ -27,6 +27,7 @@ export class DeviceSimulatorPlugin extends KanDeviceDriverPlugin {
     displayName: "Simulador de Dispositivo",
     kind: "device-driver",
     runtime: "in-process-ts",
+    permissions: definePermissions({ devices: ["device-simulator"], network: false, filesystem: [] }),
   };
 
   private readonly state: SimulatedState = { ledOn: false, axisPositionMm: 0 };

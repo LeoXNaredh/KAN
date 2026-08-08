@@ -37,6 +37,7 @@ class FakeDriver extends KanDeviceDriverPlugin {
     displayName: "Fake Driver",
     kind: "device-driver",
     runtime: "in-process-ts",
+    permissions: { devices: ["fake"], network: false, filesystem: [] },
   };
 
   async discover(): Promise<DeviceDescriptor[]> {

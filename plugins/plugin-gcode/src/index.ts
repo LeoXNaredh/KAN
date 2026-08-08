@@ -1,5 +1,5 @@
 import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
-import { KanDeviceDriverPlugin, defineCapability } from "@kan/plugin-sdk-ts";
+import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import { NodeSerialTransport, type LineConnection, type SerialTransportPort } from "@kan/serial-line-transport";
 import { sendGcodeLine, type GcodeResponse } from "./gcodeProtocol";
 
@@ -134,6 +134,7 @@ export class GcodeDevicePlugin extends KanDeviceDriverPlugin {
     displayName: "Máquina G-code (impresora 3D / CNC / láser)",
     kind: "device-driver",
     runtime: "in-process-ts",
+    permissions: definePermissions({ devices: ["gcode"], network: false, filesystem: [] }),
   };
 
   private readonly ports = new Map<string, string>();

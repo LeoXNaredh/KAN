@@ -5,8 +5,9 @@ import type {
   PendingConfirmation,
   CoreConnectionStatus,
   SafetyTargetListing,
+  PluginInstance,
 } from "@kan/edge-agent-core";
-import type { ActionSeverity } from "@kan/plugin-contract";
+import type { ActionSeverity, PluginPermissions } from "@kan/plugin-contract";
 import type { BusEvent } from "../../preload/index";
 
 const SEVERITY_OPTIONS: ActionSeverity[] = ["read-only", "reversible", "irreversible-material", "safety-critical"];
@@ -15,6 +16,20 @@ interface LogEntry {
   level: string;
   message: string;
   at: string;
+}
+
+interface PendingPluginPermission {
+  pluginId: string;
+  displayName: string;
+  permissions: PluginPermissions;
+}
+
+function toPendingPluginPermission(instance: PluginInstance): PendingPluginPermission {
+  return {
+    pluginId: instance.manifest.id,
+    displayName: instance.manifest.displayName,
+    permissions: instance.manifest.permissions,
+  };
 }
 
 const STATUS_LABEL: Record<CoreConnectionStatus, string> = {
@@ -42,6 +57,7 @@ export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [capabilities, setCapabilities] = useState<CapabilityListing[]>([]);
   const [pending, setPending] = useState<PendingConfirmation[]>([]);
+  const [pendingPlugins, setPendingPlugins] = useState<PendingPluginPermission[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [coreStatus, setCoreStatus] = useState<CoreConnectionStatus>("disconnected");
   const [safetyTargets, setSafetyTargets] = useState<Record<string, SafetyTargetListing[]>>({});
@@ -61,6 +77,8 @@ export default function App() {
       setCoreStatus(await window.kan.getCoreStatus());
       loadedDevices.forEach((device) => loadSafetyTargets(device.id));
       setPaired((await window.kan.getPairingStatus()).paired);
+      const pendingInstances: PluginInstance[] = await window.kan.listPendingPluginPermissions();
+      setPendingPlugins(pendingInstances.map(toPendingPluginPermission));
     })();
 
     const unsubscribe = window.kan.onEvent((event: BusEvent) => {
@@ -90,6 +108,15 @@ export default function App() {
           break;
         case "permission.resolved":
           setPending((prev) => prev.filter((c) => c.id !== event.payload.confirmationId));
+          break;
+        case "plugin.permission_pending":
+          setPendingPlugins((prev) => [
+            ...prev.filter((p) => p.pluginId !== event.payload.pluginId),
+            event.payload,
+          ]);
+          break;
+        case "plugin.permission_resolved":
+          setPendingPlugins((prev) => prev.filter((p) => p.pluginId !== event.payload.pluginId));
           break;
         case "core.status":
           setCoreStatus(event.payload.status);
@@ -184,6 +211,7 @@ export default function App() {
       </div>
 
       {pending[0] && <ConfirmationModal confirmation={pending[0]} />}
+      {!pending[0] && pendingPlugins[0] && <PluginPermissionModal plugin={pendingPlugins[0]} />}
     </div>
   );
 }
@@ -329,6 +357,52 @@ function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => v
         {pending ? "Vinculando…" : "Vincular"}
       </button>
       {error && <span className="text-sm text-red-400">{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * Deny-by-default (ADR-008/ADR-041, P8): un plugin recién registrado no
+ * descubre ningún dispositivo hasta que el usuario aprueba acá los permisos
+ * que declaró — mismo criterio visual que `ConfirmationModal`, pero es una
+ * capa distinta (permiso de instalación, no confirmación de una invocación
+ * puntual).
+ */
+function PluginPermissionModal({ plugin }: { plugin: PendingPluginPermission }) {
+  const { permissions } = plugin;
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black/60">
+      <div className="w-full max-w-sm rounded-lg border border-sky-800 bg-zinc-900 p-5">
+        <h3 className="mb-1 text-base font-semibold text-sky-300">Nuevo plugin: {plugin.displayName}</h3>
+        <p className="mb-3 text-sm text-zinc-400">
+          Este plugin pide los siguientes permisos. No se habilita ni descubre dispositivos hasta que lo apruebes.
+        </p>
+        <div className="mb-4 flex flex-col gap-1.5 rounded bg-zinc-950 p-2 text-xs text-zinc-300">
+          <div>
+            <span className="text-zinc-500">Dispositivos: </span>
+            {permissions.devices.length > 0 ? permissions.devices.join(", ") : "ninguno"}
+          </div>
+          <div>
+            <span className="text-zinc-500">Red: </span>
+            {permissions.network ? "sí" : "no"}
+          </div>
+          <div>
+            <span className="text-zinc-500">Filesystem: </span>
+            {permissions.filesystem.length > 0 ? permissions.filesystem.join(", ") : "ninguno"}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button className="btn" onClick={() => window.kan.rejectPluginPermissions(plugin.pluginId)}>
+            Rechazar
+          </button>
+          <button
+            className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-black hover:bg-sky-500"
+            onClick={() => window.kan.approvePluginPermissions(plugin.pluginId)}
+          >
+            Aprobar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,3 @@
-import { platform } from "node:os";
 import type { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
 import type { ActionSeverity, AgentTaskDispatchMessage, TargetDescriptor } from "@kan/plugin-contract";
 import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
@@ -22,6 +21,8 @@ export interface SafetyTargetListing extends TargetDescriptor {
 export interface EdgeAgentDeps {
   edgeAgentId: string;
   agentVersion: string;
+  /** Quien compone el Edge Agent decide esto — en Node, `os.platform()`; en el navegador no aplica. */
+  os?: string;
   bus: EdgeAgentBus;
   logger: LoggerPort;
   configStore: ConfigStorePort;
@@ -76,6 +77,25 @@ export class EdgeAgent {
     await this.pluginManager.register(driver);
   }
 
+  /** Plugins registrados a los que les falta aprobación de permisos (P8, ADR-041). */
+  listPendingPluginPermissions() {
+    return this.pluginManager.listPendingPermissions();
+  }
+
+  /**
+   * Aprueba los permisos de un plugin pendiente y lo habilita. El
+   * descubrimiento de sus dispositivos corre de inmediato para ese driver
+   * solo — sin reiniciar la app ni volver a descubrir los demás.
+   */
+  async approvePluginPermissions(pluginId: string): Promise<void> {
+    const driver = await this.pluginManager.approve(pluginId);
+    if (driver) await this.deviceManager.discoverAll([driver]);
+  }
+
+  rejectPluginPermissions(pluginId: string): void {
+    this.pluginManager.reject(pluginId);
+  }
+
   async bootstrap(): Promise<void> {
     await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
 
@@ -86,7 +106,7 @@ export class EdgeAgent {
           type: "hello",
           protocolVersion: "1.0.0",
           edgeAgentId: this.deps.edgeAgentId,
-          os: platform(),
+          os: this.deps.os,
           agentVersion: this.deps.agentVersion,
           installedPlugins: this.pluginManager.list().map((instance) => instance.manifest),
           capabilities: this.capabilityRegistry

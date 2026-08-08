@@ -125,7 +125,14 @@ function helloFor(edgeAgentId: string): HelloMessage {
     os: "win32",
     agentVersion: "0.1.0",
     installedPlugins: [
-      { id: "kan-plugin-device-simulator", version: "0.1.0", displayName: "Simulador", kind: "device-driver", runtime: "in-process-ts" },
+      {
+        id: "kan-plugin-device-simulator",
+        version: "0.1.0",
+        displayName: "Simulador",
+        kind: "device-driver",
+        runtime: "in-process-ts",
+        permissions: { devices: ["device-simulator"], network: false, filesystem: [] },
+      },
     ],
     capabilities: [
       {

@@ -29,6 +29,8 @@ const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "capability.failed",
   "permission.pending",
   "permission.resolved",
+  "plugin.permission_pending",
+  "plugin.permission_resolved",
   "safety_policy.changed",
   "core.status",
   "log",
@@ -125,6 +127,15 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle("kan:getPairingStatus", () => ({ paired: Boolean(configStore?.get<string>("pairingToken")) }));
   ipcMain.handle("kan:pair", (_event, code: string) => pairAgent(code));
+  ipcMain.handle("kan:listPendingPluginPermissions", () => edgeAgent?.listPendingPluginPermissions() ?? []);
+  ipcMain.handle("kan:approvePluginPermissions", (_event, pluginId: string) => {
+    if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+    return edgeAgent.approvePluginPermissions(pluginId);
+  });
+  ipcMain.handle("kan:rejectPluginPermissions", (_event, pluginId: string) => {
+    if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+    return edgeAgent.rejectPluginPermissions(pluginId);
+  });
 }
 
 /**

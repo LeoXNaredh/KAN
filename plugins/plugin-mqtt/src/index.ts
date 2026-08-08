@@ -1,5 +1,5 @@
 import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
-import { KanDeviceDriverPlugin, defineCapability } from "@kan/plugin-sdk-ts";
+import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import type { MqttConnection, MqttTransportPort } from "./MqttTransportPort";
 import { NodeMqttTransport } from "./infra/NodeMqttTransport";
 
@@ -80,6 +80,7 @@ export class MqttDevicePlugin extends KanDeviceDriverPlugin {
     displayName: "MQTT (broker existente)",
     kind: "device-driver",
     runtime: "in-process-ts",
+    permissions: definePermissions({ devices: ["mqtt"], network: true, filesystem: [] }),
   };
 
   /** deviceId -> URL completa (con credenciales) — poblado por discover(). */

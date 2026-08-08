@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
-import { KanDeviceDriverPlugin, defineCapability } from "@kan/plugin-sdk-ts";
+import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import { RASPBERRY_PI_PIN_MAP, defaultSeverityFor, findPin } from "./pinMap";
 import type { GpioDirection, GpioLine, GpioPort } from "./GpioPort";
 import { OnoffGpioPort } from "./infra/OnoffGpioPort";
@@ -69,6 +69,7 @@ export class RaspberryPiGpioPlugin extends KanDeviceDriverPlugin {
     displayName: "Raspberry Pi (GPIO)",
     kind: "device-driver",
     runtime: "in-process-ts",
+    permissions: definePermissions({ devices: ["raspberry-pi"], network: false, filesystem: [] }),
   };
 
   private readonly lines = new Map<number, { direction: GpioDirection; line: GpioLine }>();

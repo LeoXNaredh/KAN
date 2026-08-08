@@ -1,5 +1,5 @@
 import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
-import { KanDeviceDriverPlugin, defineCapability } from "@kan/plugin-sdk-ts";
+import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import { ESP32_PIN_MAP, defaultSeverityFor, findPin, type PinInfo } from "./pinMap";
 import { NodeSerialTransport, type SerialTransportPort, type LineConnection } from "@kan/serial-line-transport";
 import { NodeTcpTransport } from "./infra/NodeTcpTransport";
@@ -97,6 +97,8 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
     displayName: "ESP32 / Arduino (GPIO genérico)",
     kind: "device-driver",
     runtime: "in-process-ts",
+    // network: true — soporta WiFi/TCP (NodeTcpTransport), no solo Serial.
+    permissions: definePermissions({ devices: ["esp32-arduino"], network: true, filesystem: [] }),
   };
 
   private readonly connectionSources = new Map<string, ConnectionSource>();

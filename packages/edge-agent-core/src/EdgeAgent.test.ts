@@ -52,6 +52,7 @@ class FakeDriver extends KanDeviceDriverPlugin {
     displayName: "Fake Driver",
     kind: "device-driver",
     runtime: "in-process-ts",
+    permissions: { devices: ["fake"], network: false, filesystem: [] },
   };
 
   async discover(): Promise<DeviceDescriptor[]> {
@@ -97,6 +98,11 @@ async function buildEdgeAgent(configStore: ConfigStorePort = createInMemoryConfi
   });
   await edgeAgent.registerPlugin(new FakeDriver());
   await edgeAgent.bootstrap();
+  // P8 (ADR-041): register() ya no habilita de una — hace falta aprobar los
+  // permisos declarados (deny-by-default) antes de que el driver descubra
+  // dispositivos. Estos tests no ejercitan el gate en sí (ver
+  // PluginManager.test.ts para eso), solo necesitan "fake-1" disponible.
+  await edgeAgent.approvePluginPermissions("fake-driver");
   return { edgeAgent, coreConnection };
 }
 
@@ -200,5 +206,54 @@ describe("EdgeAgent.bootstrap() — pairingToken en el hello (docs/19 P2, increm
     statusChangeHandler(coreConnection)("connected");
 
     expect(coreConnection.send).toHaveBeenCalledWith(expect.objectContaining({ type: "hello", pairingToken: undefined }));
+  });
+});
+
+describe("EdgeAgent — gate de permisos de plugins deny-by-default (P8, ADR-041)", () => {
+  async function buildUnapprovedEdgeAgent() {
+    const configStore = createInMemoryConfigStore();
+    const coreConnection = createFakeCoreConnection();
+    const edgeAgent = new EdgeAgent({
+      edgeAgentId: "edge-1",
+      agentVersion: "0.0.1",
+      bus: new EdgeAgentBus(),
+      logger: createLogger(),
+      configStore,
+      coreConnection,
+      updater: createNoopUpdater(),
+    });
+    await edgeAgent.registerPlugin(new FakeDriver());
+    await edgeAgent.bootstrap();
+    return { edgeAgent, coreConnection };
+  }
+
+  it("un plugin recién registrado no descubre dispositivos hasta que se aprueban sus permisos", async () => {
+    const { edgeAgent } = await buildUnapprovedEdgeAgent();
+
+    expect(edgeAgent.listPendingPluginPermissions().map((i) => i.manifest.id)).toEqual(["fake-driver"]);
+    await expect(edgeAgent.invokeCapability("fake-1", "read_only_cap", {})).rejects.toThrow(
+      /Capability desconocida/,
+    );
+  });
+
+  it("approvePluginPermissions() habilita el plugin y descubre sus dispositivos de inmediato", async () => {
+    const { edgeAgent } = await buildUnapprovedEdgeAgent();
+
+    await edgeAgent.approvePluginPermissions("fake-driver");
+
+    expect(edgeAgent.listPendingPluginPermissions()).toHaveLength(0);
+    const outcome = await edgeAgent.invokeCapability("fake-1", "read_only_cap", {});
+    expect(outcome.status).toBe("executed");
+  });
+
+  it("rejectPluginPermissions() deja el plugin sin dispositivos, sin volver a aparecer como pendiente", async () => {
+    const { edgeAgent } = await buildUnapprovedEdgeAgent();
+
+    edgeAgent.rejectPluginPermissions("fake-driver");
+
+    expect(edgeAgent.listPendingPluginPermissions()).toHaveLength(0);
+    await expect(edgeAgent.invokeCapability("fake-1", "read_only_cap", {})).rejects.toThrow(
+      /Capability desconocida/,
+    );
   });
 });

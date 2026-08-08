@@ -1,5 +1,4 @@
-import { EventEmitter } from "node:events";
-import type { ActionSeverity, CapabilityResult } from "@kan/plugin-contract";
+import type { ActionSeverity, CapabilityResult, PluginPermissions } from "@kan/plugin-contract";
 import type { Device } from "../domain/entities/Device";
 import type { PendingConfirmation } from "../domain/entities/PendingConfirmation";
 import type { SafetyPolicyEntry } from "../domain/entities/SafetyPolicyEntry";
@@ -9,6 +8,9 @@ import type { CoreConnectionStatus } from "../domain/ports/CoreConnectionPort";
 export interface EdgeAgentEvents {
   "plugin.loaded": { pluginId: string };
   "plugin.error": { pluginId: string; error: string };
+  /** P8 (ADR-041): deny-by-default — el plugin quedó registrado pero no habilitado hasta que se apruebe. */
+  "plugin.permission_pending": { pluginId: string; displayName: string; permissions: PluginPermissions };
+  "plugin.permission_resolved": { pluginId: string; approved: boolean };
   "device.connected": { device: Device };
   "device.disconnected": { deviceId: string };
   "capability.invoked": { deviceId: string; capability: string; severity: ActionSeverity };
@@ -27,19 +29,31 @@ export interface EdgeAgentEvents {
  * llamarse entre sí directamente. Esto es lo que permite que, por ejemplo,
  * el Device Manager funcione sin que exista todavía una conexión al Core
  * (Modo Offline, requisito 14).
+ *
+ * Emisor propio (sin `node:events`) a propósito: este módulo lo importa
+ * también `apps/web` para el Edge Agent del Simulador en el navegador
+ * (`@kan/edge-agent-core/browser`), donde el módulo `events` de Node no
+ * existe.
  */
 export class EdgeAgentBus {
-  private readonly emitter = new EventEmitter();
+  private readonly handlers = new Map<keyof EdgeAgentEvents, Set<(payload: never) => void>>();
 
   emit<K extends keyof EdgeAgentEvents>(event: K, payload: EdgeAgentEvents[K]): void {
-    this.emitter.emit(event, payload);
+    const set = this.handlers.get(event);
+    if (!set) return;
+    for (const handler of set) (handler as (payload: EdgeAgentEvents[K]) => void)(payload);
   }
 
   on<K extends keyof EdgeAgentEvents>(event: K, handler: (payload: EdgeAgentEvents[K]) => void): void {
-    this.emitter.on(event, handler);
+    let set = this.handlers.get(event);
+    if (!set) {
+      set = new Set();
+      this.handlers.set(event, set);
+    }
+    set.add(handler as (payload: never) => void);
   }
 
   off<K extends keyof EdgeAgentEvents>(event: K, handler: (payload: EdgeAgentEvents[K]) => void): void {
-    this.emitter.off(event, handler);
+    this.handlers.get(event)?.delete(handler as (payload: never) => void);
   }
 }

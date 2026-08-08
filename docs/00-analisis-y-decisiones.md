@@ -556,6 +556,21 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-041: Fundamentos del Marketplace de plugins — manifest de permisos + gate deny-by-default reusando el estado `"loaded"` ya existente
+
+**Contexto.** `docs/17` resume P8 como "Marketplace de plugins: SDK, API pública, documentación". Diagnóstico contra el código real: `PluginManifest` (`packages/plugin-contract`) estaba muy por detrás de lo que ADR-008 y `docs/04` §3 ya describían como el contrato (solo `{id, version, displayName, kind, runtime}`, sin `permissions` ni `signature`). El modelo de permisos deny-by-default de ADR-008 nunca se implementó — lo único que existía era `PermissionManager` (ADR-004), que es una capa distinta (confirmación *por invocación* según severidad, no aprobación *de instalación* de un plugin entero). `PluginManager.register()` habilitaba cualquier plugin de inmediato, sin ningún gate.
+
+**Decisión.** `PluginManifest.permissions` (requerido) declara `devices`/`network`/`filesystem`; `PluginPermissionStore` (mismo patrón que `SafetyPolicyStore`, sobre `ConfigStorePort`) persiste qué permisos ya aprobó el usuario por plugin. `PluginManager.register()` ya no habilita de una: si los permisos declarados no coinciden con un grant previo, la instancia queda en estado `"loaded"` — un valor que `PluginInstanceStatus` ya tenía definido pero que ningún código usaba hasta ahora — hasta que `approve()`/`reject()` (nuevos) resuelvan, expuestos en `apps/desktop` como un modal (mismo patrón visual que `ConfirmationModal` de ADR-004). `@kan/plugin-sdk-ts` gana `definePermissions()` (mismo rol que `defineCapability()`) y un README nuevo; `docs/plugin-development.md` (nuevo) es la guía real de autoría, con `@kan/plugin-sdk-ts`/`@kan/plugin-contract` como el "API pública" instalable que pedía docs/17 — no un endpoint HTTP nuevo.
+
+**Alternativas descartadas:**
+- **`capabilities` estáticas en el manifest** (como sugería el ejemplo viejo de ADR-008/docs/04) — descartado: `KanDeviceDriverPlugin.getCapabilities(deviceId)` ya las expone dinámicamente por dispositivo; duplicarlas en el manifest crearía exactamente la divergencia manifest/implementación que docs/04 §5 pide evitar.
+- **Firma criptográfica real** — descartado para este incremento. `docs/09-roadmap.md` ubica el "modelo de firma operativo" en el Año 1 tardío y la apertura del marketplace público recién en el Año 2; sin plugins de terceros todavía, construir verificación de firmas ahora sería infraestructura sin usuario. `manifest.signature?` queda como placeholder.
+- **Tienda pública / pagos / revisión de terceros** — fuera de alcance, confirmado con el usuario (elegido explícitamente sobre "todo lo anterior + firma real" y sobre el alcance mínimo de "solo documentación").
+
+**Consecuencia.** Los 6 plugins existentes (`plugin-device-simulator`, `plugin-esp32-arduino`, `plugin-raspberry-pi`, `plugin-mqtt`, `plugin-gcode`, `plugin-bluetooth-generic`) ahora declaran `permissions` reales y, en el primer arranque tras este incremento, van a pedir aprobación una vez en la app de escritorio antes de descubrir sus dispositivos — sin excepción para plugins bundled/"oficiales", mismo contrato para todos (docs/04 §3). Aprobado, queda persistido localmente y no vuelve a preguntar salvo que una versión futura del plugin declare permisos distintos. `PluginManager` no tenía tests unitarios propios antes de este incremento (`PluginManager.test.ts` es nuevo).
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

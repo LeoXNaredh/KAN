@@ -1,5 +1,5 @@
 import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
-import { KanDeviceDriverPlugin, defineCapability } from "@kan/plugin-sdk-ts";
+import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import type { BleConnection, BleDeviceInfo, BluetoothTransportPort } from "./BluetoothTransportPort";
 import { FakeBluetoothTransport } from "./infra/FakeBluetoothTransport";
 
@@ -68,6 +68,7 @@ export class BluetoothDevicePlugin extends KanDeviceDriverPlugin {
     displayName: "Bluetooth (BLE genérico)",
     kind: "device-driver",
     runtime: "in-process-ts",
+    permissions: definePermissions({ devices: ["bluetooth-generic"], network: false, filesystem: [] }),
   };
 
   private readonly connections = new Map<string, BleConnection>();

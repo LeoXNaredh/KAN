@@ -33,6 +33,7 @@ class SlowDriver extends KanDeviceDriverPlugin {
       displayName: "Slow Driver",
       kind: "device-driver",
       runtime: "in-process-ts",
+      permissions: { devices: ["slow"], network: false, filesystem: [] },
     };
   }
 

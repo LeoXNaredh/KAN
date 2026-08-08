@@ -20,6 +20,9 @@ const kanApi = {
   getPairingStatus: (): Promise<{ paired: boolean }> => ipcRenderer.invoke("kan:getPairingStatus"),
   pairAgent: (code: string): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke("kan:pair", code),
+  listPendingPluginPermissions: () => ipcRenderer.invoke("kan:listPendingPluginPermissions"),
+  approvePluginPermissions: (pluginId: string) => ipcRenderer.invoke("kan:approvePluginPermissions", pluginId),
+  rejectPluginPermissions: (pluginId: string) => ipcRenderer.invoke("kan:rejectPluginPermissions", pluginId),
   onEvent: (handler: (event: BusEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: BusEvent) => handler(data);
     ipcRenderer.on("kan:event", listener);
