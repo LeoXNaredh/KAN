@@ -155,6 +155,76 @@ describe("Gateway (integración, transporte simulado)", () => {
     expect(gateway.agentRegistry.get(edgeAgentId)?.ownerId).toBeUndefined();
   });
 
+  describe("executeTool() — autorización por owner (docs/19 P2, incremento 4)", () => {
+    it("rechaza sin tocar el Edge Agent si el agente está vinculado a otro usuario", async () => {
+      const { gateway, connectionManager } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+
+      const [tool] = gateway.listTools();
+      const result = await gateway.executeTool(tool.name, {}, "user-2");
+
+      expect(result).toEqual({ success: false, error: "No autorizado: este dispositivo pertenece a otro usuario." });
+      expect(connectionManager.dispatched).toHaveLength(0);
+    });
+
+    it("permite la ejecución cuando el requestingUserId coincide con el ownerId del agente", async () => {
+      const { gateway, connectionManager } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+
+      const [tool] = gateway.listTools();
+      const executePromise = gateway.executeTool(tool.name, {}, "user-1");
+
+      expect(connectionManager.dispatched).toHaveLength(1);
+      const dispatchedTaskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId: dispatchedTaskId,
+        status: "done",
+        data: {},
+        at: new Date().toISOString(),
+      });
+      expect((await executePromise).success).toBe(true);
+    });
+
+    it("un agente sin vincular (sin ownerId) sigue abierto para cualquiera, con o sin requestingUserId", async () => {
+      const { gateway, connectionManager } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId));
+
+      const [tool] = gateway.listTools();
+      const executePromise = gateway.executeTool(tool.name, {}, "cualquier-usuario");
+
+      expect(connectionManager.dispatched).toHaveLength(1);
+      const dispatchedTaskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId: dispatchedTaskId,
+        status: "done",
+        data: {},
+        at: new Date().toISOString(),
+      });
+      expect((await executePromise).success).toBe(true);
+    });
+
+    it("audita la denegación con actor 'user' y action 'tool.execute.denied'", async () => {
+      const { gateway, connectionManager, auditStore } = buildGateway();
+      connectionManager.simulateAgentConnect(helloFor(randomUUID()), "user-1");
+
+      const [tool] = gateway.listTools();
+      await gateway.executeTool(tool.name, {}, "user-2");
+
+      expect(auditStore.entries).toHaveLength(1);
+      expect(auditStore.entries[0]).toMatchObject({
+        actor: "user",
+        action: "tool.execute.denied",
+        subject: tool.name,
+        metadata: { requestingUserId: "user-2", ownerId: "user-1" },
+      });
+    });
+  });
+
   it("ciclo completo: agente conecta -> capability disponible como tool -> ejecutar -> telemetría -> resultado", async () => {
     const { gateway, connectionManager, auditStore } = buildGateway();
 

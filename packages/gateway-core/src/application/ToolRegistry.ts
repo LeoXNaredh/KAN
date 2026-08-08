@@ -2,7 +2,7 @@ import type { ToolDescriptor } from "@kan/plugin-contract";
 import type { GlobalCapabilityRegistry } from "./GlobalCapabilityRegistry";
 
 export interface ToolRegistry {
-  list(): ToolDescriptor[];
+  list(requestingUserId?: string): ToolDescriptor[];
   get(name: string): ToolDescriptor | undefined;
 }
 
@@ -10,8 +10,8 @@ export interface ToolRegistry {
 export class CapabilityBackedToolRegistry implements ToolRegistry {
   constructor(private readonly capabilities: GlobalCapabilityRegistry) {}
 
-  list(): ToolDescriptor[] {
-    return this.capabilities.list().map((c) => ({
+  list(requestingUserId?: string): ToolDescriptor[] {
+    return this.capabilities.list(requestingUserId).map((c) => ({
       name: c.ref,
       description: c.capability.description,
       inputSchema: c.capability.inputSchema ?? {},

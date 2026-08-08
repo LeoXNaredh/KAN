@@ -53,17 +53,17 @@ export function createRoutes(
     res.json({ userId: req.userId ?? null, email: req.userEmail ?? null });
   });
 
-  router.get("/v1/tools", (_req, res) => {
-    res.json({ tools: gateway.listTools() });
+  router.get("/v1/tools", (req, res) => {
+    res.json({ tools: gateway.listTools(req.userId) });
   });
 
   router.post("/v1/tools/:name/execute", async (req, res) => {
-    const result = await gateway.executeTool(req.params.name, req.body?.args ?? {});
+    const result = await gateway.executeTool(req.params.name, req.body?.args ?? {}, req.userId);
     res.json(result);
   });
 
-  router.get("/v1/agents", (_req, res) => {
-    res.json({ agents: gateway.agentRegistry.list() });
+  router.get("/v1/agents", (req, res) => {
+    res.json({ agents: gateway.agentRegistry.list(req.userId) });
   });
 
   router.get("/v1/audit", async (_req, res) => {

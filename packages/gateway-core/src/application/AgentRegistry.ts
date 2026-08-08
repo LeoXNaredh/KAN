@@ -30,7 +30,15 @@ export class AgentRegistry {
     return this.agents.get(edgeAgentId);
   }
 
-  list(): AgentRecord[] {
-    return Array.from(this.agents.values());
+  /**
+   * Sin `requestingUserId`, devuelve todo (retrocompatible — así se
+   * comportaba antes de P2 incremento 4). Con él, filtra a los agentes sin
+   * owner (todavía no vinculados, abiertos para cualquiera) más los que le
+   * pertenecen exactamente a ese usuario.
+   */
+  list(requestingUserId?: string): AgentRecord[] {
+    const all = Array.from(this.agents.values());
+    if (requestingUserId === undefined) return all;
+    return all.filter((record) => record.ownerId === undefined || record.ownerId === requestingUserId);
   }
 }

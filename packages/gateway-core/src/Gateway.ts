@@ -42,7 +42,9 @@ export class Gateway {
   constructor(private readonly deps: GatewayDeps) {
     this.bus = deps.bus;
     this.agentRegistry = new AgentRegistry(deps.bus);
-    this.capabilityRegistry = new GlobalCapabilityRegistry(deps.bus);
+    // agentRegistry inyectado (P2 incremento 4): permite que list()/resolve
+    // de capacidades sepan a qué usuario pertenece cada Edge Agent.
+    this.capabilityRegistry = new GlobalCapabilityRegistry(deps.bus, this.agentRegistry);
     this.auditService = new AuditService(deps.auditStore, deps.bus);
     this.scheduler = deps.scheduler;
     this.taskOrchestrator = new TaskOrchestrator(
@@ -159,15 +161,38 @@ export class Gateway {
     this.deps.scheduler.stop();
   }
 
-  listTools(): ToolDescriptor[] {
-    return this.toolRegistry.list();
+  listTools(requestingUserId?: string): ToolDescriptor[] {
+    return this.toolRegistry.list(requestingUserId);
   }
 
-  async executeTool(name: string, args: unknown): Promise<ToolExecutionResult> {
+  /**
+   * `requestingUserId` (P2 incremento 4): si la capability resuelta
+   * pertenece a un Edge Agent ya vinculado a otro usuario, se rechaza
+   * antes de llegar al `ToolExecutor` — nunca dispatchea al dispositivo
+   * físico. Un agente sin vincular (`ownerId` undefined) sigue abierto
+   * para cualquiera, igual que antes de este incremento. `TaskOrchestrator.
+   * submit()` no lleva este chequeo a propósito: los jobs programados lo
+   * llaman directo, sin request HTTP de por medio, nunca van a tener un
+   * `requestingUserId`.
+   */
+  async executeTool(name: string, args: unknown, requestingUserId?: string): Promise<ToolExecutionResult> {
     const resolution = this.toolResolver.resolve(name, args);
     if (!resolution.ok) {
       return { success: false, error: resolution.error };
     }
+
+    const capability = this.capabilityRegistry.resolve(resolution.call.ref);
+    const ownerId = capability ? this.agentRegistry.get(capability.edgeAgentId)?.ownerId : undefined;
+    if (ownerId !== undefined && ownerId !== requestingUserId) {
+      this.auditService.record({
+        actor: "user",
+        action: "tool.execute.denied",
+        subject: resolution.call.ref,
+        metadata: { requestingUserId, ownerId },
+      });
+      return { success: false, error: "No autorizado: este dispositivo pertenece a otro usuario." };
+    }
+
     return this.toolExecutor.execute(resolution.call);
   }
 }

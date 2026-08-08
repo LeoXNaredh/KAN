@@ -258,4 +258,72 @@ describe("Gateway HTTP routes", () => {
       .set("X-User-Token", "jwt-invalido");
     expect(response.status).toBe(401);
   });
+
+  describe("propagación de req.userId a Gateway (docs/19 P2, incremento 4)", () => {
+    it("GET /v1/tools pasa el userId verificado a gateway.listTools()", async () => {
+      let received: string | undefined;
+      const gateway = fakeGateway({
+        listTools: (requestingUserId?: string) => {
+          received = requestingUserId;
+          return [];
+        },
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "jwt-valido");
+
+      expect(received).toBe("user-1");
+    });
+
+    it("GET /v1/tools sin X-User-Token pasa userId undefined (retrocompatible)", async () => {
+      let received: string | undefined = "no-debería-quedar-esto";
+      const gateway = fakeGateway({
+        listTools: (requestingUserId?: string) => {
+          received = requestingUserId;
+          return [];
+        },
+      });
+      const app = appWith(gateway);
+
+      await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(received).toBeUndefined();
+    });
+
+    it("POST /v1/tools/:name/execute pasa el userId verificado a gateway.executeTool()", async () => {
+      let received: string | undefined;
+      const gateway = fakeGateway({
+        executeTool: async (_name: string, _args: unknown, requestingUserId?: string) => {
+          received = requestingUserId;
+          return { success: true };
+        },
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      await request(app)
+        .post("/v1/tools/read_sensor/execute")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido")
+        .send();
+
+      expect(received).toBe("user-1");
+    });
+
+    it("GET /v1/agents pasa el userId verificado a agentRegistry.list()", async () => {
+      let received: string | undefined;
+      const gateway = fakeGateway({
+        agentRegistry: {
+          list: (requestingUserId?: string) => {
+            received = requestingUserId;
+            return [];
+          },
+        } as unknown as Gateway["agentRegistry"],
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      await request(app).get("/v1/agents").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "jwt-valido");
+
+      expect(received).toBe("user-1");
+    });
+  });
 });

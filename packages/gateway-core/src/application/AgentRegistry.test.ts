@@ -60,4 +60,23 @@ describe("AgentRegistry", () => {
     const registry = new AgentRegistry(new GatewayBus());
     expect(registry.get("no-existe")).toBeUndefined();
   });
+
+  describe("list(requestingUserId) — filtro por owner (P2 incremento 4)", () => {
+    it("sin requestingUserId, devuelve todo sin filtrar (retrocompatible)", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "sin-owner" }));
+      registry.upsert(record({ edgeAgentId: "de-otro", ownerId: "user-2" }));
+
+      expect(registry.list().map((r) => r.edgeAgentId).sort()).toEqual(["de-otro", "sin-owner"]);
+    });
+
+    it("con requestingUserId, incluye agentes sin owner y los propios, excluye los de otros", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "sin-owner" }));
+      registry.upsert(record({ edgeAgentId: "mio", ownerId: "user-1" }));
+      registry.upsert(record({ edgeAgentId: "de-otro", ownerId: "user-2" }));
+
+      expect(registry.list("user-1").map((r) => r.edgeAgentId).sort()).toEqual(["mio", "sin-owner"]);
+    });
+  });
 });
