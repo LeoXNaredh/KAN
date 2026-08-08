@@ -26,7 +26,12 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
   const { status } = useSystemStatus();
 
   const allDevices = status?.edgeAgents.flatMap((agent) => agent.devices) ?? [];
-  const allPlugins = status?.edgeAgents.flatMap((agent) => agent.installedPlugins) ?? [];
+  // Dos Edge Agents (ej. desktop + Simulador embebido en el navegador,
+  // docs/12) pueden tener el mismo plugin instalado — de-dupe por id para no
+  // listarlo dos veces (y no repetir key de React).
+  const allPlugins = Array.from(
+    new Map((status?.edgeAgents.flatMap((agent) => agent.installedPlugins) ?? []).map((p) => [p.id, p])).values(),
+  );
   const anyAgentOnline = status?.edgeAgents.some((agent) => agent.status === "online") ?? false;
 
   const coreLevel: StatusLevel = "online";
