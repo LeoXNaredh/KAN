@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef } from "react";
 
 // Markdown que Gemini suele meter en las respuestas (negrita, listas,
-// encabezados, código, links) — sin esto, SpeechSynthesis lee los símbolos
-// literales ("asterisco asterisco...") en vez del texto.
+// encabezados, código, links) — sin esto, tanto el TTS de red como
+// SpeechSynthesis leen los símbolos literales ("asterisco asterisco...") en
+// vez del texto.
 const MARKDOWN_PATTERNS: Array<[RegExp, string]> = [
   [/```[\s\S]*?```/g, ""],
   [/`([^`]+)`/g, "$1"],
@@ -35,14 +36,16 @@ function pickSpanishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice 
 }
 
 /**
- * TTS de Fase 1 (ADR-014, docs/00): SpeechSynthesis nativa del navegador,
- * fuera de la capa de puertos — no hay proveedor de red que envolver. Se
- * degrada en silencio si el navegador no la soporta (ej. Firefox Android).
- * Limpia Markdown antes de hablar y prefiere una voz en español "mejorada"
- * si el navegador expone alguna, en vez de la genérica por defecto.
+ * TTS (ADR-034, docs/00): intenta primero OpenAI vía /api/voice/synthesize
+ * (voz real, no robótica) y cae en silencio a la SpeechSynthesis nativa del
+ * navegador si esa llamada falla por cualquier motivo (sin OPENAI_API_KEY
+ * configurada, red caída, error del proveedor) — mismo espíritu de
+ * degradación consciente que ya regía cuando esto era 100% nativo (ADR-014):
+ * el chat nunca se rompe por un problema de voz.
  */
 export function useSpeechSynthesis() {
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
@@ -57,12 +60,9 @@ export function useSpeechSynthesis() {
     return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
   }, []);
 
-  const speak = useCallback((text: string) => {
+  const speakNative = useCallback((clean: string) => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
-    const clean = stripMarkdownForSpeech(text);
-    if (!clean) return;
 
-    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = "es-ES";
     utterance.rate = 0.97;
@@ -73,6 +73,43 @@ export function useSpeechSynthesis() {
 
     window.speechSynthesis.speak(utterance);
   }, []);
+
+  const speak = useCallback(
+    (text: string) => {
+      const clean = stripMarkdownForSpeech(text);
+      if (!clean) return;
+
+      // Corta cualquier reproducción en curso (red o nativa) antes de
+      // empezar la nueva — mismo criterio que el cancel() de antes.
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+      audioRef.current?.pause();
+
+      void (async () => {
+        try {
+          const response = await fetch("/api/voice/synthesize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: clean }),
+          });
+          if (!response.ok) throw new Error(`TTS de red respondió ${response.status}`);
+
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audioRef.current = audio;
+          audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+          audio.addEventListener("error", () => URL.revokeObjectURL(url));
+          await audio.play();
+        } catch {
+          // Sin ruido en consola a propósito (ADR-014/ADR-034): la falla del
+          // proveedor de red no es un error del usuario, es esperable
+          // (falta config, rate limit, red) — el fallback nativo la absorbe.
+          speakNative(clean);
+        }
+      })();
+    },
+    [speakNative],
+  );
 
   return { speak };
 }

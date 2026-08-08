@@ -67,7 +67,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
   const { speak } = useSpeechSynthesis();
 
   const sendMessage = useCallback(
-    async (userMessage: string) => {
+    async (userMessage: string, options?: { viaVoice?: boolean }) => {
       if (!userMessage.trim() || isSending) return;
       const trimmed = userMessage.trim();
       const image = pendingImage ?? undefined;
@@ -125,8 +125,10 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         // de verdad" que ya usaba la versión no-streaming.
         setMessages((prev) => [...prev.slice(0, preSubmitCount + 1), ...newMessages]);
 
+        // Habla la respuesta solo si el turno del usuario vino por voz
+        // (ADR-034) — evita costo real de TTS de red en cada mensaje tipeado.
         const lastAssistantMessage = [...newMessages].reverse().find((m) => m.role === "assistant");
-        if (lastAssistantMessage?.content) speak(lastAssistantMessage.content);
+        if (lastAssistantMessage?.content && options?.viaVoice) speak(lastAssistantMessage.content);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error desconocido");
       } finally {
@@ -137,7 +139,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
     [conversationId, isSending, messages.length, pendingImage, speak],
   );
 
-  const voice = useVoiceInput(sendMessage);
+  const voice = useVoiceInput((text) => sendMessage(text, { viaVoice: true }));
 
   async function handleImageSelect(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];

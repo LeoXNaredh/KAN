@@ -451,6 +451,20 @@ Como pediste explícitamente que cuestione decisiones cuando exista una alternat
 
 **Consecuencia.** El chequeo de autorización y el de resolución de `ownerId` viven en capas distintas de las que originalmente proponía `docs/16` (`Gateway.executeTool()`/`WsConnectionManager.onHello()` en vez de `TaskOrchestrator.submit()`/`WsConnectionManager.handleUpgrade()`) — una desviación deliberada de la propuesta inicial, documentada acá porque cambia dónde un futuro cambio de autorización debería tocar. Los jobs programados quedan, a propósito, fuera del alcance de la autorización por owner — es la pieza más visible que falta si se retoma este tema más adelante.
 
+### ADR-034: `VoiceProviderPort` gana `synthesize()` — OpenAI TTS reemplaza SpeechSynthesis nativo como default
+
+**Contexto.** ADR-014 dejó `VoiceProviderPort` con un solo método a propósito, y planteó explícitamente la condición para ampliarlo: *"El puerto gana `synthesize()` el día que se sume un proveedor de TTS de red real (ElevenLabs, Google Cloud TTS), con el mismo patrón que ya funcionó para STT."* La voz nativa del navegador (`SpeechSynthesis`) cumplió su rol en Fase 1 pero suena robótica — no alcanza la sensación de "asistente" que se busca para el chat por voz.
+
+**Decisión.** `VoiceProviderPort` gana `synthesize(text: string): Promise<Blob>`. El adaptador es `OpenAiTtsProvider` (paquete `@kan/voice-abstraction`, mismo rol que `GroqVoiceProvider`): `fetch` directo contra `POST /v1/audio/speech` de OpenAI, sin SDK (mismo criterio que ADR-011), modelo `gpt-4o-mini-tts` y voz `onyx` por defecto. Como `GroqVoiceProvider` (STT) y `OpenAiTtsProvider` (TTS) son proveedores de red distintos y ninguno implementa el puerto completo, `TranscribeAudioUseCase` y el nuevo `SynthesizeSpeechUseCase` dependen cada uno de un `Pick<VoiceProviderPort, ...>` angostado a lo que realmente usan, no del puerto entero — evita forzar un método "no implementado" en cualquiera de los dos adaptadores. `apps/web/lib/voice/useSpeechSynthesis.ts` intenta primero `/api/voice/synthesize` (OpenAI) y cae en silencio al `SpeechSynthesis` nativo si esa llamada falla por cualquier motivo (sin `OPENAI_API_KEY`, red caída, error del proveedor) — mismo espíritu de degradación consciente de ADR-014.
+
+**Decisión — auto-play solo si el turno fue por voz.** A diferencia del `SpeechSynthesis` nativo (gratis, sin límite de uso), OpenAI TTS tiene costo real por request. Leer en voz alta automáticamente cada respuesta del asistente —como hacía Fase 1, sin excepción— generaría costo en cada mensaje tipeado, que es el caso de uso mayoritario. `ConversationPanel.tsx` ahora solo llama `speak()` cuando el mensaje que originó la respuesta vino del micrófono (push-to-talk); un mensaje tipeado no dispara audio. No hay toggle de UI en este incremento — es una regla fija, no una preferencia configurable todavía.
+
+**Por qué.** Igual que en STT (ADR-014), un proveedor de red real da voces sensiblemente mejores que las Web APIs nativas del navegador. La combinación de fallback silencioso + gate por origen del turno preserva las dos garantías que ya tenía Fase 1: el chat nunca se rompe por un problema de voz, y no se generan costos de red donde el usuario no pidió voz.
+
+**Consecuencia.** Cada respuesta hablada por voz ahora tiene un costo real de API (OpenAI TTS), mitigado por el gate de auto-play. `apps/mobile` no se toca — sigue con `expo-speech` nativo (ADR-032); si en el futuro se quiere el mismo TTS de red ahí, es una extensión de este mismo `OpenAiTtsProvider`, no un rediseño.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

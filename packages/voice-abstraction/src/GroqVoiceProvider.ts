@@ -15,7 +15,9 @@ const TRANSCRIPTIONS_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
  * Groq — compatible con el formato de OpenAI, por eso un `fetch` directo
  * alcanza sin necesidad de un SDK (mismo criterio que ADR-011).
  */
-export class GroqVoiceProvider implements VoiceProviderPort {
+// Pick, no el puerto completo (ADR-034): este adaptador solo hace STT,
+// synthesize() lo cubre OpenAiTtsProvider.
+export class GroqVoiceProvider implements Pick<VoiceProviderPort, "transcribe"> {
   private readonly apiKey: string;
   private readonly model: string;
 
