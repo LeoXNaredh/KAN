@@ -66,8 +66,8 @@ export function createRoutes(
     res.json({ agents: gateway.agentRegistry.list(req.userId) });
   });
 
-  router.get("/v1/audit", async (_req, res) => {
-    res.json({ entries: await gateway.auditService.list() });
+  router.get("/v1/audit", async (req, res) => {
+    res.json({ entries: await gateway.auditService.list({ userId: req.userId }) });
   });
 
   router.get("/v1/jobs", (_req, res) => {

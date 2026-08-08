@@ -8,5 +8,5 @@ import type { AuditEntry } from "../entities/AuditEntry";
  */
 export interface AuditStorePort {
   append(entry: AuditEntry): Promise<void>;
-  list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): Promise<AuditEntry[]>;
+  list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject" | "userId">>): Promise<AuditEntry[]>;
 }

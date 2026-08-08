@@ -37,13 +37,14 @@ export class JsonlAuditStore implements AuditStorePort {
     });
   }
 
-  async list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): Promise<AuditEntry[]> {
+  async list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject" | "userId">>): Promise<AuditEntry[]> {
     if (!filter) return [...this.entries];
     return this.entries.filter(
       (entry) =>
         (!filter.actor || entry.actor === filter.actor) &&
         (!filter.action || entry.action === filter.action) &&
-        (!filter.subject || entry.subject === filter.subject),
+        (!filter.subject || entry.subject === filter.subject) &&
+        (!filter.userId || entry.userId === filter.userId),
     );
   }
 

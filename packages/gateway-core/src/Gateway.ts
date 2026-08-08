@@ -92,10 +92,14 @@ export class Gateway {
       if (message.type === "safety_policy.changed") {
         // El cambio ya ocurrió y se persistió localmente en el Edge Agent;
         // esto solo deja constancia en la auditoría (regla 7 de Safety Policy).
+        // userId (P2 incremento 5): el owner del agente — no hay sesión
+        // propia en apps/desktop, es la mejor aproximación disponible de
+        // "quién hizo esto".
         this.auditService.record({
           actor: "user",
           action: "safety_policy.changed",
           subject: `${edgeAgentId}/${message.deviceId}/${message.target}`,
+          userId: this.agentRegistry.get(edgeAgentId)?.ownerId,
           metadata: { alias: message.alias, severity: message.severity, previousSeverity: message.previousSeverity },
         });
         return;
@@ -108,6 +112,7 @@ export class Gateway {
           actor: "user",
           action: "audit.local",
           subject: `${edgeAgentId}/${message.deviceId}/${message.capability}`,
+          userId: this.agentRegistry.get(edgeAgentId)?.ownerId,
           metadata: { success: message.success, error: message.error },
         });
         return;
@@ -122,10 +127,15 @@ export class Gateway {
 
       for (const step of job.steps) {
         this.bus.emit("job.fired", { jobId: job.id, capabilityRef: step.capabilityRef });
+        // userId (P2 incremento 5): el owner del agente que este paso
+        // específico toca — informativo, no le da un dueño al job en sí
+        // (fuera de alcance, ver docs/19 incremento 4).
+        const stepEdgeAgentId = this.capabilityRegistry.resolve(step.capabilityRef)?.edgeAgentId;
         this.auditService.record({
           actor: "system",
           action: "job.fired",
           subject: step.capabilityRef,
+          userId: stepEdgeAgentId ? this.agentRegistry.get(stepEdgeAgentId)?.ownerId : undefined,
           metadata: { jobId: job.id },
         });
 
@@ -188,12 +198,13 @@ export class Gateway {
         actor: "user",
         action: "tool.execute.denied",
         subject: resolution.call.ref,
+        userId: requestingUserId,
         metadata: { requestingUserId, ownerId },
       });
       return { success: false, error: "No autorizado: este dispositivo pertenece a otro usuario." };
     }
 
-    return this.toolExecutor.execute(resolution.call);
+    return this.toolExecutor.execute(resolution.call, requestingUserId);
   }
 }
 

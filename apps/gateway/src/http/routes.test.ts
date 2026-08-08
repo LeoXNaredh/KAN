@@ -325,5 +325,39 @@ describe("Gateway HTTP routes", () => {
 
       expect(received).toBe("user-1");
     });
+
+    it("GET /v1/audit pasa el userId verificado a auditService.list() (docs/19 P2, incremento 5)", async () => {
+      let received: { userId?: string } | undefined;
+      const gateway = fakeGateway({
+        auditService: {
+          list: (filter?: { userId?: string }) => {
+            received = filter;
+            return [];
+          },
+        } as unknown as Gateway["auditService"],
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      await request(app).get("/v1/audit").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "jwt-valido");
+
+      expect(received).toEqual({ userId: "user-1" });
+    });
+
+    it("GET /v1/audit sin X-User-Token pasa userId undefined (retrocompatible)", async () => {
+      let received: { userId?: string } | undefined;
+      const gateway = fakeGateway({
+        auditService: {
+          list: (filter?: { userId?: string }) => {
+            received = filter;
+            return [];
+          },
+        } as unknown as Gateway["auditService"],
+      });
+      const app = appWith(gateway);
+
+      await request(app).get("/v1/audit").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(received).toEqual({ userId: undefined });
+    });
   });
 });

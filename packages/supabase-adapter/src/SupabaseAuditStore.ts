@@ -19,6 +19,28 @@ const MAX_ROWS = 500;
  * (no hay `auth.uid()`), y `audit_entries` tiene RLS activado sin ninguna
  * policy para anon/authenticated a propósito.
  */
+interface AuditRow {
+  id: string;
+  at: string;
+  actor: AuditEntry["actor"];
+  action: string;
+  subject: string;
+  metadata: Record<string, unknown>;
+  user_id: string | null;
+}
+
+function toAuditEntry(row: AuditRow): AuditEntry {
+  return {
+    id: row.id,
+    at: row.at,
+    actor: row.actor,
+    action: row.action,
+    subject: row.subject,
+    metadata: row.metadata,
+    userId: row.user_id ?? undefined,
+  };
+}
+
 export class SupabaseAuditStore implements AuditStorePort {
   constructor(private readonly client: SupabaseClient) {}
 
@@ -30,6 +52,7 @@ export class SupabaseAuditStore implements AuditStorePort {
       action: entry.action,
       subject: entry.subject,
       metadata: entry.metadata,
+      user_id: entry.userId,
     });
     // Best-effort, igual que JsonlAuditStore: un fallo al persistir la
     // auditoría nunca debe romper el flujo que la disparó (AuditService.record()
@@ -37,14 +60,15 @@ export class SupabaseAuditStore implements AuditStorePort {
     if (error) console.error(`[SupabaseAuditStore] no se pudo escribir: ${error.message}`);
   }
 
-  async list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): Promise<AuditEntry[]> {
+  async list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject" | "userId">>): Promise<AuditEntry[]> {
     let query = this.client.from("audit_entries").select("*").order("at", { ascending: false }).limit(MAX_ROWS);
     if (filter?.actor) query = query.eq("actor", filter.actor);
     if (filter?.action) query = query.eq("action", filter.action);
     if (filter?.subject) query = query.eq("subject", filter.subject);
+    if (filter?.userId) query = query.eq("user_id", filter.userId);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
-    return (data ?? []) as AuditEntry[];
+    return ((data ?? []) as AuditRow[]).map(toAuditEntry);
   }
 }

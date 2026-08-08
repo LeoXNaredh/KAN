@@ -10,7 +10,7 @@ import type { GatewayBus } from "./GatewayBus";
  * toque TaskOrchestrator; solo esto lo hace.
  */
 export interface ToolExecutorPort {
-  execute(call: ResolvedToolCall): Promise<ToolExecutionResult>;
+  execute(call: ResolvedToolCall, requestingUserId?: string): Promise<ToolExecutionResult>;
 }
 
 export class OrchestratorToolExecutor implements ToolExecutorPort {
@@ -20,9 +20,15 @@ export class OrchestratorToolExecutor implements ToolExecutorPort {
     private readonly bus: GatewayBus,
   ) {}
 
-  async execute(call: ResolvedToolCall): Promise<ToolExecutionResult> {
+  async execute(call: ResolvedToolCall, requestingUserId?: string): Promise<ToolExecutionResult> {
     this.bus.emit("tool.proposed", { name: call.ref, args: call.args });
-    this.audit.record({ actor: "llm", action: "tool.execute", subject: call.ref, metadata: { args: call.args } });
+    this.audit.record({
+      actor: "llm",
+      action: "tool.execute",
+      subject: call.ref,
+      userId: requestingUserId,
+      metadata: { args: call.args },
+    });
 
     const result = await this.orchestrator.submit({ capabilityRef: call.ref, input: call.args });
 

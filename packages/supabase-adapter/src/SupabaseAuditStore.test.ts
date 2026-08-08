@@ -78,4 +78,55 @@ describe("SupabaseAuditStore", () => {
 
     await expect(store.list()).rejects.toThrow("tabla no encontrada");
   });
+
+  describe("userId (docs/19 P2, incremento 5)", () => {
+    it("append() manda user_id (snake_case) en el insert", async () => {
+      let insertedPayload: unknown;
+      const client = createFakeFromClient({
+        audit_entries: (calls: RecordedCall[]) => {
+          insertedPayload = calls.find((call) => call.method === "insert")?.args[0];
+          return { data: null, error: null };
+        },
+      });
+      const store = new SupabaseAuditStore(client);
+
+      await store.append(entry({ userId: "user-1" }));
+
+      expect(insertedPayload).toMatchObject({ user_id: "user-1" });
+    });
+
+    it("list() aplica el filtro de userId como .eq('user_id', ...)", async () => {
+      let recordedCalls: RecordedCall[] = [];
+      const client = createFakeFromClient({
+        audit_entries: (calls: RecordedCall[]) => {
+          recordedCalls = calls;
+          return { data: [], error: null };
+        },
+      });
+      const store = new SupabaseAuditStore(client);
+
+      await store.list({ userId: "user-1" });
+
+      const eqCalls = recordedCalls.filter((call) => call.method === "eq").map((call) => call.args);
+      expect(eqCalls).toEqual([["user_id", "user-1"]]);
+    });
+
+    it("list() mapea la columna user_id de la fila a userId en el AuditEntry", async () => {
+      const client = createFakeFromClient({
+        audit_entries: {
+          data: [
+            { id: "e1", at: "2026-01-01T00:00:00.000Z", actor: "llm", action: "tool.execute", subject: "read_sensor", metadata: {}, user_id: "user-1" },
+            { id: "e2", at: "2026-01-01T00:00:01.000Z", actor: "system", action: "job.notification", subject: "Listo", metadata: {}, user_id: null },
+          ],
+          error: null,
+        },
+      });
+      const store = new SupabaseAuditStore(client);
+
+      const result = await store.list();
+
+      expect(result[0]).toMatchObject({ id: "e1", userId: "user-1" });
+      expect(result[1]).toMatchObject({ id: "e2", userId: undefined });
+    });
+  });
 });

@@ -8,13 +8,11 @@
 
 **Resuelto.** `CapabilityDescriptor.inputSchema`/`ToolDescriptor.inputSchema` son JSON Schema real (`@kan/plugin-contract`, tipo `JsonSchema`), validado con `ajv` vía `validateAgainstSchema()`. Defensa en profundidad en dos capas, sin tocar `plugin-sdk-ts`: `ToolResolver.resolve()` (Gateway) rechaza args mal formados antes de despachar al Edge Agent, y `CapabilityRegistry.invoke()` (Edge Agent) los rechaza otra vez antes de resolver severidad o tocar el driver — son las dos fronteras de confianza reales (LLM↔Gateway, Gateway↔Edge Agent), no una capa intermedia en el SDK. Ver ADR-024 (`docs/00`) para el detalle y las alternativas descartadas.
 
-## P2 — Autenticación y autorización por usuario — 📄 Propuesta detallada aprobada (2026-08-07, `docs/19`), implementación pendiente
+## P2 — Autenticación y autorización por usuario — ✅ Implementado (2026-08-07, ADR-033)
 
-**Problema.** Ya documentado extensamente en `docs/13` (C1) y `docs/15` (secciones 1-2): no existe el concepto de usuario. Es la brecha de seguridad más grande del sistema, y es trabajo de funcionalidad real, no un fix de estabilización.
+**Problema (histórico).** Ya documentado extensamente en `docs/13` (C1) y `docs/15` (secciones 1-2): no existía el concepto de usuario. Era la brecha de seguridad más grande del sistema.
 
-**Propuesta detallada:** ver `docs/19-arquitectura-auth-gateway-propuesta.md` — análisis de la arquitectura actual del Gateway, alternativas de validación de JWT de Supabase (`getUser()` vs. JWKS local con `jose` vs. secreto HS256 legacy) y recomendación, más el diseño del mecanismo de emparejamiento (pairing) que necesita `apps/desktop` para asociar un Edge Agent a un usuario — problema separado de la validación de JWT, ya que el Edge Agent nunca tiene una sesión de Supabase.
-
-**Costo estimado:** alto (varios días) — 4 incrementos: JWT en el Gateway, pairing, autorización real en `TaskOrchestrator.submit()`, auditoría por usuario. Detalle completo en `docs/19` §6.
+**Resuelto.** Ver `docs/19-arquitectura-auth-gateway-propuesta.md` (propuesta y estado final de los 5 incrementos) y ADR-033 (`docs/00`) para las decisiones de diseño tomadas al implementar — verificación de JWT con `getUser()`, pairing del Edge Agent vía código de un solo uso, dónde vive el chequeo de ownership (`Gateway.executeTool()`, no `TaskOrchestrator.submit()`, por los jobs programados), y auditoría por usuario.
 
 **Prioridad:** alta, pero explícitamente **no bloqueante para seguir con ESP32 en un entorno de un solo usuario** — bloqueante solo para compartir el sistema con alguien más.
 
@@ -69,7 +67,7 @@
 | # | Propuesta | Prioridad | Bloqueante para |
 |---|---|---|---|
 | P1 | Validación JSON Schema real | ✅ Implementado (ADR-024) | — |
-| P2 | Auth/autorización por usuario | Alta | Compartir el sistema con más de un usuario |
+| P2 | Auth/autorización por usuario | ✅ Implementado (ADR-033) | — |
 | P3 | Persistencia real del Gateway | ✅ Implementado, alcance parcial (ADR-026) | Multi-instancia (Redis para Agent/Capability Registry) queda pendiente |
 | P4 | Auditoría de invocaciones manuales | ✅ Implementado, alcance parcial (ADR-025) | Auditar confirmaciones manuales queda pendiente |
 | P6 | Rate limiting | ✅ Implementado (ADR-025) | — |

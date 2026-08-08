@@ -454,4 +454,105 @@ describe("Gateway (integración, transporte simulado)", () => {
       metadata: { success: false, error: "Argumentos inválidos: on must be boolean" },
     });
   });
+
+  describe("userId en la auditoría (docs/19 P2, incremento 5)", () => {
+    it("tool.execute lleva el requestingUserId de quien lo ejecutó", async () => {
+      const { gateway, connectionManager, auditStore } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+      const [tool] = gateway.listTools();
+
+      const executePromise = gateway.executeTool(tool.name, {}, "user-1");
+      const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "done",
+        data: {},
+        at: new Date().toISOString(),
+      });
+      await executePromise;
+
+      expect(auditStore.entries[0]).toMatchObject({ action: "tool.execute", userId: "user-1" });
+    });
+
+    it("tool.execute.denied lleva el requestingUserId de quien intentó ejecutarlo (no el ownerId)", async () => {
+      const { gateway, connectionManager, auditStore } = buildGateway();
+      connectionManager.simulateAgentConnect(helloFor(randomUUID()), "user-1");
+      const [tool] = gateway.listTools();
+
+      await gateway.executeTool(tool.name, {}, "user-2");
+
+      expect(auditStore.entries[0]).toMatchObject({ action: "tool.execute.denied", userId: "user-2" });
+    });
+
+    it("safety_policy.changed y audit.local llevan el ownerId del agente vinculado", () => {
+      const { connectionManager, auditStore } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "safety_policy.changed",
+        deviceId: "esp32-1",
+        target: "5",
+        severity: "irreversible-material",
+        at: new Date().toISOString(),
+      });
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "audit.local",
+        deviceId: "simulator-1",
+        capability: "toggle_led",
+        success: true,
+        at: new Date().toISOString(),
+      });
+
+      expect(auditStore.entries).toHaveLength(2);
+      expect(auditStore.entries.every((entry) => entry.userId === "user-1")).toBe(true);
+    });
+
+    it("job.fired lleva el ownerId del agente que ese paso toca, sin darle owner al job en sí", async () => {
+      const { gateway, connectionManager, scheduler, auditStore } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+      const [tool] = gateway.listTools();
+
+      const dispatchPromise = scheduler.dispatch!({ id: "job-userid", steps: [{ capabilityRef: tool.name, input: {} }] });
+      const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "done",
+        data: {},
+        at: new Date().toISOString(),
+      });
+      await dispatchPromise;
+
+      expect(auditStore.entries.find((entry) => entry.action === "job.fired")).toMatchObject({ userId: "user-1" });
+    });
+
+    it("job.notification nunca lleva userId — un job puede cubrir varios dispositivos con distinto owner", async () => {
+      const { gateway, connectionManager, scheduler, auditStore } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+      const [tool] = gateway.listTools();
+
+      const dispatchPromise = scheduler.dispatch!({
+        id: "job-notif",
+        steps: [{ capabilityRef: tool.name, input: {} }],
+        notification: { title: "Listo", body: "..." },
+      });
+      const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "done",
+        data: {},
+        at: new Date().toISOString(),
+      });
+      await dispatchPromise;
+
+      const notification = auditStore.entries.find((entry) => entry.action === "job.notification");
+      expect(notification?.userId).toBeUndefined();
+    });
+  });
 });

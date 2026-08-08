@@ -23,7 +23,7 @@ export class AuditService {
     return full;
   }
 
-  async list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject">>): Promise<AuditEntry[]> {
+  async list(filter?: Partial<Pick<AuditEntry, "actor" | "action" | "subject" | "userId">>): Promise<AuditEntry[]> {
     return this.store.list(filter);
   }
 }
