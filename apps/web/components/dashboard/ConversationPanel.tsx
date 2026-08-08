@@ -119,7 +119,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
 
         const newMessages: ChatMessage[] = finalConversation.messages
           .slice(preSubmitCount + 1)
-          .map((m) => ({ role: m.role as ChatRole, content: m.content, toolCall: m.toolCall }));
+          .map((m) => ({ role: m.role as ChatRole, content: m.content, toolCall: m.toolCall, image: m.image }));
         // Descarta las burbujas provisionales de tool_result y deja solo lo
         // realmente persistido — mismo criterio de "el server es la fuente
         // de verdad" que ya usaba la versión no-streaming.

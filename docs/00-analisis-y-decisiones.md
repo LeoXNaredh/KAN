@@ -479,6 +479,20 @@ Las categorías quedan fijas (`MEMORY_CATEGORIES` en `@kan/core`: `dispositivos`
 
 ---
 
+### ADR-036: Visión (P3) auditada como ya completa — verificación end-to-end en vivo, no solo lectura de código
+
+**Contexto.** El pedido de este incremento era diagnosticar qué faltaba de Visión (imágenes en el chat) antes de implementar nada. ADR-018 ya había resuelto el diseño (imagen inline en `Message`, base64 en la fila) — la pregunta era si esa infraestructura realmente estaba conectada de punta a punta o si algo quedó a medio terminar, como ya había pasado en incrementos anteriores de este proyecto con código que se veía correcto pero divergía del estado real de la base (migraciones 0001-0008 nunca aplicadas, `messages_role_check` desactualizado respecto del archivo de migración).
+
+**Decisión — verificar con una llamada real, no solo leer el código.** Se mandó un mensaje real a `/api/chat` con una imagen de 1x1 píxel adjunta, contra el servidor corriendo de verdad, y se confirmó: (a) Gemini identificó el color de la imagen en su respuesta (prueba de que `inlineData` realmente llega al modelo, no un passthrough vacío), y (b) se consultó Supabase directo (`select image_data, image_mime_type from messages`) y la fila quedó persistida completa. Con eso confirmado, se leyó el resto de la cadena (`ConversationPanel.tsx`, `GeminiProvider.toGeminiContent()`, `SupabaseConversationRepository`) y las tres preguntas del diagnóstico (¿el botón está conectado?, ¿se muestran las imágenes en el historial?, ¿se persisten `image_data`/`image_mime_type`?) dieron que sí en los tres casos — Visión ya estaba completa desde ADR-018, no era un incremento nuevo.
+
+**Único cambio real de este incremento.** `ConversationPanel.tsx` reconstruye los mensajes nuevos después de cada respuesta desde `finalConversation` (la fuente de verdad del server) pero el `.map()` no copiaba el campo `image` — sin efecto visible hoy porque el mensaje del usuario (el único que puede traer imagen) siempre se agrega antes, de forma optimista, y nunca cae en ese slice; pero sí sería una pérdida de datos silenciosa el día que el chat lea historial real desde el server (ej. "continuar conversación anterior"). Se agregó `image: m.image` a ese mapeo — una línea, sin tocar el resto del flujo de texto ni de voz.
+
+**Por qué.** Confiar solo en que el código "se ve correcto" ya produjo falsos positivos en este proyecto (las migraciones, el constraint de `messages`) — para un diagnóstico real, un round-trip contra el servidor y la base corriendo de verdad vale más que la lectura de código, y debería ser el criterio por defecto cuando un incremento empieza preguntando "¿esto ya funciona o es decorativo?".
+
+**Consecuencia.** Ningún archivo de dominio, puerto o adaptador cambió — `Message.ts`, `/api/chat/route.ts`, `GeminiProvider.ts`, `SupabaseConversationRepository.ts` y la migración `0006` quedan tal cual estaban. Precedente para futuros incrementos: cuando el pedido es "diagnosticá qué falta", el resultado válido puede ser "nada, ya está" — no hay que inventar trabajo para justificar el incremento.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
