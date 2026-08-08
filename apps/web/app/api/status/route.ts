@@ -49,6 +49,17 @@ function translateAuditEntry(entry: RawAuditEntry): string {
   }
 }
 
+/**
+ * (ADR-037) `Gateway.ts` graba `metadata.body` en la misma fila que dispara
+ * `notificationService.notify()` (nunca leído en el navegador, ver ADR-037)
+ * — esta fila de auditoría es el canal real que sí llega acá.
+ */
+function toNotification(entry: RawAuditEntry): { title: string; body: string } | undefined {
+  if (entry.action !== "job.notification") return undefined;
+  const body = entry.metadata.body;
+  return { title: entry.subject, body: typeof body === "string" ? body : "" };
+}
+
 async function fetchGateway<T>(path: string, userToken?: string): Promise<T | undefined> {
   try {
     const response = await gatewayFetch(
@@ -72,10 +83,11 @@ async function fetchGateway<T>(path: string, userToken?: string): Promise<T | un
  */
 export async function GET(request: Request) {
   const userToken = await resolveUserToken(request);
-  const [agentsBody, toolsBody, auditBody] = await Promise.all([
+  const [agentsBody, toolsBody, auditBody, jobsBody] = await Promise.all([
     fetchGateway<{ agents: RawAgentRecord[] }>("/v1/agents", userToken),
     fetchGateway<{ tools: ToolDescriptor[] }>("/v1/tools", userToken),
     fetchGateway<{ entries: RawAuditEntry[] }>("/v1/audit", userToken),
+    fetchGateway<{ jobs: unknown[] }>("/v1/jobs", userToken),
   ]);
 
   const edgeAgents: EdgeAgentStatus[] = (agentsBody?.agents ?? []).map((agent) => ({
@@ -91,7 +103,12 @@ export async function GET(request: Request) {
     .slice()
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, RECENT_ACTIVITY_LIMIT)
-    .map((entry) => ({ id: entry.id, at: entry.at, label: translateAuditEntry(entry) }));
+    .map((entry) => ({
+      id: entry.id,
+      at: entry.at,
+      label: translateAuditEntry(entry),
+      notification: toNotification(entry),
+    }));
 
   const body: SystemStatusResponse = {
     gateway: agentsBody ? "online" : "offline",
@@ -100,6 +117,7 @@ export async function GET(request: Request) {
     capabilitiesCount: toolsBody?.tools.length ?? 0,
     version: packageJson.version,
     recentActivity,
+    jobsCount: jobsBody?.jobs.length ?? 0,
   };
 
   return NextResponse.json(body);

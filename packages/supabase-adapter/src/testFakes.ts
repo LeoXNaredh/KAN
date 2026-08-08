@@ -41,6 +41,9 @@ export class FakeQueryBuilder implements PromiseLike<FakeQueryResult> {
   is(...args: unknown[]) {
     return this.record("is", args);
   }
+  or(...args: unknown[]) {
+    return this.record("or", args);
+  }
   gt(...args: unknown[]) {
     return this.record("gt", args);
   }

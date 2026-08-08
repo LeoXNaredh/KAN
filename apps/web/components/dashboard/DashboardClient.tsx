@@ -84,7 +84,12 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
             value={summary ? String(summary.projectsCount) : "—"}
             hint={summary && summary.projectsCount === 0 ? "Sin proyectos todavía" : "Proyectos activos"}
           />
-          <SummaryCard icon={Workflow} title="Automatizaciones" value="—" hint="Próximamente" />
+          <SummaryCard
+            icon={Workflow}
+            title="Automatizaciones"
+            value={status ? String(status.jobsCount) : "—"}
+            hint={status && status.jobsCount === 0 ? "Sin automatizaciones programadas" : "Jobs activos"}
+          />
         </div>
       </section>
 

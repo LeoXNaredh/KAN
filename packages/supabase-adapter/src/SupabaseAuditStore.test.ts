@@ -95,7 +95,7 @@ describe("SupabaseAuditStore", () => {
       expect(insertedPayload).toMatchObject({ user_id: "user-1" });
     });
 
-    it("list() aplica el filtro de userId como .eq('user_id', ...)", async () => {
+    it("list() aplica el filtro de userId como .or(propio O sin dueño) — ADR-037, no .eq() estricto", async () => {
       let recordedCalls: RecordedCall[] = [];
       const client = createFakeFromClient({
         audit_entries: (calls: RecordedCall[]) => {
@@ -107,8 +107,9 @@ describe("SupabaseAuditStore", () => {
 
       await store.list({ userId: "user-1" });
 
-      const eqCalls = recordedCalls.filter((call) => call.method === "eq").map((call) => call.args);
-      expect(eqCalls).toEqual([["user_id", "user-1"]]);
+      const orCalls = recordedCalls.filter((call) => call.method === "or").map((call) => call.args);
+      expect(orCalls).toEqual([["user_id.eq.user-1,user_id.is.null"]]);
+      expect(recordedCalls.some((call) => call.method === "eq" && call.args[0] === "user_id")).toBe(false);
     });
 
     it("list() mapea la columna user_id de la fila a userId en el AuditEntry", async () => {

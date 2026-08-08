@@ -17,6 +17,8 @@ export interface ActivityEntry {
   id: string;
   at: string;
   label: string;
+  /** Presente solo si esta entrada es un `job.notification` (ADR-037) — el resto de la auditoría no la trae. */
+  notification?: { title: string; body: string };
 }
 
 export interface SystemStatusResponse {
@@ -26,4 +28,6 @@ export interface SystemStatusResponse {
   capabilitiesCount: number;
   version: string;
   recentActivity: ActivityEntry[];
+  /** Cantidad de automatizaciones programadas activas (ADR-037) — Dashboard, tarjeta "Automatizaciones". */
+  jobsCount: number;
 }

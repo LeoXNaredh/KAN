@@ -65,7 +65,14 @@ export class SupabaseAuditStore implements AuditStorePort {
     if (filter?.actor) query = query.eq("actor", filter.actor);
     if (filter?.action) query = query.eq("action", filter.action);
     if (filter?.subject) query = query.eq("subject", filter.subject);
-    if (filter?.userId) query = query.eq("user_id", filter.userId);
+    // `.or()`, no `.eq()` (ADR-037): entradas de sistema sin dueño único
+    // (`job.fired`/`job.notification`, ver ADR-033 — "no hay un único valor
+    // correcto") tienen `user_id null` a propósito. Un `.eq("user_id", ...)`
+    // estricto las dejaba invisibles para cualquier usuario, siempre — este
+    // filtro deja ver las propias MÁS las de sistema, sin exponer las de
+    // otros usuarios. `filter.userId` siempre es el `sub` de un JWT ya
+    // verificado (nunca texto libre de un request), seguro de interpolar acá.
+    if (filter?.userId) query = query.or(`user_id.eq.${filter.userId},user_id.is.null`);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);

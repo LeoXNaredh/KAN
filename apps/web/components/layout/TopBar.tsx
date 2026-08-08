@@ -5,6 +5,8 @@ import { Menu, LogOut } from "lucide-react";
 import type { UserIdentity } from "@kan/core";
 import { StatusDot, type StatusLevel } from "@/components/ui/StatusDot";
 import { useSystemStatus } from "@/lib/status/useSystemStatus";
+import { useJobNotificationToasts } from "@/lib/status/useJobNotificationToasts";
+import { NotificationToasts } from "@/components/layout/NotificationToasts";
 import { signOutAction } from "@/lib/auth/actions";
 
 // `getSnapshot()` debe devolver el mismo valor entre llamadas hasta que el
@@ -56,9 +58,11 @@ export function TopBar({ onOpenMenu, user }: { onOpenMenu: () => void; user: Use
   const now = useClock();
   const { status } = useSystemStatus();
   const connection = overallConnection(status);
+  const { toasts, dismiss } = useJobNotificationToasts(status?.recentActivity ?? []);
 
   return (
     <header className="flex items-center justify-between gap-4 border-b border-line bg-surface-2/80 px-4 py-3 backdrop-blur">
+      <NotificationToasts toasts={toasts} onDismiss={dismiss} />
       <div className="flex items-center gap-3">
         <button
           type="button"
