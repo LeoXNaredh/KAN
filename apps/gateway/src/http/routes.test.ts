@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
-import type { Gateway } from "@kan/gateway-core";
+import type { Gateway, EdgeTicketPort } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { createRoutes, type RateLimitOptions } from "./routes";
 
@@ -22,15 +22,24 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
   } as Gateway;
 }
 
-function appWith(gateway: Gateway, rateLimitOptions?: RateLimitOptions, authPort?: AuthPort) {
+function appWith(
+  gateway: Gateway,
+  rateLimitOptions?: RateLimitOptions,
+  authPort?: AuthPort,
+  edgeTicketPort?: EdgeTicketPort,
+) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort));
+  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, edgeTicketPort));
   return app;
 }
 
 function fakeAuthPort(getCurrentUser: AuthPort["getCurrentUser"]): AuthPort {
   return { getCurrentUser } as AuthPort;
+}
+
+function fakeEdgeTicketPort(mint: EdgeTicketPort["mint"]): EdgeTicketPort {
+  return { mint, consume: () => undefined };
 }
 
 describe("Gateway HTTP routes", () => {
@@ -343,6 +352,29 @@ describe("Gateway HTTP routes", () => {
       expect(received).toEqual({ userId: "user-1" });
     });
 
+    it("POST /v1/jobs pasa el userId verificado como createdBy del job (P7)", async () => {
+      let received: unknown;
+      const gateway = fakeGateway({
+        scheduler: {
+          list: () => [],
+          schedule: (job: unknown) => {
+            received = job;
+            return "job-1";
+          },
+          cancel: () => {},
+        } as unknown as Gateway["scheduler"],
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      await request(app)
+        .post("/v1/jobs")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido")
+        .send({ steps: [{ capabilityRef: "x" }], runAt: "2026-01-01T00:00:00.000Z" });
+
+      expect((received as { createdBy?: string })?.createdBy).toBe("user-1");
+    });
+
     it("GET /v1/audit sin X-User-Token pasa userId undefined (retrocompatible)", async () => {
       let received: { userId?: string } | undefined;
       const gateway = fakeGateway({
@@ -358,6 +390,67 @@ describe("Gateway HTTP routes", () => {
       await request(app).get("/v1/audit").set("Authorization", `Bearer ${TOKEN}`);
 
       expect(received).toEqual({ userId: undefined });
+    });
+  });
+
+  describe("POST /v1/edge-tickets", () => {
+    it("sin X-User-Token (sin userId resuelto), rechaza con 401", async () => {
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "no-debería-llamarse", email: "" })),
+        fakeEdgeTicketPort(() => ({ ticket: "t1", expiresAt: "2026-01-01T00:00:00.000Z" })),
+      );
+
+      const response = await request(app).post("/v1/edge-tickets").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(401);
+    });
+
+    it("sin edgeTicketPort configurado, rechaza con 401 aunque haya userId", async () => {
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      const response = await request(app)
+        .post("/v1/edge-tickets")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(401);
+    });
+
+    it("con X-User-Token válido y edgeTicketPort configurado, emite un ticket para ese userId", async () => {
+      let mintedFor: string | undefined;
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        fakeEdgeTicketPort((ownerId) => {
+          mintedFor = ownerId;
+          return { ticket: "ticket-abc", expiresAt: "2026-01-01T00:01:00.000Z" };
+        }),
+      );
+
+      const response = await request(app)
+        .post("/v1/edge-tickets")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ ticket: "ticket-abc", expiresAt: "2026-01-01T00:01:00.000Z" });
+      expect(mintedFor).toBe("user-1");
+    });
+
+    it("sin token interno, rechaza con 401 como el resto de /v1/*", async () => {
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        fakeEdgeTicketPort(() => ({ ticket: "t1", expiresAt: "2026-01-01T00:00:00.000Z" })),
+      );
+
+      const response = await request(app).post("/v1/edge-tickets").set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(401);
     });
   });
 });

@@ -16,6 +16,7 @@ export * from "./domain/ports/UserPreferencesPort";
 export * from "./domain/ports/PersonalityContextPort";
 export * from "./domain/ports/VoiceProviderPort";
 export * from "./domain/ports/PairingPort";
+export * from "./domain/ports/PushTokenStorePort";
 export * from "./application/UserScopedMemoryContext";
 export * from "./application/UserScopedPersonalityContext";
 export * from "./application/parseSseChunk";

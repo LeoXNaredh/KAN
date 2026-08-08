@@ -157,7 +157,7 @@ export class Gateway {
           metadata: { jobId: job.id, body: job.notification.body, failed },
         });
         await this.deps.notificationService.notify({
-          userId: "system",
+          userId: job.createdBy ?? "system",
           channel: "chat",
           title: job.notification.title,
           body: job.notification.body,
@@ -193,7 +193,7 @@ export class Gateway {
     // — un job programado no es de ningún dispositivo, no aplica el chequeo
     // de ownership de abajo.
     if (isSchedulerToolName(name)) {
-      return executeSchedulerTool(this.scheduler, name, args);
+      return executeSchedulerTool(this.scheduler, name, args, requestingUserId);
     }
 
     const resolution = this.toolResolver.resolve(name, args);

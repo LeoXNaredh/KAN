@@ -405,6 +405,34 @@ describe("Gateway (integración, transporte simulado)", () => {
     });
   });
 
+  it("la notificación de un job con createdBy se manda a ese usuario, no a 'system' (P7)", async () => {
+    const { gateway, connectionManager, scheduler, notificationService } = buildGateway();
+    connectionManager.simulateAgentConnect(helloFor(randomUUID()));
+    const [tool] = gateway.listTools();
+
+    const dispatchPromise = scheduler.dispatch!({
+      id: "job-4",
+      steps: [{ capabilityRef: tool.name, input: {} }],
+      notification: { title: "Riego completado", body: "Se regó el jardín." },
+      createdBy: "user-9",
+    });
+
+    const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+    connectionManager.simulateTelemetry(gateway.agentRegistry.list()[0].edgeAgentId, {
+      type: "telemetry",
+      taskId,
+      status: "done",
+      data: {},
+      at: new Date().toISOString(),
+    });
+
+    await dispatchPromise;
+
+    expect(notificationService.sent).toEqual([
+      { userId: "user-9", channel: "chat", title: "Riego completado", body: "Se regó el jardín.", severity: "info" },
+    ]);
+  });
+
   it("shutdown() detiene el scheduler además del transporte", () => {
     const { gateway, scheduler } = buildGateway();
     gateway.shutdown();
@@ -582,6 +610,19 @@ describe("Gateway (integración, transporte simulado)", () => {
       expect(result.success).toBe(true);
       expect(scheduleSpy).toHaveBeenCalledOnce();
       expect(connectionManager.dispatched).toHaveLength(0);
+    });
+
+    it("executeTool('kan_schedule_job', ...) pasa requestingUserId como createdBy del job (P7)", async () => {
+      const { gateway, scheduler } = buildGateway();
+      const scheduleSpy = vi.spyOn(scheduler, "schedule");
+
+      await gateway.executeTool(
+        "kan_schedule_job",
+        { steps: [{ capabilityRef: "cualquier_ref" }], runAt: "2026-01-01T00:00:00.000Z" },
+        "user-3",
+      );
+
+      expect(scheduleSpy).toHaveBeenCalledWith(expect.objectContaining({ createdBy: "user-3" }));
     });
 
     it("executeTool('kan_list_jobs', ...) llama scheduler.list()", async () => {

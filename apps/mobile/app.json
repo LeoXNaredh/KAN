@@ -28,7 +28,8 @@
       ["expo-image-picker", {
         "photosPermission": "Permitir a KAN acceder a tus fotos para adjuntar imágenes al chat.",
         "cameraPermission": "Permitir a KAN usar la cámara para adjuntar fotos al chat."
-      }]
+      }],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

@@ -538,6 +538,24 @@ Las categorías quedan fijas (`MEMORY_CATEGORIES` en `@kan/core`: `dispositivos`
 
 ---
 
+### ADR-040: Notificaciones push reales en `apps/mobile` — `ScheduledJob.createdBy` + `PushTokenStorePort` + `ExpoNotificationService`
+
+**Contexto.** `docs/18` (plan detallado de P7) ya tenía los 6 incrementos de `apps/mobile` completos (auth, chat con streaming/voz/imagen, paridad de Dashboard/Automatizaciones) — verificado contra código, no solo el doc. Lo único de la línea original de `docs/17` ("Android, iOS, PWA, notificaciones push") que nunca se incorporó a ningún incremento era **notificaciones push**; PWA queda fuera de alcance (entregable de `apps/web`, no de `apps/mobile`, nunca estuvo en ningún incremento planeado). ADR-037 decidió correctamente no reemplazar `ConsoleNotificationService` para el toast de `apps/web` porque el polling de 15s ya alcanzaba con una pestaña abierta — pero una app móvil en background o cerrada no puede sondear, así que necesita que algo externo la despierte. Ese "algo" es exactamente el seam que `NotificationServicePort` dejó preparado desde docs/12 §9; este es el incremento donde corresponde reemplazarlo, tal como ADR-037 mismo anticipó.
+
+El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "system", ... })` hardcodeado, porque `ScheduledJob` no tenía dueño (ADR-033). Sin saber a qué usuario pertenece un job, no hay a quién mandarle el push. El plumbing de identidad ya existía en los dos lugares que crean jobs — `POST /v1/jobs` (con `createUserAuthMiddleware` ya montado, `req.userId` disponible sin usarse) y `Gateway.executeTool()` (P6, `requestingUserId` ya recibido, sin pasarlo a `executeSchedulerTool()`) — sin usarse en ninguno de los dos.
+
+**Decisión.**
+- `ScheduledJob` gana `createdBy?: string`, enchufado en esos dos puntos ya existentes (`apps/gateway/src/http/routes.ts` y `Gateway.executeTool()` → `executeSchedulerTool()`), sin puertos/autenticación nuevos. El dispatch de `job.notification` pasa de `userId: "system"` a `userId: job.createdBy ?? "system"`.
+- `PushTokenStorePort` (`packages/core`) — mismo tamaño/forma que `MemoryStorePort`: `register`/`list`/`remove`. `SupabasePushTokenStore` (`packages/supabase-adapter`) sobre una tabla nueva `push_tokens` (RLS igual que `memories`/`user_preferences`) — reusado tal cual tanto por `apps/mobile` (cliente de sesión propia, para registrar) como por el Gateway (`service_role`, para leer al notificar), mismo criterio de ADR-017.
+- `ExpoNotificationService` (`packages/gateway-core`) reemplaza a `ConsoleNotificationService` en `apps/gateway/src/server.ts`: busca los tokens del `notification.userId`, sin tokens loguea y no hace nada, con tokens un `POST` a `https://exp.host/--/api/v2/push/send` — best-effort, nunca lanza (mismo criterio que ya rige `notify()` en todo el proyecto). `ConsoleNotificationService` queda en el repo, sin borrar (deja de usarse en producción, sigue siendo la base de comparación en tests).
+- `apps/mobile/lib/notifications/registerPushToken.ts` pide permiso, llama `Notifications.getExpoPushTokenAsync({ projectId })` y hace upsert directo con `SupabasePushTokenStore` — disparado una vez por sesión desde `app/(app)/_layout.tsx`, que ya solo se monta con sesión activa (guard en `app/_layout.tsx`).
+
+**Alternativas consideradas.** Firebase Cloud Messaging directo — descartado: Expo ya abstrae FCM/APNs con un solo endpoint HTTP, sin SDKs nativos adicionales que mantener ni credenciales de Firebase/Apple que gestionar por separado.
+
+**Consecuencia.** Jobs creados antes de este incremento (sin `createdBy`) degradan a sin-push, nunca a error — mismo criterio de graceful degradation del resto del proyecto. **Limitaciones que no pude verificar yo:** Expo Go dejó de soportar push remoto en Android desde el SDK 53 (este proyecto usa SDK 57) — hace falta un development/production build (`eas build`/`expo prebuild`), no `expo start` + Expo Go, para probarlo en Android real (iOS Expo Go sigue funcionando); `apps/mobile/app.json` no tiene `expo.extra.eas.projectId` configurado, así que `getExpoPushTokenAsync()` falla (con manejo de error explícito, sin romper el resto de la app) hasta que se corra `eas init`. La migración `push_tokens` y la verificación en dispositivo real quedan del lado del usuario, igual que con los incrementos anteriores dependientes de hardware/dispositivo.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

@@ -1,19 +1,26 @@
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { config as loadEnv } from "dotenv";
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
-import { SupabaseAuditStore, SupabaseAuthAdapter, SupabasePairingStore } from "@kan/supabase-adapter";
+import { SupabaseAuditStore, SupabaseAuthAdapter, SupabasePairingStore, SupabasePushTokenStore } from "@kan/supabase-adapter";
 import {
   Gateway,
   GatewayBus,
   WsConnectionManager,
   NodeCronScheduler,
   JsonFileScheduledJobStore,
-  ConsoleNotificationService,
+  ExpoNotificationService,
   ConsoleLogger,
+  InMemoryEdgeTicketStore,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
 import { createPairingRoutes } from "./http/pairingRoutes";
+
+// Carga explícita del .env propio del Gateway, sin depender del cwd desde el
+// que Turbo/pnpm invoquen el script (evita "Falta KAN_SUPABASE_URL" cuando el
+// cwd no queda posicionado en apps/gateway).
+loadEnv({ path: fileURLToPath(new URL("../.env", import.meta.url)) });
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -31,6 +38,15 @@ const INTERNAL_TOKEN = process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-t
 const RATE_LIMIT_WINDOW_MS = Number(process.env.KAN_GATEWAY_RATE_LIMIT_WINDOW_MS) || undefined;
 const RATE_LIMIT_MAX = Number(process.env.KAN_GATEWAY_RATE_LIMIT_MAX) || undefined;
 const MAX_WS_CONNECTIONS = Number(process.env.KAN_GATEWAY_MAX_WS_CONNECTIONS) || undefined;
+// Origin(es) permitido(s) para el camino de ticket del WS /edge (Simulador
+// corriendo en apps/web) — a diferencia del camino de token nativo, acá el
+// Origin sí es una prueba confiable porque JS de navegador no puede
+// falsearlo. Sin esto configurado, toda conexión de navegador se rechaza
+// con 403 (ver apps/gateway/.env.example).
+const ALLOWED_WEB_ORIGINS = (process.env.KAN_WEB_ORIGIN ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const logger = new ConsoleLogger();
 const bus = new GatewayBus();
@@ -45,12 +61,26 @@ const authPort = new SupabaseAuthAdapter(supabaseClient);
 // P2 incremento 3 (docs/19): mismo cliente otra vez — resuelve el ownerId de
 // un Edge Agent ya vinculado a partir del pairingToken de su hello.
 const pairingPort = new SupabasePairingStore(supabaseClient);
-const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS, pairingPort);
+// Efímero y en memoria a propósito (ver InMemoryEdgeTicketStore) — no es
+// pairing, es la prueba de identidad de un solo uso para el Simulador
+// corriendo en el navegador.
+const edgeTicketStore = new InMemoryEdgeTicketStore();
+const connectionManager = new WsConnectionManager(
+  EDGE_TOKEN,
+  MAX_WS_CONNECTIONS,
+  pairingPort,
+  edgeTicketStore,
+  ALLOWED_WEB_ORIGINS,
+);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );
 const scheduler = new NodeCronScheduler(scheduledJobStore, logger);
-const notificationService = new ConsoleNotificationService(logger);
+// P7 (ADR-040): mismo cliente service_role, solo para leer los tokens Expo
+// del dueño del job al dispararle su notificación (best-effort, ver
+// ExpoNotificationService).
+const pushTokenStore = new SupabasePushTokenStore(supabaseClient);
+const notificationService = new ExpoNotificationService(pushTokenStore, logger);
 
 const gateway = new Gateway({ bus, connectionManager, auditStore, scheduler, notificationService });
 
@@ -76,12 +106,23 @@ app.use(express.json());
 // (apps/desktop nunca lo tiene, ver pairingRoutes.ts) — su única defensa es
 // el código de pairing + un rate limit propio, más estricto.
 app.use(createPairingRoutes(pairingPort));
-app.use(createRoutes(gateway, INTERNAL_TOKEN, { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX }, authPort));
+app.use(
+  createRoutes(
+    gateway,
+    INTERNAL_TOKEN,
+    { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX },
+    authPort,
+    edgeTicketStore,
+  ),
+);
 
 const httpServer = createServer(app);
 
 httpServer.on("upgrade", (request, socket, head) => {
-  if (request.url === "/edge") {
+  // Con el camino de ticket, la URL trae query string (/edge?ticket=...) —
+  // ya no alcanza comparar request.url completo, hay que mirar el pathname.
+  const pathname = new URL(request.url ?? "/", "http://internal").pathname;
+  if (pathname === "/edge") {
     connectionManager.handleUpgrade(request, socket, head);
   } else {
     socket.destroy();

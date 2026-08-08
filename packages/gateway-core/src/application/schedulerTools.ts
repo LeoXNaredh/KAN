@@ -100,6 +100,7 @@ export async function executeSchedulerTool(
   scheduler: SchedulerPort,
   name: string,
   args: unknown,
+  requestingUserId?: string,
 ): Promise<ToolExecutionResult> {
   if (name === SCHEDULE_JOB_TOOL) {
     const steps = parseSteps((args as { steps?: unknown } | null)?.steps);
@@ -114,6 +115,7 @@ export async function executeSchedulerTool(
         cron: typeof cron === "string" ? cron : undefined,
         runAt: typeof runAt === "string" ? runAt : undefined,
         notification: parseNotification((args as { notification?: unknown } | null)?.notification),
+        createdBy: requestingUserId,
       });
       return { success: true, data: { jobId } };
     } catch (error) {

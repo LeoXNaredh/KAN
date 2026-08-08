@@ -24,4 +24,12 @@ export interface ScheduledJob {
   cron?: string;
   /** ISO 8601 — ejecución única, debe ser una fecha futura al crear el job. */
   runAt?: string;
+  /**
+   * Usuario que creó el job (P7, ADR-040) — opcional porque `ScheduledJob`
+   * quedó, a propósito, fuera del alcance de la autorización por owner
+   * (ADR-033). Se usa solo para decidir a quién mandarle el push al
+   * disparar `notification`; jobs sin `createdBy` (creados antes de este
+   * incremento) degradan a sin-push, nunca a error.
+   */
+  createdBy?: string;
 }

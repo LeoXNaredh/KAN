@@ -77,6 +77,19 @@ describe("executeSchedulerTool — kan_schedule_job", () => {
     expect(result.success).toBe(false);
   });
 
+  it("pasa requestingUserId como createdBy del job (P7)", async () => {
+    const scheduler = fakeScheduler();
+
+    await executeSchedulerTool(
+      scheduler,
+      "kan_schedule_job",
+      { steps: [{ capabilityRef: "c_x" }], runAt: "2026-01-01T00:00:00.000Z" },
+      "user-42",
+    );
+
+    expect(scheduler.schedule).toHaveBeenCalledWith(expect.objectContaining({ createdBy: "user-42" }));
+  });
+
   it("propaga como error el mensaje que lanza scheduler.schedule() (ej. cron inválido)", async () => {
     const scheduler = fakeScheduler({
       schedule: vi.fn(() => {
