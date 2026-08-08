@@ -8,17 +8,13 @@
 
 **Resuelto.** `CapabilityDescriptor.inputSchema`/`ToolDescriptor.inputSchema` son JSON Schema real (`@kan/plugin-contract`, tipo `JsonSchema`), validado con `ajv` vía `validateAgainstSchema()`. Defensa en profundidad en dos capas, sin tocar `plugin-sdk-ts`: `ToolResolver.resolve()` (Gateway) rechaza args mal formados antes de despachar al Edge Agent, y `CapabilityRegistry.invoke()` (Edge Agent) los rechaza otra vez antes de resolver severidad o tocar el driver — son las dos fronteras de confianza reales (LLM↔Gateway, Gateway↔Edge Agent), no una capa intermedia en el SDK. Ver ADR-024 (`docs/00`) para el detalle y las alternativas descartadas.
 
-## P2 — Autenticación y autorización por usuario
+## P2 — Autenticación y autorización por usuario — 📄 Propuesta detallada aprobada (2026-08-07, `docs/19`), implementación pendiente
 
 **Problema.** Ya documentado extensamente en `docs/13` (C1) y `docs/15` (secciones 1-2): no existe el concepto de usuario. Es la brecha de seguridad más grande del sistema, y es trabajo de funcionalidad real, no un fix de estabilización.
 
-**Propuesta concreta** (más allá de "usar Supabase Auth", que ya estaba en el roadmap):
-1. `apps/web` gana sesión de usuario (Supabase Auth, ya en el stack — `docs/08`).
-2. El JWT de sesión viaja en cada llamada de `GatewayToolProvider` hacia el Gateway (header adicional, no reemplaza el token interno — son capas distintas: el token interno autentica *que la llamada viene de apps/web*, el JWT autentica *qué usuario la hizo*).
-3. El Gateway valida el JWT y lo asocia a cada `AgentRecord` (qué Edge Agents pertenecen a qué usuario) y a cada entrada de `AuditEntry` (quién disparó qué).
-4. `TaskOrchestrator.submit()` rechaza si el `edgeAgentId` resuelto no pertenece al usuario del JWT — un usuario nunca puede, ni por error, invocar el dispositivo de otro.
+**Propuesta detallada:** ver `docs/19-arquitectura-auth-gateway-propuesta.md` — análisis de la arquitectura actual del Gateway, alternativas de validación de JWT de Supabase (`getUser()` vs. JWKS local con `jose` vs. secreto HS256 legacy) y recomendación, más el diseño del mecanismo de emparejamiento (pairing) que necesita `apps/desktop` para asociar un Edge Agent a un usuario — problema separado de la validación de JWT, ya que el Edge Agent nunca tiene una sesión de Supabase.
 
-**Costo estimado:** alto (varios días) — toca `AgentRegistry` (añadir `ownerId`), el protocolo `hello` (el Edge Agent necesita saber a qué cuenta pertenece, probablemente vía un token de emparejamiento generado en `apps/web` al momento de instalar el Edge Agent), y toda la superficie HTTP del Gateway.
+**Costo estimado:** alto (varios días) — 4 incrementos: JWT en el Gateway, pairing, autorización real en `TaskOrchestrator.submit()`, auditoría por usuario. Detalle completo en `docs/19` §6.
 
 **Prioridad:** alta, pero explícitamente **no bloqueante para seguir con ESP32 en un entorno de un solo usuario** — bloqueante solo para compartir el sistema con alguien más.
 
