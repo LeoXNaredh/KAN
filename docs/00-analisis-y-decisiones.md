@@ -521,6 +521,23 @@ Las categorías quedan fijas (`MEMORY_CATEGORIES` en `@kan/core`: `dispositivos`
 
 ---
 
+### ADR-039: Automatizaciones por chat — `kan_schedule_job`/`kan_cancel_job`/`kan_list_jobs` en el Gateway, mismo patrón que la memoria activa
+
+**Contexto.** P6 pedía "Automatizaciones: workflows, agentes, planner, scheduler, eventos, reglas". Diagnóstico: scheduler (`NodeCronScheduler`, ADR-019), workflows ("acciones combinadas" — `ScheduledJob.steps`, ADR-021), UI de gestión manual (`AutomatizacionesClient.tsx`) y notificaciones al terminar (ADR-021, hechas proactivas en ADR-037) ya estaban completos. Lo único que faltaba era la parte "agentes": KAN no podía programar ni cancelar una automatización por chat — toda esa infraestructura solo era alcanzable llenando un formulario a mano.
+
+**Decisión.** `kan_schedule_job`/`kan_cancel_job`/`kan_list_jobs` (`packages/gateway-core/src/application/schedulerTools.ts`), mismo patrón que `kan_set_memory`/`kan_remove_memory` (ADR-035) pero un nivel más abajo: interceptadas dentro de `Gateway.listTools()`/`executeTool()`, antes de tocar `ToolResolver`/`GlobalCapabilityRegistry` — un job programado no es la capability de un dispositivo. Como `apps/gateway`'s rutas HTTP (`GET /v1/tools`, `POST /v1/tools/:name/execute`) ya eran genéricas por nombre, y `GatewayToolProvider`/`SendMessageUseCase`/`ConversationPanel.tsx` en `apps/web` ya eran agnósticos al nombre de cada tool, este incremento no tocó ningún archivo fuera de `packages/gateway-core` — las tools nuevas quedaron disponibles de punta a punta sin cambios corriente arriba, igual que pasó con la memoria.
+
+**Alcance explícitamente dejado afuera, documentado no oculto:**
+- **Eventos** (disparar un job por un cambio de estado, no solo por horario) — necesitaría diseño de pub/sub nuevo sobre `GatewayBus`, sin scaffolding existente.
+- **Reglas** (condicionales tipo "si X entonces Y") — necesitaría un evaluador de expresiones nuevo, sin precedente en el código.
+- **Planner** (multi-dispositivo con desambiguación, grafo de dependencias) — ya documentado en `docs/16` P5 como baja prioridad/especulativo sin caso de uso real (un solo dispositivo simulado disponible); sigue sin haber motivo para construirlo ahora.
+
+**Por qué.** Reusar el patrón de ADR-035 en vez de inventar uno nuevo mantiene una sola forma de "tool interna que no pasa por el catálogo genérico" en todo el proyecto — más fácil de razonar y de auditar que dos mecanismos distintos para el mismo problema en capas distintas.
+
+**Consecuencia.** Un job creado por chat no queda ni más ni menos seguro que uno creado a mano: mismo `NodeCronScheduler`, misma falta de scoping por usuario ya documentada en ADR-033 ("los jobs programados quedan, a propósito, fuera del alcance de la autorización por owner"), mismo gate de Safety Policy del Edge Agent al momento de disparar (la creación de la automatización nunca ejecuta nada físico por sí misma). `Gateway.test.ts` tuvo que actualizar tres asserts que contaban `listTools().length` exacto — ahora siempre incluye las 3 tools nuevas, con o sin ningún Edge Agent conectado.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

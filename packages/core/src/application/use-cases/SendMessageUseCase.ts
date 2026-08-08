@@ -169,7 +169,13 @@ export class SendMessageUseCase {
    * solo sin esa pieza de contexto.
    */
   private async buildSystemPrompt(): Promise<string> {
-    let prompt = SYSTEM_PROMPT;
+    // Sin esto, el modelo no tiene forma de saber "hoy"/"ahora" y calcula
+    // fechas relativas (kan_schedule_job con runAt "dentro de 20 segundos",
+    // etc.) contra su fecha de corte de entrenamiento — siempre en el
+    // pasado, siempre rechazado por NodeCronScheduler (ADR-039), sin poder
+    // autocorregirse nunca porque no tiene con qué calcular una fecha futura
+    // real. Hallazgo en vivo, ADR-039.
+    let prompt = `${SYSTEM_PROMPT}\n\nFecha y hora actual: ${new Date().toISOString()}.`;
 
     if (this.personalityContext) {
       try {

@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { CoreToEdgeMessage, EdgeToCoreMessage, HelloMessage } from "@kan/plugin-contract";
 import { GatewayBus } from "./application/GatewayBus";
 import { Gateway } from "./Gateway";
+import { SCHEDULER_TOOL_DESCRIPTORS } from "./application/schedulerTools";
 import type { AgentConnectionInfo, ConnectionManagerPort, Unsubscribe } from "./domain/ports/ConnectionManagerPort";
 import type { AuditStorePort } from "./domain/ports/AuditStorePort";
 import type { SchedulerDispatch, SchedulerPort } from "./domain/ports/SchedulerPort";
@@ -231,7 +232,8 @@ describe("Gateway (integración, transporte simulado)", () => {
     connectionManager.simulateAgentConnect(helloFor(randomUUID()));
 
     const tools = gateway.listTools();
-    expect(tools).toHaveLength(1);
+    // +3 tools de automatizaciones (ADR-039), siempre presentes.
+    expect(tools).toHaveLength(1 + SCHEDULER_TOOL_DESCRIPTORS.length);
     expect(tools[0].name).toMatch(/simulator-1.*read_sensor|read_sensor/);
 
     const agents = gateway.agentRegistry.list();
@@ -288,12 +290,13 @@ describe("Gateway (integración, transporte simulado)", () => {
     gateway.capabilityRegistry.sync(edgeAgentId, [
       { deviceId: "d1", capability: { name: "cap1", description: "...", severity: "read-only", supportsDryRun: false } },
     ]);
-    expect(gateway.listTools()).toHaveLength(1);
+    // +3 tools de automatizaciones (ADR-039), siempre presentes con o sin agentes conectados.
+    expect(gateway.listTools()).toHaveLength(1 + SCHEDULER_TOOL_DESCRIPTORS.length);
 
     gateway.agentRegistry.markOffline(edgeAgentId);
     gateway.capabilityRegistry.removeAgent(edgeAgentId);
 
-    expect(gateway.listTools()).toHaveLength(0);
+    expect(gateway.listTools()).toHaveLength(SCHEDULER_TOOL_DESCRIPTORS.length);
     expect(events).toContain(edgeAgentId);
   });
 
@@ -553,6 +556,42 @@ describe("Gateway (integración, transporte simulado)", () => {
 
       const notification = auditStore.entries.find((entry) => entry.action === "job.notification");
       expect(notification?.userId).toBeUndefined();
+    });
+  });
+
+  describe("tools de automatizaciones (ADR-039)", () => {
+    it("listTools() las incluye siempre, incluso sin ningún Edge Agent conectado", () => {
+      const { gateway } = buildGateway();
+
+      const names = gateway.listTools().map((t) => t.name);
+
+      expect(names).toEqual(expect.arrayContaining(["kan_schedule_job", "kan_cancel_job", "kan_list_jobs"]));
+    });
+
+    it("executeTool('kan_schedule_job', ...) llama scheduler.schedule() sin tocar el Edge Agent ni el chequeo de ownership", async () => {
+      const { gateway, connectionManager, scheduler } = buildGateway();
+      connectionManager.simulateAgentConnect(helloFor(randomUUID()), "user-1");
+      const scheduleSpy = vi.spyOn(scheduler, "schedule");
+
+      const result = await gateway.executeTool(
+        "kan_schedule_job",
+        { steps: [{ capabilityRef: "cualquier_ref" }], runAt: "2026-01-01T00:00:00.000Z" },
+        "user-2", // otro usuario, distinto al owner del agente — no debería importar acá
+      );
+
+      expect(result.success).toBe(true);
+      expect(scheduleSpy).toHaveBeenCalledOnce();
+      expect(connectionManager.dispatched).toHaveLength(0);
+    });
+
+    it("executeTool('kan_list_jobs', ...) llama scheduler.list()", async () => {
+      const { gateway, scheduler } = buildGateway();
+      const listSpy = vi.spyOn(scheduler, "list");
+
+      const result = await gateway.executeTool("kan_list_jobs", {});
+
+      expect(result).toEqual({ success: true, data: { jobs: [] } });
+      expect(listSpy).toHaveBeenCalled();
     });
   });
 });

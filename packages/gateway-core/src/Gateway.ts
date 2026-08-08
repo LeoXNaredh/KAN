@@ -11,6 +11,7 @@ import { AuditService } from "./application/AuditService";
 import { CapabilityBackedToolRegistry, type ToolRegistry } from "./application/ToolRegistry";
 import { RegistryToolResolver } from "./application/ToolResolver";
 import { OrchestratorToolExecutor } from "./application/ToolExecutor";
+import { SCHEDULER_TOOL_DESCRIPTORS, isSchedulerToolName, executeSchedulerTool } from "./application/schedulerTools";
 import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
 
 export interface GatewayDeps {
@@ -172,7 +173,9 @@ export class Gateway {
   }
 
   listTools(requestingUserId?: string): ToolDescriptor[] {
-    return this.toolRegistry.list(requestingUserId);
+    // Tools de automatizaciones (ADR-039) — no son capability de ningún
+    // dispositivo, así que no pasan por toolRegistry; siempre disponibles.
+    return [...this.toolRegistry.list(requestingUserId), ...SCHEDULER_TOOL_DESCRIPTORS];
   }
 
   /**
@@ -186,6 +189,13 @@ export class Gateway {
    * `requestingUserId`.
    */
   async executeTool(name: string, args: unknown, requestingUserId?: string): Promise<ToolExecutionResult> {
+    // ADR-039: se despachan acá, antes de tocar toolResolver/capabilityRegistry
+    // — un job programado no es de ningún dispositivo, no aplica el chequeo
+    // de ownership de abajo.
+    if (isSchedulerToolName(name)) {
+      return executeSchedulerTool(this.scheduler, name, args);
+    }
+
     const resolution = this.toolResolver.resolve(name, args);
     if (!resolution.ok) {
       return { success: false, error: resolution.error };
