@@ -17,22 +17,43 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
-      ["expo-audio", { "microphonePermission": "Permitir a KAN acceder al micrófono para hablar con voz." }],
-      ["expo-image-picker", {
-        "photosPermission": "Permitir a KAN acceder a tus fotos para adjuntar imágenes al chat.",
-        "cameraPermission": "Permitir a KAN usar la cámara para adjuntar fotos al chat."
-      }],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Permitir a KAN acceder al micrófono para hablar con voz."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir a KAN acceder a tus fotos para adjuntar imágenes al chat.",
+          "cameraPermission": "Permitir a KAN usar la cámara para adjuntar fotos al chat."
+        }
+      ],
       "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "854779ff-5d05-427d-873c-38738d491474"
+      }
+    },
+    "owner": "kan1212"
   }
 }
