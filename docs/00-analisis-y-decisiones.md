@@ -686,6 +686,22 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-047: `plugin-modbus` — TCP + RTU serial en un solo plugin, sin el modo "RTU sobre TCP" que la documentación externa sugería
+
+**Contexto.** Siguiente ítem del mapa de hardware (Tier 2, "Industrial"), pedido junto con RTU por ser los de mayor apalancamiento de esa categoría: librería madura (`modbus-serial`), sin binding nativo propio más allá de `serialport` (ya probado en este proyecto), simulable sin hardware para el caso TCP.
+
+**Decisión — un plugin cubre TCP y RTU serial**, mismo criterio que `plugin-gcode` cubriendo Marlin/GRBL. "Dispositivo" = un target Modbus configurado (`KAN_MODBUS_TARGETS=nombre|tipo|conexión`, nunca escaneado). El target de Safety Policy es un string compuesto `"tipo:dirección"` (ej. `"holding:100"`), no la dirección numérica sola: holding/input/coil/discrete son espacios de direcciones independientes que pueden compartir el mismo número, y `SafetyPolicyStore.extractTarget` (verificado leyendo el código real) clasifica por `(deviceId, target)` sin conocer qué capability lo invocó — un target plano colisionaría entre esos espacios. 4 capabilities (`read_registers`/`read_coils` read-only, `write_register`/`write_coil` irreversible-material por defecto), cada una valida que el `register` sea del tipo correcto para esa operación (ej. `write_register` rechaza un `register` de tipo `input`, que es de solo lectura por protocolo).
+
+**Sin `listTargets()` propio** — a diferencia de MQTT (topics suscritos) o Home Assistant (`GET /api/states` trae todo), Modbus no tiene forma de enumerar qué registros existen en un dispositivo real; el usuario los conoce por la documentación de su propio equipo.
+
+**Hallazgo real durante la implementación — el modo "RTU sobre TCP" no es lo que sugiere el nombre.** El diseño original (basado en investigación de documentación externa sobre `modbus-serial`) planeaba tres modos de conexión: `tcp`, `rtu-tcp` (bytes RTU crudos con CRC sobre un socket TCP, vía `connectTcpRTUBuffered`) y `rtu-serial`. Al escribir un test de integración real para `rtu-tcp` — un responder TCP hecho a mano que arma frames RTU con CRC16 real —, el cliente nunca reconoció las respuestas (timeout). Diagnosticado leyendo el código fuente real de `modbus-serial` (`tcprtubufferedport.js`, no solo su documentación): `connectTcpRTUBuffered` arma el mismo framing MBAP que `connectTCP` para lo que sale por la red — internamente reconstruye un CRC sintético del lado del cliente solo para reusar el parser de RTU, pero el wire protocol es indistinguible de Modbus TCP estándar. Confirmado contra un `ServerTCP` real: el servidor no distingue una conexión de la otra. Se simplificó el diseño a dos modos (`tcp`, `rtu-serial`) — un tercer modo que no aporta nada distinto al primero solo agregaría confusión. Mismo patrón que los hallazgos de ADR-044 (`realtimeInput.video` vs. `clientContent`): la documentación externa describía un comportamiento que el código real no tiene, y solo se detectó probándolo contra algo real, no leyendo sobre él.
+
+**Verificado en vivo, de punta a punta:** contra un `ServerTCP` real de `modbus-serial` (no un mock) — `discover()` encontró el target, `read_registers`/`write_register` funcionaron con datos reales, incluyendo la vuelta completa escritura→lectura confirmando persistencia. `readCoils`/`readDiscreteInputs` necesitaron un ajuste real encontrado en el mismo proceso: el wire protocol de Modbus empaqueta coils en bytes completos (8 bits), así que el cliente devuelve el byte entero aunque se pida 1 solo — el wrapper ahora recorta el resultado a la cantidad pedida (`NodeModbusTransport.readCoils`/`readDiscreteInputs`).
+
+**Explícitamente sin probar (documentado, no oculto):** RTU serial real (puerto serial/RS-485 físico) — sin hardware disponible ni un par de puertos COM virtuales en este entorno Windows, mismo caso ya documentado en `plugin-esp32-arduino`/`plugin-gcode`. Cubierto solo por tests unitarios con `FakeModbusTransport`.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
