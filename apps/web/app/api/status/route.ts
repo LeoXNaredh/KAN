@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { ToolDescriptor } from "@kan/plugin-contract";
 import { gatewayFetch } from "@/lib/gateway/gatewayFetch";
 import { resolveUserToken } from "@/lib/auth/resolveUserToken";
+import { translateAuditEntry, type RawAuditEntry } from "@/lib/status/translateAuditEntry";
 import type { ActivityEntry, SystemStatusResponse, EdgeAgentStatus } from "@/lib/status/types";
 import packageJson from "../../../package.json";
 
@@ -15,40 +16,6 @@ interface RawAgentRecord {
   lastSeenAt: string;
   devices: Array<{ id: string; name: string; kind: string }>;
   installedPlugins: Array<{ id: string; displayName: string }>;
-}
-
-interface RawAuditEntry {
-  id: string;
-  at: string;
-  actor: "llm" | "user" | "system";
-  action: string;
-  subject: string;
-  metadata: Record<string, unknown>;
-}
-
-/**
- * Traduce una entrada cruda del Audit Service (docs/12 §9) a texto legible
- * para el Dashboard — misma regla del BFF: el cliente nunca ve `action`
- * crudo. Solo traduce las acciones que el Gateway realmente emite hoy
- * (`tool.execute`, `safety_policy.changed`, `job.fired`, `job.notification`
- * (P6/ADR-021) — ver ToolExecutor.ts/Gateway.ts); cualquier acción futura
- * cae al genérico en vez de romper el widget.
- */
-function translateAuditEntry(entry: RawAuditEntry): string {
-  switch (entry.action) {
-    case "tool.execute":
-      return `Se ejecutó "${entry.subject}"`;
-    case "safety_policy.changed":
-      return `Cambió la política de seguridad de ${entry.subject}`;
-    case "job.fired":
-      return `Se disparó el job programado "${entry.subject}"`;
-    case "job.notification":
-      return `Notificación de automatización: "${entry.subject}"`;
-    case "device.enriched":
-      return `Investigué tu dispositivo "${entry.subject}"`;
-    default:
-      return `${entry.action}: ${entry.subject}`;
-  }
 }
 
 /**
