@@ -723,6 +723,29 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-049: `plugin-ssh` — control remoto de PCs, `safety-critical` como techo tanto para `execute_command` como para `write_file`
+
+**Contexto.** Tier 3 del mapa de hardware: SSH, la superficie de riesgo más grande de todo el mapa — a diferencia de un pin GPIO o un registro Modbus, un comando SSH puede hacer lo que sea en la máquina remota. El pedido fue explícito sobre el nivel de cautela: `safety-critical` como techo para cualquier comando no clasificado, allowlist de hosts obligatoria (`KAN_SSH_HOSTS`), cuatro capabilities (`execute_command`, `read_file`, `write_file`, `list_directory`).
+
+**Decisión — el target de `execute_command` es el comando completo, no el programa.** `SafetyPolicyStore.extractTarget` (código real, no supuesto) usa el VALOR crudo del campo `targetParam` tal cual — no computa nada a partir de otros campos. Con eso confirmado, había dos opciones: `targetParam: "command"` con el string completo, o agregar un campo separado tipo `program` (primer token) para que el usuario pueda pre-aprobar "todo lo que empiece con `ls`". Se eligió el string completo: es más simple (no agrega un campo extra) y, sobre todo, más seguro — clasificar `"ls -la /home"` como `reversible` nunca cubre por accidente `"ls -la /tmp"` ni ningún otro comando, evitando el error de que una aprobación laxa termine cubriendo, sin querer, algo mucho más peligroso que comparte el mismo primer token.
+
+**Decisión — `write_file` también es `safety-critical`, no `irreversible-material`.** El pedido original solo mencionaba el techo explícitamente para "comando" (`execute_command`), dejando las otras tres capabilities a criterio. Escribir un archivo arbitrario en una máquina remota (`~/.ssh/authorized_keys`, un crontab, un service de systemd) logra persistencia/escalamiento de privilegios sin necesitar `execute_command` en absoluto — es funcionalmente equivalente a ejecutar código, no un escalón intermedio como `write_register`/`call_ha_service`. Regla 4 de ADR-004 ("sin configurar, la severidad más restrictiva conocida") aplicada explícitamente acá: ante la duda, el nivel más alto.
+
+**Decisión — `read_file`/`list_directory` quedan read-only.** El sistema de severidad de KAN es sobre reversibilidad de acciones de estado, no sobre confidencialidad — leer un archivo sensible (ej. una clave privada) es un riesgo real, pero no uno que este mecanismo de confirmación por acción esté diseñado para cubrir; se mitiga en la config (qué hosts/usuarios se permiten, qué puede leer ese usuario en su propio SO), documentado explícitamente para que no quede como un descuido silencioso.
+
+**Formato de `KAN_SSH_HOSTS` — separador `|` para el auth, no `:`.** `nombre|host:puerto|usuario|auth`, con `auth` = `key|/ruta[|passphrase]` o `password|contraseña`. Usar `:` para separar el tipo de auth de su valor hubiera chocado con rutas de Windows (`C:\ruta\clave` ya tiene dos puntos) — se resolvió separando por `|` en su lugar y parseando el auth como una cola de partes (`...authParts`) en vez de un split fijo.
+
+**Bloqueo real durante la implementación — build nativo opcional de `ssh2`.** `pnpm install` quedó bloqueado por scripts de build no aprobados de `cpu-features`/`ssh2` (mecanismo `allowBuilds` en `pnpm-workspace.yaml`, ya usado antes para `@abandonware/noble`/`epoll`). A diferencia de esos dos casos (bindings realmente necesarios que fallaron), acá `cpu-features`/`nan` son `optionalDependencies` reales de `ssh2` (aceleración de crypto, no un requisito) — se denegaron los dos (`false`) sin perder funcionalidad, confirmado por la suite de tests real corriendo igual.
+
+**Verificado en vivo, de punta a punta, con un servidor SSH+SFTP real (no un mock)** — `ssh2` no trae un servidor de ejemplo completo como sí tienen `modbus-serial`/`net-snmp`, así que se construyó uno mínimo para el test: autenticación por password real, `exec` corriendo procesos reales vía `child_process` (stdout/stderr/exit code reales, incluido un exit code distinto de cero), y un subsistema SFTP real (`OPEN`/`READ`/`WRITE`/`CLOSE`/`OPENDIR`/`READDIR`/`FSTAT`, adaptado del ejemplo oficial del paquete) respaldado por un directorio temporal real en disco — `read_file`/`write_file`/`list_directory` confirmados contra archivos reales, no simulados. `FSTAT` fue un hallazgo real en el camino: el `readFile()` del cliente lo pide antes de leer (para dimensionar el buffer) y no está mencionado como obligatorio en ningún ejemplo destacado de la librería — sin implementarlo, el servidor respondía "Operation unsupported" en vez de fallar de forma más clara.
+
+**Explícitamente fuera de alcance, documentado en el README:**
+- Verificación de host key (`known_hosts`/`hostVerifier`) — confía en la clave que presente el servidor la primera vez, sin protección MITM en esa conexión inicial. Mismo modelo que la mayoría de herramientas de automatización SSH simples, pero es una limitación real, no un descuido oculto.
+- SSH con clave de host pineada de antemano, autenticación por agente SSH, `keyboard-interactive`.
+- Cualquier reintento/reconexión automática — mismo criterio que `plugin-ws-generic`: sin un caso real que lo pida, no vale la pena la complejidad.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

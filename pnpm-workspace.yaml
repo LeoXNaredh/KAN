@@ -7,6 +7,12 @@ allowBuilds:
   '@abandonware/noble': false
   '@google/genai': true
   '@serialport/bindings-cpp': true
+  # Dependencia nativa opcional de `ssh2` (aceleración de crypto) —
+  # ssh2 funciona igual en JS puro sin ella (optionalDependencies real,
+  # no un requisito). `false` a propósito, mismo criterio que
+  # `@abandonware/noble`/`epoll` en este archivo: binding nativo que
+  # necesitaría el toolchain de C++ que no está instalado acá.
+  cpu-features: false
   electron: true
   # Dependencia transitiva de `onoff` (@kan/plugin-raspberry-pi, ADR-038) —
   # usada para detección de interrupciones por cambio de pin (gpio.watch()),
@@ -18,6 +24,10 @@ allowBuilds:
   epoll: false
   esbuild: true
   protobufjs: true
+  # El script de install de ssh2 solo intenta compilar sus dependencias
+  # opcionales (cpu-features/nan, ver arriba) — sin ellas, ssh2 sigue
+  # funcionando en JS puro. `false` por el mismo motivo.
+  ssh2: false
   unrs-resolver: true
   usb: false
 minimumReleaseAgeExclude:
