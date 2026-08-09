@@ -13,6 +13,12 @@ import {
 } from "@kan/edge-agent-core";
 import type { ActionSeverity } from "@kan/plugin-contract";
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
+import { HttpDevicePlugin } from "@kan/plugin-http-generic";
+import { WsDevicePlugin } from "@kan/plugin-ws-generic";
+import { HomeAssistantDevicePlugin } from "@kan/plugin-home-assistant";
+import { NetworkToolsDevicePlugin } from "@kan/plugin-network-tools";
+import { SshDevicePlugin } from "@kan/plugin-ssh";
+import { OpcuaDevicePlugin } from "@kan/plugin-opcua";
 
 let mainWindow: BrowserWindow | null = null;
 let edgeAgent: EdgeAgent | undefined;
@@ -73,6 +79,20 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
 
   await agent.registerPlugin(new DeviceSimulatorPlugin());
 
+  // Sin binding nativo — puro JS, sin el riesgo de ABI de Electron que sí
+  // aplica a serialport (ver más abajo). Registro estático, mismo criterio
+  // que DeviceSimulatorPlugin.
+  await agent.registerPlugin(new HttpDevicePlugin());
+  await agent.registerPlugin(new WsDevicePlugin());
+  await agent.registerPlugin(new HomeAssistantDevicePlugin());
+  await agent.registerPlugin(new NetworkToolsDevicePlugin());
+  // ssh2 sí tiene una dependencia opcional nativa (cpu-features, solo
+  // aceleración de crypto) — denegada explícitamente en pnpm-workspace.yaml
+  // (allowBuilds), así que corre siempre en su fallback puro JS. Sin riesgo
+  // de ABI de Electron, registro estático.
+  await agent.registerPlugin(new SshDevicePlugin());
+  await agent.registerPlugin(new OpcuaDevicePlugin());
+
   // Import dinámico + try/catch (ADR-038): `onoff` trae una dependencia
   // nativa transitiva (`epoll`) — si su binding no carga en este proceso de
   // Electron (ABI distinto al Node del sistema), esto no debe tumbar el
@@ -109,6 +129,35 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     await agent.registerPlugin(new Esp32ArduinoPlugin());
   } catch (error) {
     logger.warn(`No se pudo cargar el plugin de ESP32/Arduino (¿falta compilar una dependencia nativa?): ${error}`);
+  }
+
+  // Mismo riesgo de binding nativo que ESP32/Arduino: `modbus-serial` trae
+  // `serialport` para su modo RTU (el modo TCP no lo necesita, pero ambos
+  // viven en el mismo paquete/import). Import dinámico + try/catch.
+  try {
+    const { ModbusDevicePlugin } = await import("@kan/plugin-modbus");
+    await agent.registerPlugin(new ModbusDevicePlugin());
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de Modbus (¿falta compilar una dependencia nativa?): ${error}`);
+  }
+
+  // Mismo riesgo de binding nativo — depende de @kan/serial-line-transport,
+  // que envuelve `serialport` directamente.
+  try {
+    const { SerialGenericDevicePlugin } = await import("@kan/plugin-serial-generic");
+    await agent.registerPlugin(new SerialGenericDevicePlugin());
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de puerto serial genérico (¿falta compilar una dependencia nativa?): ${error}`);
+  }
+
+  // Mismo riesgo de binding nativo — también depende de
+  // @kan/serial-line-transport (el adaptador SLCAN se enumera como puerto
+  // serial estándar, sin ninguna dependencia de CAN Bus propia).
+  try {
+    const { CanbusDevicePlugin } = await import("@kan/plugin-canbus");
+    await agent.registerPlugin(new CanbusDevicePlugin());
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de CAN Bus (¿falta compilar una dependencia nativa?): ${error}`);
   }
 
   await agent.bootstrap();

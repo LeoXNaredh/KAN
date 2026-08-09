@@ -32,6 +32,9 @@ importers:
       '@kan/edge-agent-core':
         specifier: workspace:*
         version: link:../../packages/edge-agent-core
+      '@kan/plugin-canbus':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-canbus
       '@kan/plugin-contract':
         specifier: workspace:*
         version: link:../../packages/plugin-contract
@@ -41,12 +44,36 @@ importers:
       '@kan/plugin-esp32-arduino':
         specifier: workspace:*
         version: link:../../plugins/plugin-esp32-arduino
+      '@kan/plugin-home-assistant':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-home-assistant
+      '@kan/plugin-http-generic':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-http-generic
+      '@kan/plugin-modbus':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-modbus
+      '@kan/plugin-network-tools':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-network-tools
+      '@kan/plugin-opcua':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-opcua
       '@kan/plugin-raspberry-pi':
         specifier: workspace:*
         version: link:../../plugins/plugin-raspberry-pi
       '@kan/plugin-sdk-ts':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk-ts
+      '@kan/plugin-serial-generic':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-serial-generic
+      '@kan/plugin-ssh':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-ssh
+      '@kan/plugin-ws-generic':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-ws-generic
       react:
         specifier: ^19.1.0
         version: 19.2.8
