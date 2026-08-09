@@ -147,6 +147,10 @@ bus.on("job.notification", ({ jobId, title }) => logger.info(`[gateway] Job ${jo
 
 const app = express();
 app.use(express.json());
+// Sin autenticación a propósito — es lo único que un health check de
+// Fly.io/Render puede llamar sin conocer KAN_GATEWAY_INTERNAL_TOKEN. No
+// expone nada sensible, solo confirma que el proceso HTTP responde.
+app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 // Antes de createRoutes(): esta ruta no lleva el token interno a propósito
 // (apps/desktop nunca lo tiene, ver pairingRoutes.ts) — su única defensa es
 // el código de pairing + un rate limit propio, más estricto.

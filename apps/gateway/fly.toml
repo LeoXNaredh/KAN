@@ -1,0 +1,34 @@
+# Config de Fly.io para el Gateway (apps/gateway) — proceso persistente con
+# WebSocket, no puede vivir en Vercel (serverless). Desplegar desde la raíz
+# del repo (el build necesita ver todo el workspace para `turbo prune`):
+#
+#   fly launch --config apps/gateway/fly.toml --dockerfile apps/gateway/Dockerfile --no-deploy
+#   fly deploy --config apps/gateway/fly.toml --dockerfile apps/gateway/Dockerfile
+#
+# Ver README.md → "Deploy en producción" para la lista completa de
+# variables de entorno a configurar con `fly secrets set`.
+
+app = "kan-gateway"
+primary_region = "gru" # ajustar a la región más cercana a tus usuarios
+
+[build]
+  dockerfile = "apps/gateway/Dockerfile"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "15s"
+    method = "GET"
+    path = "/healthz"
+    protocol = "http"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

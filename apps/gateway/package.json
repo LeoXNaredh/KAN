@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --config ../../eslint.config.mjs",
     "test": "vitest run --passWithNoTests"
@@ -15,6 +16,7 @@
     "@kan/plugin-contract": "workspace:*",
     "@kan/supabase-adapter": "workspace:*",
     "@supabase/supabase-js": "^2.48.0",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "express-rate-limit": "^7.4.1",
     "ws": "^8.18.0"

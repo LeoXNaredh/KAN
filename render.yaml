@@ -1,0 +1,33 @@
+# Blueprint de Render para el Gateway (apps/gateway) — proceso persistente
+# con WebSocket, no puede vivir en Vercel (serverless). En el dashboard de
+# Render: New → Blueprint → conectar este repo → Render detecta este
+# archivo solo. Render inyecta su propia variable PORT automáticamente;
+# apps/gateway/src/server.ts ya la respeta (process.env.PORT ?? 8787), no
+# hace falta fijarla acá.
+#
+# Ver README.md → "Deploy en producción" para el detalle de cada variable
+# marcada `sync: false` (se cargan a mano en el dashboard, nunca en este
+# archivo — son secretos).
+
+services:
+  - type: web
+    name: kan-gateway
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./apps/gateway/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: KAN_SUPABASE_URL
+        sync: false
+      - key: KAN_SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: KAN_EDGE_TOKEN
+        sync: false
+      - key: KAN_GATEWAY_INTERNAL_TOKEN
+        sync: false
+      - key: KAN_WEB_ORIGIN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
