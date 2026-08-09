@@ -483,7 +483,9 @@ Piensa como si KAN fuera una futura empresa tecnológica de clase mundial. No bu
 
 DEPLOY EN PRODUCCIÓN
 
-KAN se despliega como dos servicios separados, no uno solo: Vercel no puede hostear el WebSocket persistente que el Gateway necesita (`/edge`, `/live-voice`), así que `apps/web` (Next.js, serverless) y `apps/gateway` (Express + `ws`, proceso siempre corriendo) van a hosts distintos. Ver `apps/web/vercel.json`, `apps/gateway/Dockerfile`, `apps/gateway/fly.toml` y `render.yaml` (raíz del repo).
+KAN se despliega como dos servicios separados, no uno solo: Vercel no puede hostear el WebSocket persistente que el Gateway necesita (`/edge`, `/live-voice`), así que `apps/web` (Next.js, serverless) y `apps/gateway` (Express + `ws`, proceso siempre corriendo) van a hosts distintos. Ver `apps/web/vercel.json`, `apps/gateway/Dockerfile`, y para el Gateway: `apps/gateway/fly.toml`, `render.yaml` o `railway.json` (los tres en la raíz del repo salvo `fly.toml`) — cualquiera de los tres apunta al mismo `Dockerfile`, elegí uno según el servicio que uses.
+
+**Railway** (`railway.json`, raíz del repo): a diferencia de Fly.io/Render, Railway no tiene un campo de config-as-code para el build context — usa el "Root Directory" configurado en el dashboard del servicio. Dejalo en la raíz del repo (no lo cambies a `apps/gateway`) — el `Dockerfile` necesita ver todo el monorepo para que `turbo prune` funcione, mismo motivo que ya aplica a Fly.io/Render. `startCommand` está fijado explícitamente en `pnpm start` (igual al `CMD` del propio `Dockerfile`) porque Railway lo usa para *sobreescribir* el `CMD` de la imagen cuando está presente — un valor incorrecto ahí (ej. `node dist/server.js`, que no existe: este Gateway no tiene paso de compilación, corre con `tsx` tal cual) haría que el deploy build bien pero el contenedor crashee al arrancar.
 
 Variables de entorno de `apps/web` (Vercel — Project Settings → Environment Variables, todas en el ambiente "Production"):
 
@@ -502,7 +504,7 @@ Variables de entorno de `apps/web` (Vercel — Project Settings → Environment 
 | `ANTHROPIC_API_KEY` | Sí | Opcional — fallback de texto #1 si Gemini falla (ADR-054). |
 | `OPENAI_API_KEY` | Sí | Opcional — alternativa de TTS (ADR-034) y fallback de texto #2 (ADR-054). |
 
-Variables de entorno de `apps/gateway` (Fly.io con `fly secrets set`, o Render con el dashboard del servicio — nunca en `render.yaml`/`fly.toml`, son secretos):
+Variables de entorno de `apps/gateway` (Fly.io con `fly secrets set`, Render/Railway con el dashboard del servicio — nunca en `render.yaml`/`fly.toml`/`railway.json`, son secretos):
 
 | Variable | Secreta | Notas |
 |---|---|---|
@@ -512,6 +514,6 @@ Variables de entorno de `apps/gateway` (Fly.io con `fly secrets set`, o Render c
 | `KAN_GATEWAY_INTERNAL_TOKEN` | Sí | Debe coincidir con el mismo nombre en `apps/web`. |
 | `KAN_WEB_ORIGIN` | No | Origin(es) real(es) del deploy de `apps/web` en Vercel, separados por coma — sin esto, el Simulador del navegador no puede conectar. |
 | `GEMINI_API_KEY` | Sí | Opcional — habilita voz en tiempo real (ADR-044) y enriquecimiento automático de dispositivos (ADR-053). Sin ella el Gateway funciona igual, solo sin esas dos capacidades. |
-| `PORT` | No | Fly.io: fijo en `fly.toml` (8787). Render: lo inyecta solo, `apps/gateway/src/server.ts` ya lo respeta (`process.env.PORT ?? 8787`) — no hace falta fijarlo a mano. |
+| `PORT` | No | Fly.io: fijo en `fly.toml` (8787). Render/Railway: lo inyectan solos, `apps/gateway/src/server.ts` ya lo respeta (`process.env.PORT ?? 8787`) — no hace falta fijarlo a mano. |
 
 Deploy automático de `apps/web` vía `.github/workflows/deploy.yml` (push a `main`) — requiere los secretos `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` en el repo de GitHub. El Gateway se redespliega con el auto-deploy nativo de Fly.io/Render al conectar el repo (ver instrucciones exactas más abajo, entregadas junto con este incremento).
