@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import { DeviceList } from "@/components/dispositivos/DeviceList";
@@ -48,6 +49,16 @@ export default async function DispositivosPage({
             </button>
           </form>
         </Card>
+      )}
+
+      {user && (
+        <p className="text-sm text-ink-faint">
+          ¿Ya vinculaste un Edge Agent?{" "}
+          <Link href="/configuracion#plugins" className="text-accent hover:underline">
+            Configurá sus plugins de hardware
+          </Link>
+          .
+        </p>
       )}
     </div>
   );

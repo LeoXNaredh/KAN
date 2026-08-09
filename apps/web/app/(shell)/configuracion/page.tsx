@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { User, Brain, Sparkles, Volume2, Puzzle } from "lucide-react";
 import { GEMINI_TTS_VOICES, DEFAULT_VOICE } from "@kan/voice-abstraction";
 import { Card } from "@/components/ui/Card";
@@ -150,7 +151,7 @@ export default async function ConfiguracionPage({
       )}
 
       {user && (
-        <div>
+        <div id="plugins">
           <h2 className="mb-1 flex items-center gap-2 text-sm font-medium text-ink-muted">
             <Puzzle className="h-4 w-4" aria-hidden="true" />
             Plugins de hardware
@@ -158,7 +159,11 @@ export default async function ConfiguracionPage({
           <p className="mb-3 text-xs text-ink-faint">
             Conexiones de cada plugin (hosts SSH, brokers MQTT, targets Modbus, etc.) — sin editar ningún archivo a
             mano. Un Edge Agent ya vinculado las trae al aparear, o con &quot;Sincronizar configuración&quot; en la
-            app de escritorio.
+            app de escritorio. ¿Todavía no vinculaste ninguno?{" "}
+            <Link href="/dispositivos" className="text-accent hover:underline">
+              Hacelo en Dispositivos
+            </Link>
+            .
           </p>
           <PluginConfigManager values={pluginConfigValues} />
         </div>
