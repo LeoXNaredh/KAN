@@ -1,6 +1,6 @@
 "use client";
 
-import { Cpu, CircuitBoard, Bot, Printer, Zap, FlaskConical, Brain, FolderKanban, Workflow, type LucideIcon } from "lucide-react";
+import { Cpu, Brain, FolderKanban, Workflow } from "lucide-react";
 import type { DashboardSummary } from "@kan/core";
 import { useSystemStatus } from "@/lib/status/useSystemStatus";
 import { StatusCard } from "@/components/dashboard/StatusCard";
@@ -11,21 +11,21 @@ import { PluginCard } from "@/components/dashboard/PluginCard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { ConversationPanel } from "@/components/dashboard/ConversationPanel";
 import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
+import { Card } from "@/components/ui/Card";
 import type { StatusLevel } from "@/components/ui/StatusDot";
-
-const DEVICE_CATALOG: Array<{ key: string; label: string; icon: LucideIcon; matches: (kind: string) => boolean }> = [
-  { key: "esp32", label: "ESP32", icon: Cpu, matches: (kind) => kind === "esp32-arduino" },
-  { key: "arduino", label: "Arduino", icon: CircuitBoard, matches: (kind) => kind === "esp32-arduino" },
-  { key: "robot", label: "Robot", icon: Bot, matches: (kind) => kind.includes("robot") },
-  { key: "printer", label: "Impresora 3D", icon: Printer, matches: (kind) => kind.includes("print") },
-  { key: "laser", label: "CNC / Láser", icon: Zap, matches: (kind) => kind.includes("cnc") || kind.includes("laser") },
-  { key: "simulator", label: "Simulador", icon: FlaskConical, matches: (kind) => kind === "device-simulator" },
-];
 
 export function DashboardClient({ summary }: { summary: DashboardSummary | undefined }) {
   const { status } = useSystemStatus();
 
-  const allDevices = status?.edgeAgents.flatMap((agent) => agent.devices) ?? [];
+  // Antes: un catálogo fijo de 6 íconos (ESP32/Arduino/Robot/Impresora/CNC/
+  // Simulador) "encendidos" por un matcher de substring sobre `kind` — con
+  // el bug de que ESP32 y Arduino compartían el mismo matcher, así que un
+  // solo dispositivo encendía las dos tarjetas. Ahora: los dispositivos
+  // reales que cada Edge Agent ya reportó, con su nombre real — sin inventar
+  // categorías que no existen en los 15 plugins reales.
+  const allDevices = (status?.edgeAgents ?? []).flatMap((agent) =>
+    agent.devices.map((device) => ({ ...device, agentOnline: agent.status === "online" })),
+  );
   // Dos Edge Agents (ej. desktop + Simulador embebido en el navegador,
   // docs/12) pueden tener el mismo plugin instalado — de-dupe por id para no
   // listarlo dos veces (y no repetir key de React).
@@ -100,12 +100,19 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-ink-muted">Dispositivos</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {DEVICE_CATALOG.map((entry) => {
-            const connected = allDevices.some((device) => entry.matches(device.kind));
-            return <DeviceCard key={entry.key} icon={entry.icon} label={entry.label} connected={connected} />;
-          })}
-        </div>
+        {allDevices.length === 0 ? (
+          <Card padding="sm" className="fade-in">
+            <p className="text-sm text-ink-faint">
+              Ningún dispositivo descubierto todavía — vinculá un Edge Agent desde Dispositivos.
+            </p>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {allDevices.map((device) => (
+              <DeviceCard key={device.id} icon={Cpu} label={device.name} connected={device.agentOnline} detail={device.kind} />
+            ))}
+          </div>
+        )}
       </section>
 
       <DashboardGrid>
