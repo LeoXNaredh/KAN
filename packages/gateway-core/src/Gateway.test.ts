@@ -138,6 +138,7 @@ function helloFor(edgeAgentId: string): HelloMessage {
       {
         deviceId: "simulator-1",
         deviceName: "Dispositivo Simulado #1",
+        deviceKind: "device-simulator",
         capability: { name: "read_sensor", description: "...", severity: "read-only", supportsDryRun: false },
       },
     ],

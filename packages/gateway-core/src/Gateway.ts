@@ -219,12 +219,12 @@ export class Gateway {
 }
 
 function dedupeDevices(
-  capabilities: Array<{ deviceId: string; deviceName: string }>,
+  capabilities: Array<{ deviceId: string; deviceName: string; deviceKind: string }>,
 ): AgentRecord["devices"] {
   const seen = new Map<string, AgentRecord["devices"][number]>();
-  for (const { deviceId, deviceName } of capabilities) {
+  for (const { deviceId, deviceName, deviceKind } of capabilities) {
     if (!seen.has(deviceId)) {
-      seen.set(deviceId, { id: deviceId, name: deviceName, kind: "unknown" });
+      seen.set(deviceId, { id: deviceId, name: deviceName, kind: deviceKind });
     }
   }
   return Array.from(seen.values());

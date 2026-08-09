@@ -111,7 +111,7 @@ export class EdgeAgent {
           installedPlugins: this.pluginManager.list().map((instance) => instance.manifest),
           capabilities: this.capabilityRegistry
             .list()
-            .map((c) => ({ deviceId: c.deviceId, deviceName: c.deviceName, capability: c.capability })),
+            .map((c) => ({ deviceId: c.deviceId, deviceName: c.deviceName, deviceKind: c.deviceKind, capability: c.capability })),
           // Presente solo si este agente ya fue vinculado a un usuario
           // (docs/19 P2, incremento 3) — ausente, se conecta igual que
           // siempre, sin ownerId.

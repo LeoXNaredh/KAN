@@ -8,6 +8,8 @@ import type { SafetyPolicyStore } from "./SafetyPolicyStore";
 export interface CapabilityListing {
   deviceId: string;
   deviceName: string;
+  /** Tipo del plugin dueño del dispositivo (ej. "esp32-arduino") — llega hasta el hello del Gateway para identificar qué es cada dispositivo (ADR-053). */
+  deviceKind: string;
   capability: CapabilityDescriptor;
 }
 
@@ -36,6 +38,7 @@ export class CapabilityRegistry {
       device.capabilities.map((capability) => ({
         deviceId: device.id,
         deviceName: device.name,
+        deviceKind: device.kind,
         capability,
       })),
     );

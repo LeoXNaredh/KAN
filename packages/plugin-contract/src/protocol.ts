@@ -16,7 +16,7 @@ export interface HelloMessage {
   os?: string;
   agentVersion?: string;
   installedPlugins: PluginManifest[];
-  capabilities: Array<{ deviceId: string; deviceName: string; capability: CapabilityDescriptor }>;
+  capabilities: Array<{ deviceId: string; deviceName: string; deviceKind: string; capability: CapabilityDescriptor }>;
   /**
    * Secreto de pairing (docs/19 P2, incremento 3) — presente solo si este
    * Edge Agent ya fue vinculado a un usuario. El Gateway lo resuelve a un

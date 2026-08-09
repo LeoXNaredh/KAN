@@ -90,6 +90,7 @@ export default function App() {
             ...event.payload.device.capabilities.map((capability) => ({
               deviceId: event.payload.device.id,
               deviceName: event.payload.device.name,
+              deviceKind: event.payload.device.kind,
               capability,
             })),
           ]);
