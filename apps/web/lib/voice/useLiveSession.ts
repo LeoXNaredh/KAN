@@ -10,6 +10,15 @@ const OUTPUT_SAMPLE_RATE = 24000;
 // ~8ms) antes de mandarlo por el WS — evita un mensaje cada 8ms.
 const SEND_CHUNK_SAMPLES = INPUT_SAMPLE_RATE / 10;
 
+// Visión de pantalla en tiempo real (ADR-044 fase 2) — un frame de imagen
+// más en el mismo WS, no un canal nuevo. 1 frame/seg alcanza para leer
+// texto/IDs en pantalla sin inflar el payload; achicar a 1280px + JPEG
+// calidad 0.6 mantiene cada frame bien por debajo del límite de 1MB del
+// proxy del Gateway (GeminiLiveProxy, MAX_PAYLOAD_BYTES).
+const SCREEN_SHARE_INTERVAL_MS = 1000;
+const SCREEN_SHARE_MAX_WIDTH = 1280;
+const SCREEN_SHARE_JPEG_QUALITY = 0.6;
+
 interface FunctionCall {
   id: string;
   name: string;
@@ -52,6 +61,7 @@ function pcm16ToFloat32(bytes: Uint8Array): Float32Array {
 export function useLiveSession() {
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [screenSharing, setScreenSharing] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -61,6 +71,8 @@ export function useLiveSession() {
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const sendBufferRef = useRef<Int16Array[]>([]);
   const sendBufferedSamplesRef = useRef(0);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenIntervalRef = useRef<number | null>(null);
 
   const stopPlayback = useCallback(() => {
     for (const source of activeSourcesRef.current) {
@@ -72,6 +84,16 @@ export function useLiveSession() {
     }
     activeSourcesRef.current.clear();
     if (outputContextRef.current) nextPlaybackTimeRef.current = outputContextRef.current.currentTime;
+  }, []);
+
+  const stopScreenShare = useCallback(() => {
+    if (screenIntervalRef.current !== null) {
+      window.clearInterval(screenIntervalRef.current);
+      screenIntervalRef.current = null;
+    }
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current = null;
+    setScreenSharing(false);
   }, []);
 
   const stop = useCallback(() => {
@@ -91,8 +113,10 @@ export function useLiveSession() {
     sendBufferRef.current = [];
     sendBufferedSamplesRef.current = 0;
 
+    stopScreenShare();
+
     setStatus((current) => (current === "error" ? current : "idle"));
-  }, [stopPlayback]);
+  }, [stopPlayback, stopScreenShare]);
 
   const flushSendBuffer = useCallback(() => {
     const ws = wsRef.current;
@@ -204,6 +228,77 @@ export function useLiveSession() {
     source.connect(worklet);
   }, [flushSendBuffer]);
 
+  /**
+   * Visión de pantalla en tiempo real (ADR-044 fase 2) — independiente del
+   * audio: el usuario la prende/apaga durante una sesión Live ya activa, no
+   * es parte del setup inicial. Un frame JPEG por segundo, mandado como un
+   * turn de clientContent con turnComplete:false (ver comentario más abajo
+   * sobre por qué no es realtimeInput.video) — Gemini lo usa para leer
+   * texto/IDs/IPs en pantalla y guiar por voz, nunca para controlar el
+   * mouse/teclado del usuario (eso no está implementado).
+   */
+  const startScreenShare = useCallback(async () => {
+    if (screenSharing) return;
+
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    screenStreamRef.current = stream;
+
+    const video = document.createElement("video");
+    video.muted = true;
+    video.srcObject = stream;
+    await video.play();
+
+    const track = stream.getVideoTracks()[0];
+    const settings = track?.getSettings();
+    const sourceWidth = settings?.width ?? video.videoWidth;
+    const sourceHeight = settings?.height ?? video.videoHeight;
+    const scale = Math.min(1, SCREEN_SHARE_MAX_WIDTH / sourceWidth);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const ctx = canvas.getContext("2d");
+
+    // Si el usuario corta el compartir desde el picker nativo del
+    // navegador (no desde nuestro botón), no debe quedar un estado
+    // "compartiendo" fantasma sin stream real detrás.
+    track?.addEventListener("ended", stopScreenShare);
+
+    screenIntervalRef.current = window.setInterval(() => {
+      const ws = wsRef.current;
+      if (!ctx || !ws || ws.readyState !== WebSocket.OPEN) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return;
+          blob.arrayBuffer().then((buffer) => {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            const base64 = toBase64(new Uint8Array(buffer));
+            // Verificado en vivo (ADR-044 fase 2): `realtimeInput.video` no
+            // funciona con esta cuenta/modelo — Gemini responde "no puedo
+            // ver imágenes" y lo ignora en silencio. El campo real es un
+            // turn de `clientContent` con la imagen como `inlineData`, con
+            // `turnComplete: false` para que solo sume contexto sin
+            // disparar una respuesta — el turno lo completa la voz, no la
+            // imagen.
+            ws.send(
+              JSON.stringify({
+                clientContent: {
+                  turns: [{ role: "user", parts: [{ inlineData: { mimeType: "image/jpeg", data: base64 } }] }],
+                  turnComplete: false,
+                },
+              }),
+            );
+          });
+        },
+        "image/jpeg",
+        SCREEN_SHARE_JPEG_QUALITY,
+      );
+    }, SCREEN_SHARE_INTERVAL_MS);
+
+    setScreenSharing(true);
+  }, [screenSharing, stopScreenShare]);
+
   const start = useCallback(async () => {
     if (status === "connecting" || status === "active") return;
     setError(null);
@@ -260,5 +355,5 @@ export function useLiveSession() {
     }
   }, [handleServerMessage, startMicCapture, status, stop]);
 
-  return { status, error, start, stop };
+  return { status, error, start, stop, screenSharing, startScreenShare, stopScreenShare };
 }

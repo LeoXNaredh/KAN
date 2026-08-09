@@ -6,6 +6,7 @@ import type { ChatStreamEvent, Conversation } from "@kan/core";
 import { Card } from "@/components/ui/Card";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
 import { LiveVoiceButton } from "@/components/dashboard/LiveVoiceButton";
+import { ScreenShareButton } from "@/components/dashboard/ScreenShareButton";
 import { useVoiceInput } from "@/lib/voice/useVoiceInput";
 import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
 import { useLiveSession } from "@/lib/voice/useLiveSession";
@@ -228,6 +229,12 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
           status={live.status}
           onClick={live.status === "active" ? live.stop : live.start}
         />
+        {live.status === "active" && (
+          <ScreenShareButton
+            sharing={live.screenSharing}
+            onClick={live.screenSharing ? live.stopScreenShare : live.startScreenShare}
+          />
+        )}
         <input
           ref={fileInputRef}
           type="file"

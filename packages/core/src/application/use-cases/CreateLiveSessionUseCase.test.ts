@@ -84,6 +84,16 @@ describe("CreateLiveSessionUseCase", () => {
     expect(port.calls[0].systemPrompt).toMatch(/markdown/i);
   });
 
+  it("el system prompt avisa sobre 'Compartir pantalla' y aclara que no controla mouse/teclado (ADR-044 fase 2)", async () => {
+    const port = new RecordingLiveSessionPort();
+    const useCase = new CreateLiveSessionUseCase(port);
+
+    await useCase.execute();
+
+    expect(port.calls[0].systemPrompt).toMatch(/compartir pantalla/i);
+    expect(port.calls[0].systemPrompt).toMatch(/no pod.s mover el mouse/i);
+  });
+
   it("junta las tools del Gateway con las de memoria (mismo criterio que SendMessageUseCase)", async () => {
     const port = new RecordingLiveSessionPort();
     const gatewayTool: ToolDescriptor = { name: "read_sensor", description: "...", inputSchema: {} };

@@ -13,7 +13,11 @@ const VOICE_SYSTEM_PROMPT =
   "Estás en una conversación de voz en tiempo real: hablá de forma natural, breve y conversacional, " +
   "como en una llamada real. Nunca uses markdown, listas, ni ningún formato de texto — tu respuesta " +
   "se lee en voz alta, no se muestra escrita. Cuando el usuario pida algo que corresponda a una " +
-  "herramienta disponible, invocala vos mismo.";
+  "herramienta disponible, invocala vos mismo. En cualquier momento el usuario puede activar " +
+  "'Compartir pantalla' — a partir de ahí vas a recibir frames intermitentes de lo que hay en su " +
+  "pantalla. Usalos para leer números de serie, IPs, nombres de dispositivos o cualquier texto " +
+  "visible, identificar hardware, y guiar al usuario paso a paso describiendo lo que ves en pantalla. " +
+  "No podés mover el mouse ni tocar el teclado del usuario — solo podés ver y guiar hablando.";
 
 /**
  * Arma el system prompt (mismo criterio que SendMessageUseCase.buildSystemPrompt,
