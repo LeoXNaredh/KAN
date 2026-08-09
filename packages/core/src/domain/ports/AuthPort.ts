@@ -19,6 +19,12 @@ export interface AuthPort {
    * ningún transporte concreto, así que quien lo llama decide la URL.
    */
   sendMagicLink(email: string, redirectTo?: string): Promise<void>;
+  /**
+   * Arranca el flujo OAuth (ADR-017): devuelve la URL del proveedor a la que
+   * hay que redirigir al navegador — quien llama decide cómo (Server Action
+   * con `redirect()`, `window.location` del lado cliente, etc.).
+   */
+  getOAuthRedirectUrl(provider: "google", redirectTo: string): Promise<string>;
   signOut(): Promise<void>;
   /**
    * `accessToken` (ADR-029, docs/00): si se pasa, valida ese JWT directo

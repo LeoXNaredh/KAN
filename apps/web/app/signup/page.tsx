@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
-import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
+import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES, SECONDARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import { signUpAction } from "./actions";
+import { signInWithGoogleAction } from "@/lib/auth/oauthActions";
 
 export default async function SignupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const params = await searchParams;
@@ -31,6 +32,12 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
           />
           <button type="submit" className={PRIMARY_BUTTON_CLASSES}>
             Crear cuenta
+          </button>
+        </form>
+
+        <form action={signInWithGoogleAction} className="mt-4 border-t border-line pt-4">
+          <button type="submit" className={SECONDARY_BUTTON_CLASSES}>
+            Continuar con Google
           </button>
         </form>
 

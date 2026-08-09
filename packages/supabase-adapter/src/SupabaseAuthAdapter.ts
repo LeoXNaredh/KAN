@@ -35,6 +35,19 @@ export class SupabaseAuthAdapter implements AuthPort {
     if (error) throw new Error(error.message);
   }
 
+  async getOAuthRedirectUrl(provider: "google", redirectTo: string): Promise<string> {
+    // skipBrowserRedirect: este cliente puede correr en el servidor (Server
+    // Action de apps/web), donde no hay `window` al que Supabase pueda
+    // redirigir solo — devolvemos la URL y quien llama hace el redirect().
+    const { data, error } = await this.client.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo, skipBrowserRedirect: true },
+    });
+    if (error) throw new Error(error.message);
+    if (!data.url) throw new Error("Supabase no devolvió una URL de redirección OAuth.");
+    return data.url;
+  }
+
   async signOut(): Promise<void> {
     const { error } = await this.client.auth.signOut();
     if (error) throw new Error(error.message);

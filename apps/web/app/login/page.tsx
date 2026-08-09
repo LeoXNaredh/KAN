@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES, SECONDARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import { signInWithPasswordAction, sendMagicLinkAction } from "./actions";
+import { signInWithGoogleAction } from "@/lib/auth/oauthActions";
 
 export default async function LoginPage({
   searchParams,
@@ -52,6 +53,12 @@ export default async function LoginPage({
           <input name="email" type="email" required placeholder="Email para Magic Link" className={INPUT_CLASSES} />
           <button type="submit" className={SECONDARY_BUTTON_CLASSES}>
             Enviarme un Magic Link
+          </button>
+        </form>
+
+        <form action={signInWithGoogleAction} className="mt-4 border-t border-line pt-4">
+          <button type="submit" className={SECONDARY_BUTTON_CLASSES}>
+            Continuar con Google
           </button>
         </form>
 

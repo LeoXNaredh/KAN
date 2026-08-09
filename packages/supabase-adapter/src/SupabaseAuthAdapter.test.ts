@@ -77,6 +77,31 @@ describe("SupabaseAuthAdapter", () => {
     expect(signInWithOtp).toHaveBeenCalledWith({ email: "a@b.com", options: undefined });
   });
 
+  it("getOAuthRedirectUrl devuelve la URL del proveedor con skipBrowserRedirect", async () => {
+    const signInWithOAuth = vi.fn().mockResolvedValue({ data: { url: "https://accounts.google.com/o/oauth2/v2/auth?..." }, error: null });
+    const client = createFakeAuthClient({ signInWithOAuth });
+    const adapter = new SupabaseAuthAdapter(client);
+
+    const url = await adapter.getOAuthRedirectUrl("google", "https://kan.app/auth/callback");
+
+    expect(url).toBe("https://accounts.google.com/o/oauth2/v2/auth?...");
+    expect(signInWithOAuth).toHaveBeenCalledWith({
+      provider: "google",
+      options: { redirectTo: "https://kan.app/auth/callback", skipBrowserRedirect: true },
+    });
+  });
+
+  it("getOAuthRedirectUrl lanza si Supabase devuelve error", async () => {
+    const client = createFakeAuthClient({
+      signInWithOAuth: vi.fn().mockResolvedValue({ data: { url: null }, error: { message: "proveedor no configurado" } }),
+    });
+    const adapter = new SupabaseAuthAdapter(client);
+
+    await expect(adapter.getOAuthRedirectUrl("google", "https://kan.app/auth/callback")).rejects.toThrow(
+      "proveedor no configurado",
+    );
+  });
+
   it("signOut lanza si Supabase devuelve error", async () => {
     const client = createFakeAuthClient({
       signOut: vi.fn().mockResolvedValue({ error: { message: "no se pudo cerrar sesión" } }),
