@@ -746,6 +746,26 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-050: `plugin-opcua` — OPC-UA industrial, `write_node` en el mismo nivel que `write_register` de Modbus (no el techo de `plugin-ssh`)
+
+**Contexto.** Tier 4 del mapa: OPC-UA, el protocolo industrial "pesado" marcado como simulable — `node-opcua` (Sterfive) trae tanto cliente como servidor completos en el mismo paquete, a diferencia de Modbus RTU (sin servidor en la librería) o SSH (sin servidor de ejemplo, hubo que construir uno a mano). Se pidió explícitamente un servidor OPC-UA simulado para los tests.
+
+**Decisión — `write_node` es `irreversible-material`, no `safety-critical`.** A diferencia de `plugin-ssh` (donde cualquier comando puede hacer lo que sea en el sistema operativo), OPC-UA escribe un tag/variable puntual y acotado — mismo nivel de riesgo que `write_register` de `plugin-modbus`, el análogo más cercano en todo el mapa. `read_node`/`browse_node` quedan read-only.
+
+**Decisión — target = `nodeId`**, mismo mecanismo que registros Modbus/entidades HA/topics MQTT. Config `KAN_OPCUA_TARGETS=nombre|endpointUrl|usuario|contraseña` (usuario/contraseña opcional, anónimo por defecto) — mismo criterio "nunca escanea" que el resto del mapa.
+
+**Tres hallazgos reales durante la implementación, dos de ellos en la propia documentación oficial del paquete (JSDoc del código fuente, no un blog de terceros) — encontrados solo por probarlos, no por leerlos:**
+
+1. **El ejemplo JSDoc de la clase `OPCUAServer` está mal.** Usa `componentOf: addressSpace.rootFolder.objects` para agregar una variable al folder estándar "Objects" — el código real de `node-opcua-address-space` (`namespace_impl.ts`) tiene un `assert` explícito que lo prohíbe: *"Only Organizes References are used to relate Objects to the 'Objects' standard Object."* El fix real es `organizedBy`. Mismo patrón que el ejemplo de `readFile`/CRC de `modbus-serial` en ADR-047 y el `realtimeInput.video` de Gemini en ADR-044: documentación oficial (no un tercero) describiendo un comportamiento que el código real rechaza.
+2. **`session.read()` nunca rechaza a nivel de transporte** para un `nodeId` inválido — siempre "resuelve" con un `DataValue` cuyo `statusCode` indica el error (`BadNodeIdUnknown`, etc.). Sin chequear `dataValue.statusCode.isGood()` explícitamente, `NodeOpcuaTransport.readNode()` hubiera devuelto `{value: null}` en silencio ante un nodeId con typo, en vez de fallar con un error claro — corregido antes de que este hallazgo llegara a producción, porque el test real lo forzó a aparecer (`readNode sobre un nodo inexistente` no rechazaba hasta agregar el chequeo).
+3. **`getFullyQualifiedDomainName()` (usado internamente para el hostname por defecto del servidor) devuelve algo que este entorno no resuelve** — sin `hostname` explícito en las opciones del `OPCUAServer`, `getEndpointUrl()` devolvía una URL con host literal `"undefined"` (`getaddrinfo ENOTFOUND undefined`). Se fijó `hostname: "127.0.0.1"` explícitamente en el servidor de test.
+
+**Verificado en vivo, de punta a punta, contra un `OPCUAServer` real embebido** (no un mock) — servidor real con una variable de solo-fuente (`setValueFromSource`, para simular un sensor) y una variable escribible (`bindVariable` con `get`/`set`, para simular un setpoint real) — `read_node`/`write_node`/`browse_node` confirmados con datos reales, incluida la vuelta completa escritura→lectura.
+
+**Explícitamente fuera de alcance:** autenticación por certificado X.509, modos de seguridad `Sign`/`SignAndEncrypt` (el cliente conecta con `endpointMustExist: false` y seguridad mínima — igual que la mayoría de PLCs de laboratorio/pruebas, no necesariamente lo que exigiría un entorno industrial de producción real), suscripciones/monitoreo de cambios en tiempo real (solo lectura bajo demanda, mismo criterio que Home Assistant con su REST API en vez de WebSocket).
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
