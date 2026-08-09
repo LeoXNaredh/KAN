@@ -705,6 +705,28 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@1.8.0))(lightningcss@1.32.0)(supports-color@8.1.1)(terser@5.49.2)
 
+  plugins/plugin-serial-generic:
+    dependencies:
+      '@kan/plugin-contract':
+        specifier: workspace:*
+        version: link:../../packages/plugin-contract
+      '@kan/plugin-sdk-ts':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk-ts
+      '@kan/serial-line-transport':
+        specifier: workspace:*
+        version: link:../../packages/serial-line-transport
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(jsdom@30.0.1(@noble/hashes@1.8.0))(lightningcss@1.32.0)(supports-color@8.1.1)(terser@5.49.2)
+
   plugins/plugin-ssh:
     dependencies:
       '@kan/plugin-contract':

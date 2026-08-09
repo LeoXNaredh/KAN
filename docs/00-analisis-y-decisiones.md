@@ -766,6 +766,18 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-051: `plugin-serial-generic` — puerto serial genérico, reusando `@kan/serial-line-transport` sin protocolo propio
+
+**Contexto.** Ítem bonus del mapa: un plugin para cualquier dispositivo serial que hable texto línea por línea y no tenga ya un protocolo fijo cubierto (ESP32 tiene JSON propio, `plugin-gcode` tiene G-code, `plugin-modbus` tiene su propio framing binario). El caso de uso es explícitamente "lo que sobra" — sensores/actuadores caseros con un sketch simple que no vale la pena que hablen un protocolo estructurado.
+
+**Decisión — reusa `@kan/serial-line-transport` tal cual, sin transporte nuevo.** El mismo paquete que ya usan `plugin-esp32-arduino`/`plugin-gcode` (extraído originalmente del primero, ADR-043) ya expone exactamente lo que hace falta: `LineConnection` (`write`/`onLine`/`onStateChange`/`close`) sobre `serialport` real. Este plugin es una capa fina arriba: dos capabilities (`send_line`, `read_last_lines`) sin interpretar nada del contenido — mismo criterio que `plugin-ws-generic` (sin protocolo propio, sin targets, el dispositivo entero es el target implícito).
+
+**Decisión — `discover()` nunca escanea**, mismo motivo ya documentado en `plugin-gcode`: sin un protocolo fijo, no hay forma de mandar un "ping" inofensivo que cualquier dispositivo desconocido simplemente ignore (a diferencia de `plugin-esp32-arduino`, cuyo propio firmware sí responde uno). Mandarle bytes a un puerto serial desconocido es un riesgo real.
+
+**Verificación — sin duplicar cobertura ya real, honesto sobre el límite real.** `NodeSerialTransport` ya tiene uso real y probado (indirectamente) como dependencia de dos plugins ya committeados con hardware real documentado como pendiente (`plugin-esp32-arduino`, `plugin-gcode`) — no tenía sentido re-probar el mismo transporte compartido desde cero. Lo que sí se verificó de punta a punta con el transporte real (no un fake) fue el escenario "sin hardware conectado": `open()` sobre un puerto COM inexistente rechaza limpio. Un puerto serial/USB físico o virtual no estuvo disponible en este entorno — documentado igual que la limitación ya existente para RTU serial (`plugin-modbus`, ADR-047) y hardware ESP32/impresoras (`plugin-esp32-arduino`/`plugin-gcode`, ADR-043).
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
