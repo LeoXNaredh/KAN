@@ -499,7 +499,8 @@ Variables de entorno de `apps/web` (Vercel — Project Settings → Environment 
 | `NEXT_PUBLIC_SUPABASE_URL` | No | Settings → API en supabase.com. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Es pública a propósito (RLS la protege). |
 | `GROQ_API_KEY` | Sí | Opcional — STT (ADR-014). |
-| `OPENAI_API_KEY` | Sí | Opcional — alternativa de TTS (ADR-034). |
+| `ANTHROPIC_API_KEY` | Sí | Opcional — fallback de texto #1 si Gemini falla (ADR-054). |
+| `OPENAI_API_KEY` | Sí | Opcional — alternativa de TTS (ADR-034) y fallback de texto #2 (ADR-054). |
 
 Variables de entorno de `apps/gateway` (Fly.io con `fly secrets set`, o Render con el dashboard del servicio — nunca en `render.yaml`/`fly.toml`, son secretos):
 

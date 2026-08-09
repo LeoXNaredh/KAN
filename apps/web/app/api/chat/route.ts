@@ -1,5 +1,5 @@
-import { GeminiProvider, ModelRouter } from "@kan/ai-abstraction";
-import type { ChatStreamEvent, Conversation, SendMessageUseCase } from "@kan/core";
+import { GeminiProvider, AnthropicProvider, OpenAiProvider, ModelRouter } from "@kan/ai-abstraction";
+import type { AIProviderPort, ChatStreamEvent, Conversation, SendMessageUseCase } from "@kan/core";
 import { NextResponse } from "next/server";
 import { GatewayToolProvider } from "@/lib/gateway/GatewayToolProvider";
 import { buildSendMessageUseCase } from "@/lib/chat/composition";
@@ -22,7 +22,22 @@ async function buildUseCase(accessToken: string | undefined, gatewayUserToken: s
     throw new MissingApiKeyError();
   }
   const model = process.env.GEMINI_MODEL || undefined;
-  const aiProvider = new ModelRouter(new GeminiProvider({ apiKey, model }));
+  const primary = new GeminiProvider({ apiKey, model });
+  // Fallback real (ADR-054): si Gemini falla (rate limit, caída del
+  // servicio), ModelRouter prueba el siguiente proveedor configurado antes
+  // de rendirse — cierra el riesgo ya documentado en docs/11-riesgos.md
+  // ("Rate limits de Gemini free-tier bloquean uso real con varios
+  // usuarios"). Cada uno es opcional: sin su API key, simplemente no se
+  // agrega a la lista, el chat sigue funcionando solo con Gemini igual que
+  // antes de este incremento.
+  const fallbacks: AIProviderPort[] = [];
+  if (process.env.ANTHROPIC_API_KEY) {
+    fallbacks.push(new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY }));
+  }
+  if (process.env.OPENAI_API_KEY) {
+    fallbacks.push(new OpenAiProvider({ apiKey: process.env.OPENAI_API_KEY }));
+  }
+  const aiProvider = new ModelRouter(primary, fallbacks);
   const toolProvider = new GatewayToolProvider({
     baseUrl: process.env.KAN_GATEWAY_URL ?? "http://localhost:8787",
     internalToken: process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-token",

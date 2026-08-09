@@ -28,7 +28,7 @@ interface AIProviderPort {
 
 ## 2. Model Router
 
-`ModelRouter` (`packages/ai-abstraction/src/router.ts`) existe como capa de indirección — el `SendMessageUseCase` habla con `ModelRouter`, nunca directo con `GeminiProvider`. **Hoy reenvía a un único proveedor configurado**, sin fallback real todavía (no hay un segundo proveedor implementado al que caer). El registro de uso/costo por proveedor tampoco está implementado. Esto quedó identificado explícitamente como brecha documentación-vs-código en la auditoría de estabilización (`docs/13` M11) — se documenta aquí para que quede honesto: la interfaz está lista para fallback multi-proveedor, la lógica de fallback en sí es trabajo futuro (se activa el día que exista un segundo `AIProviderPort` real).
+`ModelRouter` (`packages/ai-abstraction/src/router.ts`) existe como capa de indirección — el `SendMessageUseCase` habla con `ModelRouter`, nunca directo con `GeminiProvider`. **Desde ADR-054, el fallback es real**: recibe un proveedor primario (Gemini) y una lista ordenada de fallbacks (`AnthropicProvider`, `OpenAiProvider` — `packages/ai-abstraction/src/providers/{anthropic,openai}/`); si el primario lanza, prueba el siguiente en orden, una sola vez cada uno, y expone en `providerName` cuál respondió efectivamente. Wireado en `apps/web/app/api/chat/route.ts`: Anthropic/OpenAI se agregan a la lista solo si `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` están configuradas — sin ninguna de las dos, el comportamiento es idéntico al de antes de ADR-054. El registro de uso/costo por proveedor sigue sin implementarse — brecha que se mantiene documentada, no resuelta en este incremento.
 
 ## 3. Agent Orchestrator: de lenguaje natural a acción
 
