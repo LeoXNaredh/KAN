@@ -646,6 +646,28 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-045: `plugin-http-generic` + `plugin-ws-generic` — clientes genéricos de red, allowlist por config como única defensa contra SSRF
+
+**Contexto.** Diagnóstico del ecosistema de hardware completo (mapa de 4 categorías: Maker/Hobby, Industrial, Red/IT, Consumer) identificó HTTP/REST y WebSocket genéricos como los dos ítems de mayor apalancamiento del mapa: ninguna librería nueva (`fetch` nativo, `ws` ya dependencia del proyecto), sin binding nativo (a diferencia de `serialport`/`onoff`/`noble`, sin riesgo de ABI de Electron), 100% simulables sin hardware. La pregunta de diseño real, señalada desde el diagnóstico: ¿cómo declarar capabilities genéricas para REST/WS arbitrario sin que sea "ejecutar cualquier request a cualquier lado" (SSRF)?
+
+**Decisión — el precedente ya existía: `plugin-mqtt`.** Un "dispositivo" en MQTT no es un sensor individual, es una conexión a un broker ya configurado (`KAN_MQTT_BROKERS`, nunca escaneado ni elegido por la IA); cada topic al que te suscribís es un target direccionable por Safety Policy. Los dos plugins nuevos siguen exactamente el mismo molde:
+
+- **`plugin-http-generic`**: un "dispositivo" es un endpoint base configurado (`KAN_HTTP_ENDPOINTS=nombre|baseUrl|Header:valor`, separados por coma, header opcional). La IA nunca elige el host, solo el `path` dentro de un host ya confiado — ese `path` es el target (`targetParam: "path"`), igual que un topic MQTT. Capabilities una por verbo (`http_get` read-only; `http_post`/`http_put`/`http_patch`/`http_delete` irreversible-material por defecto) para que la severidad por defecto sea por acción, no por input libre. `discover()` sí valida cada endpoint con un GET real a la base (a diferencia de `plugin-gcode`, que nunca prueba nada) — un GET es inofensivo, a diferencia de mandar G-code a un puerto desconocido.
+- **`plugin-ws-generic`**: mismo criterio (`KAN_WS_ENDPOINTS`, mismo formato). A diferencia de MQTT, un WebSocket no tiene topics — el canal es el dispositivo entero, así que no expone targets (mismo caso que `plugin-device-simulator`). Solo dos capabilities: `send_ws_message` (irreversible-material) y `read_ws_messages` (read-only, buffer acotado a 50 mensajes). Sin reconexión automática a propósito — a diferencia de `mqtt.js` (ADR-022), un WS arbitrario no tiene un contrato de reconexión estándar (resubscribe, etc.); implementar backoff genérico sin un caso real que lo pida sería construir para una necesidad hipotética. Si se vuelve un problema real, el patrón de `NodeTcpTransport` (backoff exponencial) es el precedente a seguir.
+
+**Desviación del diseño aprobado, encontrada durante la implementación.** El diseño original proponía una capability `disconnect_ws()`. Al revisar el precedente real (`plugin-mqtt`, `plugin-esp32-arduino`, `plugin-gcode`), ninguno expone un "disconnect" como capability invocable por la IA — `disconnect(deviceId)` ya existe como método de ciclo de vida de `DeviceDriverPort`, gestionado por el Edge Agent/Device Manager, no por el chat. Se corrigió sobre la marcha (auto mode) en vez de implementar una inconsistencia deliberada solo por seguir el diseño al pie de la letra.
+
+**Verificado en vivo, de punta a punta, con red real (no solo las suites de test con fakes):** un script temporal (borrado después de correr) instanció `HttpDevicePlugin`/`WsDevicePlugin` con sus transportes reales (`FetchHttpTransport`/`NodeWsTransport`, no los fakes) contra un `http.createServer`/`WebSocketServer` reales — `discover()` encontró el dispositivo, el header de auth configurado llegó correctamente al servidor, `http_get`/`http_post` devolvieron datos reales, `send_ws_message`/`read_ws_messages` confirmaron el roundtrip completo por un socket real.
+
+**Explícitamente fuera de alcance:**
+- Elegir un host/URL en tiempo real desde el chat — si no está en `KAN_HTTP_ENDPOINTS`/`KAN_WS_ENDPOINTS`, no existe como dispositivo. Es la única defensa real contra SSRF, no un detalle de implementación.
+- Convertir esto en un proxy genérico ("llamá a cualquier URL que te diga") — es exactamente lo que estos dos plugins NO son.
+- Streaming/SSE, binario/protobuf sobre WS, reconexión automática de WS (ver arriba).
+
+**Consecuencia.** Mismo criterio de registro manual que el resto de plugins de hardware/red (`plugin-esp32-arduino`, `plugin-mqtt`, `plugin-bluetooth-generic`) — no se registran solos en `apps/desktop`, quedan disponibles para quien los necesite sin forzar la dependencia a quien no.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
