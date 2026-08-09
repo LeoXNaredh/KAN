@@ -7,6 +7,7 @@ import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
 import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
 import type { MemoryEntry } from "../../domain/entities/MemoryEntry";
 import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
+import type { SessionContextPort } from "../../domain/ports/SessionContextPort";
 
 class ScriptedAIProvider implements AIProviderPort {
   readonly providerName = "scripted";
@@ -297,5 +298,120 @@ describe("SendMessageUseCase", () => {
     const { conversation } = await useCase.execute({ userMessage: "hola" });
 
     expect(conversation.messages.at(-1)?.content).toBe("ok");
+  });
+
+  function fakeSessionContext(overrides: Partial<SessionContextPort> = {}): SessionContextPort {
+    return {
+      getActiveDevice: async () => undefined,
+      setActiveDevice: async () => {},
+      getActiveProject: async () => undefined,
+      setActiveProject: async () => {},
+      getCurrentTask: async () => undefined,
+      setCurrentTask: async () => {},
+      clear: async () => {},
+      ...overrides,
+    };
+  }
+
+  it("inyecta el contexto de sesión activo en el systemPrompt (ADR-055)", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const sessionContext = fakeSessionContext({
+      getActiveDevice: async () => "ESP32-01",
+      getActiveProject: async () => "Robot autónomo",
+    });
+    const useCase = new SendMessageUseCase(
+      ai,
+      new InMemoryConversationRepository(),
+      undefined,
+      undefined,
+      undefined,
+      sessionContext,
+    );
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(ai.requestsSeen[0].systemPrompt).toContain("Dispositivo activo: ESP32-01.");
+    expect(ai.requestsSeen[0].systemPrompt).toContain("Proyecto activo: Robot autónomo.");
+    expect(ai.requestsSeen[0].systemPrompt).not.toContain("Tarea actual:");
+  });
+
+  it("sin nada fijado en el contexto de sesión, el systemPrompt no menciona 'Contexto de la sesión'", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const useCase = new SendMessageUseCase(
+      ai,
+      new InMemoryConversationRepository(),
+      undefined,
+      undefined,
+      undefined,
+      fakeSessionContext(),
+    );
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(ai.requestsSeen[0].systemPrompt).not.toContain("Contexto de la sesión");
+  });
+
+  it("las tools de contexto de sesión se ofrecen al proveedor de IA cuando hay sessionContext, incluso sin toolProvider", async () => {
+    const ai = new ScriptedAIProvider([{ content: "ok" }]);
+    const useCase = new SendMessageUseCase(
+      ai,
+      new InMemoryConversationRepository(),
+      undefined,
+      undefined,
+      undefined,
+      fakeSessionContext(),
+    );
+
+    await useCase.execute({ userMessage: "hola" });
+
+    const toolNames = ai.requestsSeen[0].tools?.map((t) => t.name);
+    expect(toolNames).toEqual(["kan_set_active_device", "kan_set_active_project", "kan_set_current_task"]);
+  });
+
+  it("kan_set_active_device está disponible y se despacha sin ningún toolProvider configurado (ADR-055)", async () => {
+    const ai = new ScriptedAIProvider([
+      { toolCalls: [{ name: "kan_set_active_device", args: { deviceId: "ESP32-01" } }] },
+      { content: "Listo, tomo nota." },
+    ]);
+    let stored: string | undefined;
+    const sessionContext = fakeSessionContext({
+      setActiveDevice: async (deviceId) => {
+        stored = deviceId;
+      },
+    });
+    const useCase = new SendMessageUseCase(
+      ai,
+      new InMemoryConversationRepository(),
+      undefined,
+      undefined,
+      undefined,
+      sessionContext,
+    );
+
+    const { conversation } = await useCase.execute({ userMessage: "estoy trabajando con el ESP32-01" });
+
+    expect(conversation.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(conversation.messages[2].toolResult).toMatchObject({ name: "kan_set_active_device", success: true });
+    expect(stored).toBe("ESP32-01");
+  });
+
+  it("una llamada a kan_set_current_task nunca pasa por toolProvider.executeTool", async () => {
+    const ai = new ScriptedAIProvider([
+      { toolCalls: [{ name: "kan_set_current_task", args: { task: "calibrar sensor" } }] },
+      { content: "listo" },
+    ]);
+    const toolProvider = new FakeToolProvider([], { success: true });
+    const useCase = new SendMessageUseCase(
+      ai,
+      new InMemoryConversationRepository(),
+      toolProvider,
+      undefined,
+      undefined,
+      fakeSessionContext(),
+    );
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(toolProvider.executedCalls).toEqual([]);
   });
 });

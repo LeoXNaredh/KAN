@@ -2,7 +2,7 @@
 
 El Core (según el README) es responsable únicamente de: comprender lenguaje natural, gestionar conversaciones, memoria, contexto, usuarios, permisos, dispositivos, plugins, modelos de IA, coordinar tareas y orquestar agentes. Todo lo demás es plugin. Aquí se detalla cada módulo como caso de uso de `packages/core`.
 
-> **Estado real (v0.1):** los módulos 1.9 (Task Coordinator) y 1.10 (Agent Orchestrator) descritos abajo existen hoy **fusionados** en una sola clase, `SendMessageUseCase` (`packages/core/src/application/use-cases/SendMessageUseCase.ts`), con function-calling real (no solo diseñado) contra Gemini a través del Gateway (`docs/12`). Los módulos 1.1 (Conversation Manager), 1.2 (Memory), 1.3 (Context), 1.4 (User), 1.5 (Permission por usuario), 1.6/1.7 (Device/Plugin Manager del lado Cloud) siguen sin implementarse como piezas separadas — `SendMessageUseCase` cubre hoy una versión mínima de conversación + orquestación, sin memoria de largo plazo ni gestión de usuarios. La separación en módulos independientes descrita abajo sigue siendo la dirección correcta para cuando exista Memory/Auth reales, no un diseño abandonado.
+> **Estado real (v0.1):** los módulos 1.9 (Task Coordinator) y 1.10 (Agent Orchestrator) descritos abajo existen hoy **fusionados** en una sola clase, `SendMessageUseCase` (`packages/core/src/application/use-cases/SendMessageUseCase.ts`), con function-calling real (no solo diseñado) contra Gemini a través del Gateway (`docs/12`). Los módulos 1.1 (Conversation Manager), 1.2 (Memory), 1.4 (User), 1.5 (Permission por usuario), 1.6/1.7 (Device/Plugin Manager del lado Cloud) siguen sin implementarse como piezas separadas — `SendMessageUseCase` cubre hoy una versión mínima de conversación + orquestación, sin memoria de largo plazo ni gestión de usuarios. 1.3 (Context) sí tiene una implementación real desde ADR-055 — ver la nota en esa sección. La separación en módulos independientes descrita abajo sigue siendo la dirección correcta para cuando exista Memory/Auth reales, no un diseño abandonado.
 
 ## 1. Módulos y sus responsabilidades
 
@@ -17,8 +17,9 @@ El Core (según el README) es responsable únicamente de: comprender lenguaje na
 - Expone una interfaz de recuperación (`recallRelevant(query, userId)`) consumida por el Agent Orchestrator para enriquecer el prompt — es la base del RAG interno (ver doc 05).
 
 ### 1.3 Context Manager
-- Mantiene el "estado de la sesión": qué dispositivos están conectados ahora mismo, qué plugin está activo, qué tarea está en curso.
+- Mantiene el "estado de la sesión": qué dispositivo/proyecto está activo, qué tarea está en curso.
 - Distinto de Memory: Context es efímero y operacional; Memory es persistente y de conocimiento.
+- **Implementado (ADR-055):** `SessionContextPort` (`packages/core/src/domain/ports/SessionContextPort.ts`) + `SessionContext` (`.../application/SessionContext.ts`, en memoria por usuario, no persistido a propósito — ver el ADR). Se inyecta en `SendMessageUseCase` como dependencia opcional; se lee en `buildSystemPrompt()` y se escribe vía las tools internas `kan_set_active_device`/`kan_set_active_project`/`kan_set_current_task` (`sessionContextTools.ts`), mismo patrón que las tools de memoria (ADR-035). Alcance real más chico que lo descrito arriba: no rastrea automáticamente "qué dispositivos están conectados ahora mismo" (eso ya lo cubre `AgentRegistry` del lado Gateway, docs/12 §2) — es explícitamente lo que el usuario/KAN fijan como foco de la conversación, no un espejo del estado de conexión real.
 
 ### 1.4 User Manager
 - Identidad, autenticación (Supabase Auth), perfil, preferencias, multi-tenant desde el día uno (workspace/organización) aunque el MVP solo tenga un usuario por cuenta — evita una migración de esquema dolorosa en Fase 2.

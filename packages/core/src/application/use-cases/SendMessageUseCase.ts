@@ -6,7 +6,9 @@ import type { ConversationRepositoryPort } from "../../domain/ports/Conversation
 import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
 import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
 import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
+import type { SessionContextPort } from "../../domain/ports/SessionContextPort";
 import { MEMORY_TOOL_DESCRIPTORS, isMemoryToolName, executeMemoryTool } from "../memoryTools";
+import { SESSION_CONTEXT_TOOL_DESCRIPTORS, isSessionContextToolName, executeSessionContextTool } from "../sessionContextTools";
 
 const SYSTEM_PROMPT =
   "Eres KAN, un asistente de IA capaz de controlar dispositivos físicos a través de plugins " +
@@ -60,6 +62,7 @@ export class SendMessageUseCase {
     private readonly toolProvider?: ToolProviderPort,
     private readonly memoryContext?: MemoryContextPort,
     private readonly personalityContext?: PersonalityContextPort,
+    private readonly sessionContext?: SessionContextPort,
   ) {}
 
   async execute(input: SendMessageInput, onEvent?: (event: ChatStreamEvent) => void): Promise<SendMessageOutput> {
@@ -83,7 +86,7 @@ export class SendMessageUseCase {
         tools,
       });
 
-      if (response.toolCalls?.length && (this.toolProvider || this.memoryContext)) {
+      if (response.toolCalls?.length && (this.toolProvider || this.memoryContext || this.sessionContext)) {
         for (const call of response.toolCalls) {
           const assistantMessage: Message = {
             id: randomUUID(),
@@ -95,14 +98,17 @@ export class SendMessageUseCase {
           conversation = appendMessage(conversation, assistantMessage);
           onEvent?.({ type: "tool_call", name: call.name, args: call.args });
 
-          // Memoria (ADR-035) nunca pasa por toolProvider/Gateway — se
-          // despacha acá mismo, siempre que haya memoryContext.
+          // Memoria (ADR-035) y contexto de sesión (ADR-055) nunca pasan por
+          // toolProvider/Gateway — se despachan acá mismo, siempre que haya
+          // el puerto correspondiente.
           const result =
             isMemoryToolName(call.name) && this.memoryContext
               ? await executeMemoryTool(this.memoryContext, call.name, call.args)
-              : this.toolProvider
-                ? await this.toolProvider.executeTool(call.name, call.args)
-                : { success: false as const, error: `Herramienta no disponible: ${call.name}` };
+              : isSessionContextToolName(call.name) && this.sessionContext
+                ? await executeSessionContextTool(this.sessionContext, call.name, call.args)
+                : this.toolProvider
+                  ? await this.toolProvider.executeTool(call.name, call.args)
+                  : { success: false as const, error: `Herramienta no disponible: ${call.name}` };
           onEvent?.({
             type: "tool_result",
             name: call.name,
@@ -150,15 +156,17 @@ export class SendMessageUseCase {
   }
 
   /**
-   * Tools del Gateway (si hay) + tools internas de memoria (ADR-035, siempre
-   * que haya memoryContext, sin depender del Gateway) — `undefined` si el
-   * resultado queda vacío, para no cambiar el request cuando no hay nada
-   * que ofrecer (mismo comportamiento que antes de este método existir).
+   * Tools del Gateway (si hay) + tools internas de memoria (ADR-035) +
+   * tools internas de contexto de sesión (ADR-055) — cada una solo si el
+   * puerto correspondiente está inyectado, sin depender del Gateway.
+   * `undefined` si el resultado queda vacío, para no cambiar el request
+   * cuando no hay nada que ofrecer (mismo comportamiento que antes).
    */
   private async buildTools() {
     const gatewayTools = (await this.safeListTools()) ?? [];
     const memoryTools = this.memoryContext ? MEMORY_TOOL_DESCRIPTORS : [];
-    const tools = [...gatewayTools, ...memoryTools];
+    const sessionContextTools = this.sessionContext ? SESSION_CONTEXT_TOOL_DESCRIPTORS : [];
+    const tools = [...gatewayTools, ...memoryTools, ...sessionContextTools];
     return tools.length ? tools : undefined;
   }
 
@@ -200,7 +208,40 @@ export class SendMessageUseCase {
       }
     }
 
+    if (this.sessionContext) {
+      try {
+        const contextLine = await this.describeSessionContext();
+        if (contextLine) prompt = `${prompt}\n\n${contextLine}`;
+      } catch {
+        // El store en memoria no debería fallar nunca, pero el mismo
+        // criterio best-effort del resto de este método aplica igual.
+      }
+    }
+
     return prompt;
+  }
+
+  /**
+   * ADR-055: arma "Dispositivo activo: X. Proyecto activo: Y. Tarea
+   * actual: Z." con solo los campos que efectivamente tengan valor —
+   * `undefined` (no un string vacío) si no hay ninguno, para no meter una
+   * línea vacía en el systemPrompt cuando el usuario todavía no fijó nada.
+   */
+  private async describeSessionContext(): Promise<string | undefined> {
+    if (!this.sessionContext) return undefined;
+
+    const [activeDevice, activeProject, currentTask] = await Promise.all([
+      this.sessionContext.getActiveDevice(),
+      this.sessionContext.getActiveProject(),
+      this.sessionContext.getCurrentTask(),
+    ]);
+
+    const parts: string[] = [];
+    if (activeDevice) parts.push(`Dispositivo activo: ${activeDevice}.`);
+    if (activeProject) parts.push(`Proyecto activo: ${activeProject}.`);
+    if (currentTask) parts.push(`Tarea actual: ${currentTask}.`);
+
+    return parts.length ? `Contexto de la sesión actual — ${parts.join(" ")}` : undefined;
   }
 }
 

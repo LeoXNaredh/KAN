@@ -2,6 +2,7 @@ import {
   GetCurrentUserUseCase,
   InMemoryConversationRepository,
   SendMessageUseCase,
+  SessionContext,
   UserScopedMemoryContext,
   UserScopedPersonalityContext,
   type AIProviderPort,
@@ -59,6 +60,17 @@ export async function buildSendMessageUseCase(
   const conversationRepository = new SupabaseConversationRepository(client, user.userId);
   const memoryContext = new UserScopedMemoryContext(new SupabaseMemoryStore(client), user.userId);
   const personalityContext = new UserScopedPersonalityContext(new SupabaseUserPreferencesStore(client), user.userId);
+  // ADR-055: en memoria, no Supabase — "en qué está trabajando el usuario
+  // ahora" no necesita sobrevivir un restart del proceso, a diferencia de
+  // memoryContext/personalityContext (esos sí son datos de largo plazo).
+  const sessionContext = new SessionContext(user.userId);
 
-  return new SendMessageUseCase(aiProvider, conversationRepository, toolProvider, memoryContext, personalityContext);
+  return new SendMessageUseCase(
+    aiProvider,
+    conversationRepository,
+    toolProvider,
+    memoryContext,
+    personalityContext,
+    sessionContext,
+  );
 }
