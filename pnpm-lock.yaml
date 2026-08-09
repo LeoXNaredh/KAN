@@ -378,6 +378,9 @@ importers:
 
   packages/gateway-core:
     dependencies:
+      '@google/genai':
+        specifier: ^2.16.0
+        version: 2.16.0(supports-color@8.1.1)
       '@kan/core':
         specifier: workspace:*
         version: link:../core

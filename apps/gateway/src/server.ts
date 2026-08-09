@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
-import { SupabaseAuditStore, SupabaseAuthAdapter, SupabasePairingStore, SupabasePushTokenStore } from "@kan/supabase-adapter";
+import {
+  SupabaseAuditStore,
+  SupabaseAuthAdapter,
+  SupabaseMemoryStore,
+  SupabasePairingStore,
+  SupabasePushTokenStore,
+} from "@kan/supabase-adapter";
 import {
   Gateway,
   GatewayBus,
@@ -15,6 +21,8 @@ import {
   InMemoryEdgeTicketStore,
   LiveVoiceSessionStore,
   GeminiLiveProxy,
+  GeminiDeviceResearchAdapter,
+  DeviceEnrichmentService,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
 import { createPairingRoutes } from "./http/pairingRoutes";
@@ -97,7 +105,29 @@ if (!GEMINI_API_KEY) {
   logger.warn("[gateway] GEMINI_API_KEY no configurada — la voz en tiempo real (ADR-044) queda deshabilitada.");
 }
 
-const gateway = new Gateway({ bus, connectionManager, auditStore, scheduler, notificationService });
+// Mismo cliente service_role otra vez — memoria multi-tenant, misma tabla
+// que ya usa /configuracion (ADR-053). Siempre instanciado (barato, sin
+// dependencia externa); lo que sí depende de GEMINI_API_KEY es quién la
+// escribe automáticamente.
+const memoryStore = new SupabaseMemoryStore(supabaseClient);
+// Investigación automática de dispositivos nuevos (ADR-053) — mismo
+// criterio condicional que geminiLiveProxy arriba: sin GEMINI_API_KEY,
+// el Gateway sigue funcionando exactamente igual, solo sin esto.
+const deviceResearchAdapter = GEMINI_API_KEY
+  ? new GeminiDeviceResearchAdapter({ apiKey: GEMINI_API_KEY }, logger)
+  : undefined;
+const deviceEnrichmentService = deviceResearchAdapter
+  ? new DeviceEnrichmentService(memoryStore, deviceResearchAdapter, notificationService, bus, logger)
+  : undefined;
+
+const gateway = new Gateway({
+  bus,
+  connectionManager,
+  auditStore,
+  scheduler,
+  notificationService,
+  deviceEnrichmentService,
+});
 
 bus.on("agent.connected", ({ edgeAgentId }) => logger.info(`[gateway] Edge Agent conectado: ${edgeAgentId}`));
 bus.on("agent.disconnected", ({ edgeAgentId }) => logger.info(`[gateway] Edge Agent desconectado: ${edgeAgentId}`));

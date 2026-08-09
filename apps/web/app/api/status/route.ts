@@ -44,6 +44,8 @@ function translateAuditEntry(entry: RawAuditEntry): string {
       return `Se disparó el job programado "${entry.subject}"`;
     case "job.notification":
       return `Notificación de automatización: "${entry.subject}"`;
+    case "device.enriched":
+      return `Investigué tu dispositivo "${entry.subject}"`;
     default:
       return `${entry.action}: ${entry.subject}`;
   }

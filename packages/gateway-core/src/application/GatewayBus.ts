@@ -16,6 +16,8 @@ export interface GatewayEvents {
   "job.fired": { jobId: string; capabilityRef: string };
   "job.step_failed": { jobId: string; capabilityRef: string; error: string };
   "job.notification": { jobId: string; title: string };
+  /** Investigación automática de un tipo de dispositivo nuevo (ADR-053). */
+  "device.enriched": { ownerId: string; deviceKind: string; summary: string; deviceNames: string[]; sources?: string[] };
 }
 
 /** Mismo patrón que EdgeAgentBus (packages/edge-agent-core) — docs/12 §7. */

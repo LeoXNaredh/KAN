@@ -4,6 +4,7 @@ import type { AuditStorePort } from "./domain/ports/AuditStorePort";
 import type { SchedulerPort } from "./domain/ports/SchedulerPort";
 import type { NotificationServicePort } from "./domain/ports/NotificationServicePort";
 import type { GatewayBus } from "./application/GatewayBus";
+import type { DeviceEnrichmentService } from "./application/DeviceEnrichmentService";
 import { AgentRegistry } from "./application/AgentRegistry";
 import { GlobalCapabilityRegistry } from "./application/GlobalCapabilityRegistry";
 import { TaskOrchestrator } from "./application/TaskOrchestrator";
@@ -20,6 +21,8 @@ export interface GatewayDeps {
   auditStore: AuditStorePort;
   scheduler: SchedulerPort;
   notificationService: NotificationServicePort;
+  /** Investigación automática de dispositivos nuevos (ADR-053) — ausente si no hay GEMINI_API_KEY configurada, mismo criterio que geminiLiveProxy en server.ts. */
+  deviceEnrichmentService?: DeviceEnrichmentService;
 }
 
 /**
@@ -60,6 +63,21 @@ export class Gateway {
   }
 
   bootstrap(): void {
+    // Mismo criterio que job.fired/job.notification (ver el callback del
+    // scheduler más abajo): quien dispara el evento (DeviceEnrichmentService)
+    // nunca conoce AuditService directo — evitaría una dependencia circular,
+    // porque AuditService lo construye el propio Gateway en su constructor,
+    // antes de que DeviceEnrichmentService pueda existir.
+    this.bus.on("device.enriched", ({ ownerId, deviceKind, deviceNames, sources }) => {
+      this.auditService.record({
+        actor: "system",
+        action: "device.enriched",
+        subject: deviceKind,
+        userId: ownerId,
+        metadata: { deviceNames, sources },
+      });
+    });
+
     this.deps.connectionManager.onAgentConnected((info) => {
       // upsert() registra la identidad/capacidades aprendidas del hello;
       // markOnline() es la única responsable de status/lastSeenAt (hallazgo
@@ -78,6 +96,14 @@ export class Gateway {
       this.agentRegistry.upsert(record);
       this.agentRegistry.markOnline(info.edgeAgentId);
       this.capabilityRegistry.sync(info.edgeAgentId, info.hello.capabilities);
+
+      // Nunca bloquea la conexión — enrichIfNew() corre en background y ya
+      // absorbe sus propios errores (ADR-053). Sin ownerId (agente todavía
+      // no vinculado), no hace nada.
+      this.deps.deviceEnrichmentService?.enrichIfNew(
+        info.ownerId,
+        record.devices.map((device) => ({ kind: device.kind, name: device.name })),
+      );
     });
 
     this.deps.connectionManager.onAgentDisconnected((edgeAgentId) => {

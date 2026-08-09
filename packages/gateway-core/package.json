@@ -11,6 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@google/genai": "^2.16.0",
     "@kan/core": "workspace:*",
     "@kan/plugin-contract": "workspace:*",
     "node-cron": "^3.0.3",

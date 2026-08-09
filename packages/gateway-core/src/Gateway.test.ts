@@ -413,6 +413,25 @@ describe("Gateway (integración, transporte simulado)", () => {
     });
   });
 
+  it("device.enriched (ADR-053) — Gateway graba la auditoría al recibir el evento del bus, sin conocer a DeviceEnrichmentService directo", async () => {
+    const { auditStore, bus } = buildGateway();
+
+    bus.emit("device.enriched", {
+      ownerId: "user-1",
+      deviceKind: "esp32-arduino",
+      summary: "ESP32-WROOM-32: microcontrolador WiFi/BLE, 3.3V.",
+      deviceNames: ["ESP32 (COM3)"],
+      sources: ["https://example.com/esp32"],
+    });
+
+    expect(auditStore.entries.find((entry) => entry.action === "device.enriched")).toMatchObject({
+      actor: "system",
+      subject: "esp32-arduino",
+      userId: "user-1",
+      metadata: { deviceNames: ["ESP32 (COM3)"], sources: ["https://example.com/esp32"] },
+    });
+  });
+
   it("la notificación de un job con createdBy se manda a ese usuario, no a 'system' (P7)", async () => {
     const { gateway, connectionManager, scheduler, notificationService } = buildGateway();
     connectionManager.simulateAgentConnect(helloFor(randomUUID()));
