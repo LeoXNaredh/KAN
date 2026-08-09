@@ -96,6 +96,19 @@ export class EdgeAgent {
     this.pluginManager.reject(pluginId);
   }
 
+  /**
+   * Vuelve a correr discover() en todos los plugins habilitados — misma
+   * línea que ya corre una vez en `bootstrap()`, expuesta como método
+   * público para cuando la config de un plugin cambió en caliente (ej.
+   * sincronizar `KAN_*` nuevos desde /configuracion, ver `apps/desktop`) y
+   * hace falta que lo tome sin reiniciar el proceso. Mismo patrón que
+   * `approvePluginPermissions()`, que ya hace este mismo llamado para un
+   * driver recién aprobado.
+   */
+  async rediscoverDevices(): Promise<void> {
+    await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
+  }
+
   async bootstrap(): Promise<void> {
     await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
 

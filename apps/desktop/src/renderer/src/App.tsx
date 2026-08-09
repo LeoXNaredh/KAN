@@ -323,6 +323,7 @@ function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => v
   const [code, setCode] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [syncState, setSyncState] = useState<"idle" | "syncing" | "done" | "error">("idle");
 
   async function submit() {
     setPending(true);
@@ -336,10 +337,26 @@ function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => v
     }
   }
 
+  async function sync() {
+    setSyncState("syncing");
+    const result = await window.kan.syncPluginConfig();
+    setSyncState(result.ok ? "done" : "error");
+  }
+
   if (paired) {
     return (
-      <div className="rounded-lg border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">
-        Vinculado con tu cuenta.
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">
+        <span>Vinculado con tu cuenta.</span>
+        <button
+          className="btn"
+          disabled={syncState === "syncing"}
+          onClick={sync}
+          title="Trae la config de plugins que guardaste en /configuracion, sin reiniciar la app"
+        >
+          {syncState === "syncing" ? "Sincronizando…" : "Sincronizar configuración"}
+        </button>
+        {syncState === "done" && <span className="text-xs text-emerald-400">Listo.</span>}
+        {syncState === "error" && <span className="text-xs text-red-400">No se pudo sincronizar.</span>}
       </div>
     );
   }

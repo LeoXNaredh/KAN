@@ -51,12 +51,35 @@ function getOrCreateEdgeAgentId(configStore: JsonFileConfigStore): string {
   return id;
 }
 
+/**
+ * Config de plugins guardada desde /configuracion (apps/web), persistida en
+ * Supabase y traída acá al aparear/sincronizar (ver `pairAgent()`/
+ * `syncPluginConfig()`) — se aplica a `process.env` ANTES de registrar
+ * ningún plugin, para que cada uno la lea exactamente igual que si viniera
+ * de `.env.local` (`process.env.KAN_SSH_HOSTS`, etc.). Ningún plugin cambia:
+ * siguen sin saber que esto existe. `.env.local`, si está presente, ya
+ * corrió antes que este proceso arranque (dotenv/electron-vite) — esto
+ * completa lo que falte, no lo pisa.
+ */
+function applyPluginConfig(configStore: JsonFileConfigStore, options: { overwrite?: boolean } = {}): void {
+  const pluginConfig = configStore.get<Record<string, string>>("pluginConfig");
+  if (!pluginConfig) return;
+  for (const [key, value] of Object.entries(pluginConfig)) {
+    // Al arrancar: `.env.local` (si está) ya corrió antes que este módulo,
+    // así que gana si ya fijó la misma variable — esto solo completa lo que
+    // falte. Al sincronizar a mano (`options.overwrite`), el usuario pidió
+    // explícitamente traer lo último de la nube, así que sí pisa.
+    if (options.overwrite || process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
 async function createEdgeAgent(): Promise<EdgeAgent> {
   const userDataDir = app.getPath("userData");
   const bus = new EdgeAgentBus();
   const logger = new FileAndConsoleLogger(join(userDataDir, "logs", "edge-agent.log"), bus);
   configStore = new JsonFileConfigStore(join(userDataDir, "config.json"));
   edgeAgentId = getOrCreateEdgeAgentId(configStore);
+  applyPluginConfig(configStore);
 
   // Sin servidor de Core todavía (ADR-009): esto reintentará indefinidamente
   // con backoff. Es el comportamiento esperado (Modo Offline, requisito 14).
@@ -227,6 +250,7 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle("kan:getPairingStatus", () => ({ paired: Boolean(configStore?.get<string>("pairingToken")) }));
   ipcMain.handle("kan:pair", (_event, code: string) => pairAgent(code));
+  ipcMain.handle("kan:syncPluginConfig", () => syncPluginConfig());
   ipcMain.handle("kan:listPendingPluginPermissions", () => edgeAgent?.listPendingPluginPermissions() ?? []);
   ipcMain.handle("kan:approvePluginPermissions", (_event, pluginId: string) => {
     if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
@@ -257,17 +281,61 @@ async function pairAgent(code: string): Promise<{ ok: true } | { ok: false; erro
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pairingCode: code, edgeAgentId }),
     });
-    const body = (await response.json().catch(() => ({}))) as { error?: string; secret?: string };
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      secret?: string;
+      pluginConfig?: Record<string, string>;
+    };
     if (!response.ok) {
       return { ok: false, error: body.error ?? "No se pudo vincular." };
     }
 
     configStore.set("pairingToken", body.secret);
+    // Si el usuario ya había guardado config de plugins en /configuracion
+    // antes de aparear, la trae de una — sin esto, quedaría esperando a
+    // "Sincronizar configuración" a mano después del primer arranque.
+    if (body.pluginConfig) configStore.set("pluginConfig", body.pluginConfig);
     // El hello ya enviado en esta sesión no lleva el pairingToken — más
     // simple y seguro reiniciar que mutar en caliente la conexión ya
     // establecida. El próximo arranque lo manda desde el primer hello.
     app.relaunch();
     app.exit(0);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "No se pudo contactar al Gateway." };
+  }
+}
+
+/**
+ * Trae la config de plugins más reciente desde el Gateway (sin re-aparear)
+ * y la aplica en caliente — botón "Sincronizar configuración" en el
+ * renderer. Autenticado con el mismo `pairingToken` que ya usa el hello por
+ * WS, mandado por header (nunca en la URL).
+ */
+async function syncPluginConfig(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!configStore || !edgeAgentId) {
+    return { ok: false, error: "El Edge Agent todavía no terminó de arrancar." };
+  }
+  const pairingToken = configStore.get<string>("pairingToken");
+  if (!pairingToken) {
+    return { ok: false, error: "Todavía no vinculaste este Edge Agent con tu cuenta." };
+  }
+
+  try {
+    const gatewayHttpUrl = process.env.KAN_GATEWAY_HTTP_URL ?? "http://localhost:8787";
+    const response = await fetch(`${gatewayHttpUrl}/v1/pairing/config`, {
+      headers: { "X-Pairing-Secret": pairingToken, "X-Edge-Agent-Id": edgeAgentId },
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string; pluginConfig?: Record<string, string> };
+    if (!response.ok) {
+      return { ok: false, error: body.error ?? "No se pudo sincronizar." };
+    }
+
+    configStore.set("pluginConfig", body.pluginConfig ?? {});
+    applyPluginConfig(configStore, { overwrite: true });
+    // Sin reiniciar el proceso: los plugins ya registrados vuelven a
+    // descubrir con el `process.env` recién actualizado.
+    await edgeAgent?.rediscoverDevices();
     return { ok: true };
   } catch {
     return { ok: false, error: "No se pudo contactar al Gateway." };

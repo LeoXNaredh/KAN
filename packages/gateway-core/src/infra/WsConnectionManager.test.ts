@@ -24,6 +24,7 @@ function fakePairingPort(resolveOwner: PairingPort["resolveOwner"]): PairingPort
     generateCode: async () => ({ code: "", expiresAt: "" }),
     claim: async () => undefined,
     resolveOwner,
+    getPluginConfig: async () => undefined,
   };
 }
 

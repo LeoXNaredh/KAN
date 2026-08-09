@@ -20,6 +20,8 @@ const kanApi = {
   getPairingStatus: (): Promise<{ paired: boolean }> => ipcRenderer.invoke("kan:getPairingStatus"),
   pairAgent: (code: string): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke("kan:pair", code),
+  syncPluginConfig: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("kan:syncPluginConfig"),
   listPendingPluginPermissions: () => ipcRenderer.invoke("kan:listPendingPluginPermissions"),
   approvePluginPermissions: (pluginId: string) => ipcRenderer.invoke("kan:approvePluginPermissions", pluginId),
   rejectPluginPermissions: (pluginId: string) => ipcRenderer.invoke("kan:rejectPluginPermissions", pluginId),

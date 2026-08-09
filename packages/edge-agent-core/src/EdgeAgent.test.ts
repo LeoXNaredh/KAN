@@ -257,3 +257,61 @@ describe("EdgeAgent — gate de permisos de plugins deny-by-default (P8, ADR-041
     );
   });
 });
+
+describe("EdgeAgent.rediscoverDevices() — sincronizar config de plugin sin reiniciar el proceso", () => {
+  class MutableFakeDriver extends KanDeviceDriverPlugin {
+    readonly kind = "mutable-fake";
+    readonly manifest: PluginManifest = {
+      id: "mutable-fake-driver",
+      version: "0.0.1",
+      displayName: "Mutable Fake Driver",
+      kind: "device-driver",
+      runtime: "in-process-ts",
+      permissions: { devices: ["mutable-fake"], network: false, filesystem: [] },
+    };
+    // Simula `process.env.KAN_*` cambiando entre llamadas a discover() —
+    // exactamente el escenario real: `apps/desktop` sincroniza config nueva
+    // y llama a rediscoverDevices() sin reiniciar el proceso Electron.
+    deviceIds: string[] = ["device-a"];
+
+    async discover(): Promise<DeviceDescriptor[]> {
+      return this.deviceIds.map((id) => ({ id, name: id, kind: this.kind }));
+    }
+    async connect(): Promise<void> {}
+    async disconnect(): Promise<void> {}
+    getCapabilities(): CapabilityDescriptor[] {
+      return [];
+    }
+    async invoke(): Promise<CapabilityResult> {
+      return { success: true };
+    }
+  }
+
+  it("vuelve a correr discover() en los plugins ya habilitados y agrega los dispositivos nuevos que aparezcan", async () => {
+    const driver = new MutableFakeDriver();
+    const edgeAgent = new EdgeAgent({
+      edgeAgentId: "edge-1",
+      agentVersion: "0.0.1",
+      bus: new EdgeAgentBus(),
+      logger: createLogger(),
+      configStore: createInMemoryConfigStore(),
+      coreConnection: createFakeCoreConnection(),
+      updater: createNoopUpdater(),
+    });
+    await edgeAgent.registerPlugin(driver);
+    await edgeAgent.bootstrap();
+    await edgeAgent.approvePluginPermissions("mutable-fake-driver");
+
+    expect(edgeAgent.listDevices().map((d) => d.id)).toEqual(["device-a"]);
+
+    driver.deviceIds = ["device-a", "device-b"];
+    await edgeAgent.rediscoverDevices();
+
+    expect(
+      edgeAgent
+        .listDevices()
+        .map((d) => d.id)
+        .sort(),
+    ).toEqual(["device-a", "device-b"]);
+  });
+});

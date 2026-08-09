@@ -91,4 +91,60 @@ describe("SupabasePairingStore", () => {
 
     await expect(store.resolveOwner("secreto", "agent-1")).rejects.toThrow("db caída");
   });
+
+  it("claim() adjunta la config de plugins ya guardada en user_preferences, sin las keys que no son plugin_config:*", async () => {
+    const client = createFakeFromClient({
+      edge_agent_pairings: { data: { user_id: "user-1" }, error: null },
+      user_preferences: {
+        data: [
+          { key: "plugin_config:KAN_SSH_HOSTS", value: "casa|192.168.1.20:22|kan|password|x" },
+          { key: "plugin_config:KAN_MQTT_BROKERS", value: "mqtt://192.168.1.10:1883" },
+        ],
+        error: null,
+      },
+    });
+    const store = new SupabasePairingStore(client);
+
+    const result = await store.claim("ABCD1234", "agent-1");
+
+    expect(result?.pluginConfig).toEqual({
+      KAN_SSH_HOSTS: "casa|192.168.1.20:22|kan|password|x",
+      KAN_MQTT_BROKERS: "mqtt://192.168.1.10:1883",
+    });
+  });
+
+  it("claim() sigue devolviendo ownerId/secret aunque falle la lectura de plugin config (best-effort)", async () => {
+    const client = createFakeFromClient({
+      edge_agent_pairings: { data: { user_id: "user-1" }, error: null },
+      user_preferences: { data: null, error: { message: "db caída" } },
+    });
+    const store = new SupabasePairingStore(client);
+
+    const result = await store.claim("ABCD1234", "agent-1");
+
+    expect(result?.ownerId).toBe("user-1");
+    expect(result?.pluginConfig).toBeUndefined();
+  });
+
+  it("getPluginConfig() devuelve la config si el secreto resuelve a un owner", async () => {
+    const client = createFakeFromClient({
+      edge_agent_pairings: { data: { user_id: "user-1" }, error: null },
+      user_preferences: {
+        data: [{ key: "plugin_config:KAN_SSH_HOSTS", value: "casa|192.168.1.20:22|kan|password|x" }],
+        error: null,
+      },
+    });
+    const store = new SupabasePairingStore(client);
+
+    expect(await store.getPluginConfig("secreto-valido", "agent-1")).toEqual({
+      KAN_SSH_HOSTS: "casa|192.168.1.20:22|kan|password|x",
+    });
+  });
+
+  it("getPluginConfig() devuelve undefined si el secreto no resuelve a ningún pairing", async () => {
+    const client = createFakeFromClient({ edge_agent_pairings: { data: null, error: null } });
+    const store = new SupabasePairingStore(client);
+
+    expect(await store.getPluginConfig("secreto-invalido", "agent-1")).toBeUndefined();
+  });
 });

@@ -1,15 +1,18 @@
-import { User, Brain, Sparkles, Volume2 } from "lucide-react";
+import { User, Brain, Sparkles, Volume2, Puzzle } from "lucide-react";
 import { GEMINI_TTS_VOICES, DEFAULT_VOICE } from "@kan/voice-abstraction";
 import { Card } from "@/components/ui/Card";
 import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import { MemoryManager } from "@/components/configuracion/MemoryManager";
+import { PluginConfigManager } from "@/components/configuracion/PluginConfigManager";
 import { buildAuthUseCases } from "@/lib/auth/composition";
 import { updateDisplayNameAction } from "@/lib/auth/actions";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 import { buildMemoryUseCases } from "@/lib/memory/composition";
 import { buildPreferencesUseCases } from "@/lib/preferences/composition";
 import { updatePersonalityAction, updateVoiceAction } from "@/lib/preferences/actions";
+
+const PLUGIN_CONFIG_KEY_PREFIX = "plugin_config:";
 
 export default async function ConfiguracionPage({
   searchParams,
@@ -25,6 +28,16 @@ export default async function ConfiguracionPage({
   const personality = typeof personalityPreference === "string" ? personalityPreference : "";
   const voicePreference = preferences.find((preference) => preference.key === "ttsVoice")?.value;
   const voice = typeof voicePreference === "string" ? voicePreference : DEFAULT_VOICE;
+  // Mismo `preferences` ya cargado arriba — sin fetch extra. `plugin_config:*`
+  // conviven con el resto de las preferencias en la misma tabla
+  // (user_preferences), namespaced por prefijo (ver
+  // apps/web/lib/pluginConfig/actions.ts y SupabasePairingStore del Gateway,
+  // que lee este mismo prefijo al aparear/sincronizar el Edge Agent).
+  const pluginConfigValues = Object.fromEntries(
+    preferences
+      .filter((preference) => preference.key.startsWith(PLUGIN_CONFIG_KEY_PREFIX))
+      .map((preference) => [preference.key.slice(PLUGIN_CONFIG_KEY_PREFIX.length), String(preference.value ?? "")]),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -136,10 +149,22 @@ export default async function ConfiguracionPage({
         </Card>
       )}
 
-      <PlaceholderPage
-        title="Proveedores de IA y seguridad"
-        description="Elegir proveedor de IA, notificaciones y las políticas de tus dispositivos llegan en un incremento futuro."
-      />
+      {user && (
+        <div>
+          <h2 className="mb-1 flex items-center gap-2 text-sm font-medium text-ink-muted">
+            <Puzzle className="h-4 w-4" aria-hidden="true" />
+            Plugins de hardware
+          </h2>
+          <p className="mb-3 text-xs text-ink-faint">
+            Conexiones de cada plugin (hosts SSH, brokers MQTT, targets Modbus, etc.) — sin editar ningún archivo a
+            mano. Un Edge Agent ya vinculado las trae al aparear, o con &quot;Sincronizar configuración&quot; en la
+            app de escritorio.
+          </p>
+          <PluginConfigManager values={pluginConfigValues} />
+        </div>
+      )}
+
+      <PlaceholderPage title="Proveedores de IA" description="Elegir proveedor de IA y notificaciones llega en un incremento futuro." />
     </div>
   );
 }

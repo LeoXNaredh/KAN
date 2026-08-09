@@ -4,11 +4,15 @@ import request from "supertest";
 import type { PairingPort } from "@kan/core";
 import { createPairingRoutes } from "./pairingRoutes";
 
-function fakePairingPort(claim: PairingPort["claim"]): PairingPort {
+function fakePairingPort(
+  claim: PairingPort["claim"],
+  getPluginConfig: PairingPort["getPluginConfig"] = async () => undefined,
+): PairingPort {
   return {
     generateCode: async () => ({ code: "", expiresAt: "" }),
     claim,
     resolveOwner: async () => undefined,
+    getPluginConfig,
   };
 }
 
@@ -56,5 +60,56 @@ describe("POST /v1/pairing/claim", () => {
 
     expect(responses.slice(0, 10).every((r) => r.status === 400)).toBe(true);
     expect(responses[10].status).toBe(429);
+  });
+});
+
+describe("GET /v1/pairing/config", () => {
+  it("con un secreto válido, devuelve la config de plugins", async () => {
+    const app = appWith(
+      fakePairingPort(
+        async () => undefined,
+        async () => ({ KAN_SSH_HOSTS: "casa|192.168.1.20:22|kan|password|x" }),
+      ),
+    );
+
+    const response = await request(app)
+      .get("/v1/pairing/config")
+      .set("X-Pairing-Secret", "secreto-largo")
+      .set("X-Edge-Agent-Id", "agent-1");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ pluginConfig: { KAN_SSH_HOSTS: "casa|192.168.1.20:22|kan|password|x" } });
+  });
+
+  it("rechaza con 400 si faltan los headers de secreto/edgeAgentId", async () => {
+    const app = appWith(fakePairingPort(async () => undefined));
+
+    const response = await request(app).get("/v1/pairing/config");
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rechaza con 401 si el secreto no resuelve a ningún pairing", async () => {
+    const app = appWith(fakePairingPort(async () => undefined, async () => undefined));
+
+    const response = await request(app)
+      .get("/v1/pairing/config")
+      .set("X-Pairing-Secret", "secreto-invalido")
+      .set("X-Edge-Agent-Id", "agent-1");
+
+    expect(response.status).toBe(401);
+  });
+
+  it("rechaza con 500 si getPluginConfig() lanza", async () => {
+    const app = appWith(
+      fakePairingPort(async () => undefined, async () => Promise.reject(new Error("db caída"))),
+    );
+
+    const response = await request(app)
+      .get("/v1/pairing/config")
+      .set("X-Pairing-Secret", "secreto")
+      .set("X-Edge-Agent-Id", "agent-1");
+
+    expect(response.status).toBe(500);
   });
 });

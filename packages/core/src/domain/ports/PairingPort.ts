@@ -6,6 +6,13 @@ export interface PairingCode {
 export interface PairingClaim {
   ownerId: string;
   secret: string;
+  /**
+   * Config de plugins (`KAN_SSH_HOSTS`, `KAN_MQTT_BROKERS`, etc.) que el
+   * usuario ya guardó desde /configuracion, si tenía alguna al momento de
+   * aparear. Best-effort — un fallo al leerla nunca hace fallar el pairing
+   * en sí, el Edge Agent puede pedirla de nuevo con `getPluginConfig()`.
+   */
+  pluginConfig?: Record<string, string>;
 }
 
 /**
@@ -30,4 +37,12 @@ export interface PairingPort {
    * que reclamó ese secreto).
    */
   resolveOwner(secret: string, edgeAgentId: string): Promise<string | undefined>;
+  /**
+   * Config de plugins actualizada, para que un Edge Agent ya emparejado
+   * pueda sincronizar sin tener que volver a aparear cada vez que el
+   * usuario edita una conexión desde /configuracion. Misma autenticación
+   * que `resolveOwner` (el secreto de pairing) — `undefined` si no resuelve
+   * a ningún pairing activo.
+   */
+  getPluginConfig(secret: string, edgeAgentId: string): Promise<Record<string, string> | undefined>;
 }

@@ -38,6 +38,9 @@ export class FakeQueryBuilder implements PromiseLike<FakeQueryResult> {
   eq(...args: unknown[]) {
     return this.record("eq", args);
   }
+  like(...args: unknown[]) {
+    return this.record("like", args);
+  }
   is(...args: unknown[]) {
     return this.record("is", args);
   }
