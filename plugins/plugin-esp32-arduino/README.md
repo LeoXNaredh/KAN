@@ -15,13 +15,24 @@ Protocolo de cable completo en [`PROTOCOL.md`](./PROTOCOL.md).
 
 ## Uso
 
-No se registra automáticamente en `apps/desktop` (a diferencia del simulador) para no forzar la dependencia nativa `serialport` en quien solo quiera usar el simulador. Para habilitarlo, en `apps/desktop/src/main/index.ts`:
+Se registra en `apps/desktop/src/main/index.ts` con import dinámico + try/catch (mismo criterio que `@kan/plugin-raspberry-pi`) — un fallo de carga no debe tumbar el resto del Edge Agent para quien no tiene un ESP32/Arduino conectado.
 
-```ts
-import { Esp32ArduinoPlugin } from "@kan/plugin-esp32-arduino";
+## Estado bajo Electron (`apps/desktop`) — binding nativo sin cargar todavía
 
-await agent.registerPlugin(new Esp32ArduinoPlugin());
+`serialport` trae un binding nativo (`.node`) que carga bien bajo el Node del sistema (por eso los tests de este plugin siempre pasan), pero **no bajo el ABI de Node que usa Electron** — confirmado en vivo, no hipotético:
+
 ```
+Error: No native build was found for platform=win32 arch=x64 runtime=electron abi=130 uv=1 libc=glibc node=20.18.3 electron=33.4.11
+```
+
+Se agregó `@electron/rebuild` como devDependency de `apps/desktop` con un script manual — `pnpm --filter desktop rebuild:native` — para quien tenga instalado Visual Studio Build Tools ("Desktop development with C++") y quiera intentar recompilar `serialport` para el ABI de Electron. En esta máquina de desarrollo ese workload no está instalado, y el intento falló con el mismo bloqueo exacto que `@abandonware/noble` en `plugin-bluetooth-generic` (ver ese README):
+
+```
+gyp ERR! find VS You need to install the latest version of Visual Studio
+gyp ERR! find VS including the "Desktop development with C++" workload.
+```
+
+**Deliberadamente no es un `postinstall` automático** — se probó primero como `postinstall`, y un rebuild que falla por Visual Studio ausente rompe `pnpm install` para **todo el monorepo**, no solo este plugin (afecta a cualquier máquina o CI sin ese toolchain). Se revirtió a script manual apenas se confirmó el efecto. Mientras tanto, el plugin se registra igual y no rompe nada — el try/catch de `apps/desktop` lo captura y loguea un warning; sin ESP32 conectado, el resto del Edge Agent (simulador incluido) sigue funcionando normal.
 
 ## Probarlo con hardware real
 

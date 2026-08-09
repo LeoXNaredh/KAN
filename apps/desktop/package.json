@@ -8,7 +8,8 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint . --config ../../eslint.config.mjs",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "rebuild:native": "electron-rebuild -f -w serialport"
   },
   "dependencies": {
     "@kan/edge-agent-core": "workspace:*",
@@ -22,6 +23,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.1.0",

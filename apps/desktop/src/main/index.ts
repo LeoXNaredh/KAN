@@ -88,14 +88,22 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   // Import dinámico + try/catch, mismo criterio que Raspberry Pi: el
   // constructor de Esp32ArduinoPlugin por defecto usa transportes reales
   // (NodeSerialTransport/NodeTcpTransport, @kan/serial-line-transport), y
-  // serialport trae un binding nativo (.node) — no está probado todavía que
-  // cargue bajo el ABI de Node que usa Electron (distinto al Node del
-  // sistema, donde sí carga: lo prueban los tests de este plugin en cada
-  // corrida de `pnpm turbo run test`). Sin ESP32 conectado, discover() no
-  // debe tumbar nada — con KAN_ESP32_PORT sin fijar, igual escanea todos los
-  // puertos seriales disponibles (a diferencia de Raspberry Pi, que no
-  // escanea nada fuera de una Pi real), así que este catch cubre tanto un
-  // fallo de carga del binding como cualquier error de descubrimiento.
+  // serialport trae un binding nativo (.node). Confirmado en vivo (no solo
+  // hipotético, como para Raspberry Pi): carga bien bajo el Node del
+  // sistema (por eso los tests de este plugin siempre pasan), pero NO bajo
+  // el ABI de Node que usa Electron — sin binario prebuildeado para
+  // platform=win32/electron/abi=130 en esta máquina. `pnpm --filter desktop
+  // rebuild:native` (electron-rebuild) puede resolverlo si tenés instalado
+  // Visual Studio Build Tools ("Desktop development with C++") — acá no
+  // está, mismo bloqueo exacto que @abandonware/noble en
+  // plugin-bluetooth-generic (ver ese README). No se automatizó como
+  // postinstall a propósito: un postinstall que falla por Visual Studio
+  // ausente rompe `pnpm install` para todo el monorepo, no solo este
+  // plugin. Sin ESP32 conectado, discover() no debe tumbar nada — con
+  // KAN_ESP32_PORT sin fijar, igual escanea todos los puertos seriales
+  // disponibles (a diferencia de Raspberry Pi, que no escanea nada fuera de
+  // una Pi real), así que este catch cubre tanto un fallo de carga del
+  // binding como cualquier error de descubrimiento.
   try {
     const { Esp32ArduinoPlugin } = await import("@kan/plugin-esp32-arduino");
     await agent.registerPlugin(new Esp32ArduinoPlugin());
