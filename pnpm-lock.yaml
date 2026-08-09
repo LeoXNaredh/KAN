@@ -38,6 +38,9 @@ importers:
       '@kan/plugin-device-simulator':
         specifier: workspace:*
         version: link:../../plugins/plugin-device-simulator
+      '@kan/plugin-esp32-arduino':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-esp32-arduino
       '@kan/plugin-raspberry-pi':
         specifier: workspace:*
         version: link:../../plugins/plugin-raspberry-pi

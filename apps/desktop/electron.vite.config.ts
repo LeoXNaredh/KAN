@@ -10,6 +10,11 @@ const WORKSPACE_PACKAGES = [
   "@kan/plugin-contract",
   "@kan/plugin-sdk-ts",
   "@kan/plugin-device-simulator",
+  "@kan/plugin-esp32-arduino",
+  // Dependencia transitiva de plugin-esp32-arduino — si se deja afuera,
+  // queda igual de externalizada y falla en runtime con el mismo
+  // ERR_UNKNOWN_FILE_EXTENSION que un @kan/* sin listar acá.
+  "@kan/serial-line-transport",
 ];
 
 export default defineConfig({

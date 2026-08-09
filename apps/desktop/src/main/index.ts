@@ -85,6 +85,24 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     logger.warn(`No se pudo cargar el plugin de Raspberry Pi (¿falta compilar una dependencia nativa?): ${error}`);
   }
 
+  // Import dinámico + try/catch, mismo criterio que Raspberry Pi: el
+  // constructor de Esp32ArduinoPlugin por defecto usa transportes reales
+  // (NodeSerialTransport/NodeTcpTransport, @kan/serial-line-transport), y
+  // serialport trae un binding nativo (.node) — no está probado todavía que
+  // cargue bajo el ABI de Node que usa Electron (distinto al Node del
+  // sistema, donde sí carga: lo prueban los tests de este plugin en cada
+  // corrida de `pnpm turbo run test`). Sin ESP32 conectado, discover() no
+  // debe tumbar nada — con KAN_ESP32_PORT sin fijar, igual escanea todos los
+  // puertos seriales disponibles (a diferencia de Raspberry Pi, que no
+  // escanea nada fuera de una Pi real), así que este catch cubre tanto un
+  // fallo de carga del binding como cualquier error de descubrimiento.
+  try {
+    const { Esp32ArduinoPlugin } = await import("@kan/plugin-esp32-arduino");
+    await agent.registerPlugin(new Esp32ArduinoPlugin());
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de ESP32/Arduino (¿falta compilar una dependencia nativa?): ${error}`);
+  }
+
   await agent.bootstrap();
 
   for (const eventName of FORWARDED_EVENTS) {
