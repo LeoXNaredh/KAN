@@ -668,6 +668,24 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-046: `plugin-home-assistant` — driver de dispositivo (no integración) sobre la REST API de HA, reusando el transporte de `plugin-http-generic`
+
+**Contexto.** Siguiente ítem del mapa de hardware (Tier 2, "Consumer"): Home Assistant. `docs/06-arquitectura-dispositivos.md` y `docs/11-riesgos.md` ya lo mencionan ("KAN no reemplaza a HA, se integra con él") pero nunca se había implementado. `docs/04-arquitectura-plugins.md` §2 lo lista como ejemplo de plugin **"Skill/Integración"** (junto a Telegram/WhatsApp/GitHub), categoría que nunca llegó a implementarse en el código real — todos los plugins existentes hasta ahora son `device-driver`.
+
+**Decisión — se implementa como `device-driver`, no como el ejemplo de `docs/04`.** Home Assistant controla actuadores físicos reales: cerraduras, portones, climatización, luces. Eso es exactamente el dominio de Safety Policy/severidad por target (ADR-004) — un plugin de "integración" sin ese sistema (como lo tendría Telegram, que solo manda mensajes) no cubriría bien el riesgo real de, por ejemplo, destrabar una puerta. `KanDeviceDriverPlugin` ya resuelve esto: "dispositivo" = una instancia HA configurada, cada `entity_id` es un target direccionable (`lock.front_door`, `light.living_room`), con severidad por defecto según el dominio del entity_id (`entityDomain.ts`: `lock`/`alarm_control_panel` → `safety-critical`; `switch`/`light`/`climate`/`cover`/`fan`/etc. → `irreversible-material`; el resto → `read-only`) — solo un punto de partida, el usuario reclasifica cualquier entidad en Safety Policy igual que con cualquier otro plugin.
+
+**Decisión — REST, no `home-assistant-js-websocket`.** La librería oficial (WS, con su propio flujo de auth por refresh/access token) es la opción recomendada para clientes en browser, pero para un cliente servidor con un token de larga duración ya generado por el usuario, la REST API de HA alcanza y es más simple: `GET /api/` (healthcheck autenticado), `GET /api/states`/`GET /api/states/<entity_id>`, `POST /api/services/<domain>/<service>`. Mismo mecanismo de auth (`Authorization: Bearer <token>`) que ya modelaba `plugin-http-generic`.
+
+**Decisión — reusar `@kan/plugin-http-generic`, no duplicar un cliente HTTP.** `plugin-home-assistant` depende de `@kan/plugin-http-generic` y usa su `FetchHttpTransport`/`HttpTransportPort` tal cual — mismo criterio que `plugin-gcode` reusando `@kan/serial-line-transport` de `plugin-esp32-arduino` (ADR-043). Sin código de transporte nuevo que mantener ni testear por separado; los tests de `plugin-home-assistant` reusan también `FakeHttpTransport` del mismo paquete.
+
+**Diferencia de `discover()` respecto a `plugin-http-generic`:** ahí cualquier respuesta HTTP (incluido 401) cuenta como "hay un servidor ahí", porque no se sabe de antemano si un endpoint arbitrario exige auth. Acá sí se sabe — HA siempre la exige — así que `discover()` descarta la instancia si el token es inválido (status ≠ 200 en `GET /api/`), no solo si es inalcanzable.
+
+**Verificado en vivo, de punta a punta:** script temporal (borrado después) contra un `http.createServer` real que simula la API de HA (valida el header `Authorization`, sirve `/api/`, `/api/states`, `/api/states/<id>`, `/api/services/<domain>/<service>`) — `discover()` encontró la instancia, `listTargets()` clasificó `lock.puerta_principal` como `safety-critical` correctamente, `list_ha_entities`/`get_ha_state`/`call_ha_service` funcionaron con datos reales de punta a punta.
+
+**Explícitamente fuera de alcance:** WebSocket/eventos en tiempo real (la REST API alcanza para un modelo de capabilities de request/response, no necesita empujar cambios de estado); gestión de automatizaciones/escenas de HA (solo estado y servicios de entidades); elegir una instancia en tiempo real desde el chat (si no está en `KAN_HOME_ASSISTANT_INSTANCES`, no existe como dispositivo — misma defensa contra SSRF que el resto de los plugins de red).
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
