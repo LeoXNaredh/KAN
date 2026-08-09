@@ -702,6 +702,27 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-048: `plugin-network-tools` — Wake-on-LAN sin dependencia nueva + SNMP de solo lectura, en un solo plugin
+
+**Contexto.** Siguientes dos ítems del Tier 2 (Red/IT): Wake-on-LAN y SNMP, ambos "sin binding nativo, 100% simulables" según el diagnóstico original — se confirmó cierto en la práctica.
+
+**Decisión — Wake-on-LAN sin librería externa.** El magic packet WoL es 6 bytes `0xFF` + la MAC repetida 16 veces — un formato estable desde los 90, sin variantes ni casos borde reales. Implementarlo a mano sobre `dgram` (nativo de Node) en 15 líneas es más simple y auditable que sumar una dependencia (`wol`/`wake_on_lan`) para tan poco — coincide con el criterio ya usado para `fetch`/`ws` en los plugins genéricos anteriores. `discover()` reporta los targets configurados sin verificar nada: WoL es fire-and-forget UDP, no existe una forma de confirmar de antemano si la máquina existe o está apagada.
+
+**Decisión — SNMP de solo lectura, sin `snmp_set`.** El pedido original decía "SNMP (monitoreo de red)" — se tomó literal: `snmp_get`/`snmp_walk`, ambas read-only. Un SET mal dado puede dejar un switch/router de producción inoperable; agregarlo sin que sea un pedido explícito sería construir riesgo real para una necesidad hipotética. Si hace falta después, es una capability nueva con severidad propia (probablemente `safety-critical`), no una ampliación silenciosa de las capabilities de lectura.
+
+**Decisión — un solo plugin para dos protocolos no relacionados**, mismo criterio que `plugin-gcode` (Marlin+GRBL) y `plugin-modbus` (TCP+RTU): ambos son utilidades de red livianas sin estado de conexión persistente. `deviceId` distingue el tipo por prefijo (`wol_`/`snmp_`) — `getCapabilities()`/`invoke()` despachan según ese prefijo en vez de justificar dos plugins separados para algo tan chico.
+
+**Hallazgos reales durante la implementación, no anticipables desde la documentación:**
+- `net-snmp` sí trae un `Agent` real (no solo cliente) — permitió probar `get`/`walk` contra un agente SNMP de verdad, no un mock, algo que Modbus RTU no pudo lograr por falta de un servidor RTU en la librería.
+- El agente devolvía `NoAccess` en todas las pruebas hasta encontrar, leyendo el código fuente real del paquete (`Agent.prototype.isAllowed`), que un provider sin `maxAccess` explícito siempre es denegado (`undefined >= MaxAccess['read-only']` da `false` en JS) — no está mencionado como obligatorio en ningún ejemplo destacado del README, solo se ve en el ejemplo completo del propio paquete (`example/snmp-agent.js`) y en el código de chequeo de acceso.
+- Además de `maxAccess` por provider, hace falta configurar `accessControlModelType: Simple` en el agente y autorizar la community (`authorizer.addCommunity("public")` + `setCommunityAccess(...)`) — sin eso, aunque el provider tenga `maxAccess` correcto, el agente sigue rechazando con `NoAccess` por el chequeo de control de acceso, una capa separada del `maxAccess` del provider.
+
+**Verificado en vivo, de punta a punta:** contra un socket UDP real (magic packet real de 102 bytes, formato confirmado byte a byte) y un `Agent` SNMP real de `net-snmp` (`snmp_get` trajo el valor real fijado con `mib.setScalarValue`).
+
+**Explícitamente fuera de alcance:** `snmp_set` (ver arriba), SNMPv3 (solo v2c por ahora — v3 agrega autenticación/cifrado por usuario, más complejidad de config sin un pedido concreto que lo justifique), elegir un target en tiempo real desde el chat.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
