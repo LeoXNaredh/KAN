@@ -1,0 +1,54 @@
+name: Deploy a Vercel
+
+# Deploy explícito vía CLI en vez de la integración nativa Git de Vercel —
+# da control sobre cuándo dispara (solo cuando cambia algo relevante para
+# apps/web, no en cada push al monorepo) y usa exactamente el mismo
+# buildCommand/installCommand de apps/web/vercel.json que un desarrollador
+# vería localmente. Alternativa más simple: conectar el repo directo desde
+# el dashboard de Vercel (ver README.md → "Deploy en producción") — si se
+# hace eso, este workflow queda redundante y conviene desactivarlo.
+#
+# Depende de que main solo reciba código que ya pasó CI (ver
+# .github/workflows/ci.yml + .github/branch-protection.md) — este workflow
+# no vuelve a correr lint/typecheck/test, confía en la protección de rama.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - ".github/workflows/deploy.yml"
+
+concurrency:
+  group: deploy-vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy apps/web (producción)
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Traer configuración del proyecto de Vercel
+        working-directory: apps/web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build (usa el buildCommand de vercel.json)
+        working-directory: apps/web
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy del build ya generado
+        working-directory: apps/web
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}

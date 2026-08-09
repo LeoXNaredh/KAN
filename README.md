@@ -478,3 +478,39 @@ Después genera:
 16. Una estrategia para que KAN pueda crecer durante los próximos cinco años sin requerir una reescritura completa.
 
 Piensa como si KAN fuera una futura empresa tecnológica de clase mundial. No busques únicamente que funcione; busca que pueda mantenerse, evolucionar y escalar durante muchos años.
+
+---
+
+DEPLOY EN PRODUCCIÓN
+
+KAN se despliega como dos servicios separados, no uno solo: Vercel no puede hostear el WebSocket persistente que el Gateway necesita (`/edge`, `/live-voice`), así que `apps/web` (Next.js, serverless) y `apps/gateway` (Express + `ws`, proceso siempre corriendo) van a hosts distintos. Ver `apps/web/vercel.json`, `apps/gateway/Dockerfile`, `apps/gateway/fly.toml` y `render.yaml` (raíz del repo).
+
+Variables de entorno de `apps/web` (Vercel — Project Settings → Environment Variables, todas en el ambiente "Production"):
+
+| Variable | Secreta | Notas |
+|---|---|---|
+| `GEMINI_API_KEY` | Sí | Chat + TTS por defecto (ADR-042). |
+| `GEMINI_MODEL` | No | Opcional — default `gemini-2.5-flash`. |
+| `GEMINI_LIVE_MODEL` | No | Opcional — solo se reenvía, la key real de Live vive en el Gateway. |
+| `KAN_GATEWAY_URL` | No | URL HTTP del Gateway desplegado (ej. `https://kan-gateway.fly.dev`). |
+| `KAN_GATEWAY_INTERNAL_TOKEN` | Sí | Debe ser idéntico al mismo nombre en el Gateway — nunca `dev-internal-token` en producción. |
+| `NEXT_PUBLIC_KAN_GATEWAY_WS_URL` | No | `wss://` público del Gateway, ej. `wss://kan-gateway.fly.dev/edge`. Se hornea en el bundle del cliente en build time. |
+| `NEXT_PUBLIC_KAN_GATEWAY_LIVE_VOICE_WS_URL` | No | Igual que arriba, para `/live-voice`. |
+| `NEXT_PUBLIC_SUPABASE_URL` | No | Settings → API en supabase.com. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Es pública a propósito (RLS la protege). |
+| `GROQ_API_KEY` | Sí | Opcional — STT (ADR-014). |
+| `OPENAI_API_KEY` | Sí | Opcional — alternativa de TTS (ADR-034). |
+
+Variables de entorno de `apps/gateway` (Fly.io con `fly secrets set`, o Render con el dashboard del servicio — nunca en `render.yaml`/`fly.toml`, son secretos):
+
+| Variable | Secreta | Notas |
+|---|---|---|
+| `KAN_SUPABASE_URL` | No | Mismo proyecto de Supabase que `apps/web`. |
+| `KAN_SUPABASE_SERVICE_ROLE_KEY` | Sí | **Nunca** la `anon key` — el Gateway no tiene sesión de usuario, ignora RLS a propósito. |
+| `KAN_EDGE_TOKEN` | Sí | Debe coincidir con lo que usan los Edge Agents (`apps/desktop`) al conectar. |
+| `KAN_GATEWAY_INTERNAL_TOKEN` | Sí | Debe coincidir con el mismo nombre en `apps/web`. |
+| `KAN_WEB_ORIGIN` | No | Origin(es) real(es) del deploy de `apps/web` en Vercel, separados por coma — sin esto, el Simulador del navegador no puede conectar. |
+| `GEMINI_API_KEY` | Sí | Opcional — habilita voz en tiempo real (ADR-044) y enriquecimiento automático de dispositivos (ADR-053). Sin ella el Gateway funciona igual, solo sin esas dos capacidades. |
+| `PORT` | No | Fly.io: fijo en `fly.toml` (8787). Render: lo inyecta solo, `apps/gateway/src/server.ts` ya lo respeta (`process.env.PORT ?? 8787`) — no hace falta fijarlo a mano. |
+
+Deploy automático de `apps/web` vía `.github/workflows/deploy.yml` (push a `main`) — requiere los secretos `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` en el repo de GitHub. El Gateway se redespliega con el auto-deploy nativo de Fly.io/Render al conectar el repo (ver instrucciones exactas más abajo, entregadas junto con este incremento).
