@@ -1,20 +1,18 @@
 import type { LineConnection, LineConnectionState, NetworkTransportPort } from "@kan/serial-line-transport";
 
 /**
- * Transporte de red simulado para tests del plugin (mismo rol que
- * FakeSerialTransport para el camino Serial) — la resiliencia real
- * (reconexión/backoff) se prueba aparte contra un servidor TCP real en
- * NodeTcpTransport.test.ts (ADR-012); esto es solo para probar
- * discover()/connect()/invoke() del plugin sobre WiFi sin red real.
+ * Mismo rol que FakeGcodeSerialTransport, para el camino WiFi/TCP — texto
+ * G-code plano, no JSON (a diferencia de FakeNetworkTransport de
+ * plugin-esp32-arduino).
  */
-export interface FakeNetworkDevice {
+export interface FakeGcodeNetworkDevice {
   host: string;
   port: number;
-  handle(command: Record<string, unknown>): Record<string, unknown> | undefined;
+  handle(line: string): string[] | undefined;
 }
 
-export class FakeNetworkTransport implements NetworkTransportPort {
-  constructor(private readonly devices: FakeNetworkDevice[]) {}
+export class FakeGcodeNetworkTransport implements NetworkTransportPort {
+  constructor(private readonly devices: FakeGcodeNetworkDevice[]) {}
 
   async open(host: string, port: number): Promise<LineConnection> {
     const device = this.devices.find((d) => d.host === host && d.port === port);
@@ -32,17 +30,11 @@ export class FakeNetworkTransport implements NetworkTransportPort {
       },
       write: (line: string) => {
         if (state !== "connected") return;
-        let command: Record<string, unknown>;
-        try {
-          command = JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          return;
-        }
-        const response = device.handle(command);
-        if (response !== undefined) {
+        const responseLines = device.handle(line);
+        if (responseLines !== undefined) {
           queueMicrotask(() => {
             if (state !== "connected") return;
-            lineHandlers.forEach((handler) => handler(JSON.stringify(response)));
+            responseLines.forEach((responseLine) => lineHandlers.forEach((handler) => handler(responseLine)));
           });
         }
       },

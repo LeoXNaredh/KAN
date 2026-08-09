@@ -1,5 +1,5 @@
 import { Socket } from "node:net";
-import type { LineConnection, LineConnectionState } from "@kan/serial-line-transport";
+import type { LineConnection, LineConnectionState } from "../LineConnection";
 import type { NetworkTransportPort, TransportOptions } from "../NetworkTransportPort";
 
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;

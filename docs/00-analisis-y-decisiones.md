@@ -587,6 +587,25 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-043: Control de impresión 3D en `plugin-gcode` (streaming directo) + transporte de red compartido
+
+**Contexto.** El pedido era "un plugin propio que hable directo al firmware Marlin/Klipper, sin depender de OctoPrint". Diagnóstico: `plugin-gcode` (P5) **ya era** ese plugin — transporte serial real, protocolo de cable real (línea de comando → líneas de datos → `ok`/`error`, la convención real de Marlin/GRBL), y ya tenía `home_axes`/`move_axis`/`set_temperature`/`get_position`/`emergency_stop`. Lo único que le faltaba era la noción de "trabajo de impresión": nada existente sabía qué es "imprimir un archivo", ni tenía progreso/pausa/cancelación. Crear un paquete `plugin-3d-printer` nuevo hubiera duplicado ese código ya correcto y ya testeado — se descartó a favor de extender `plugin-gcode`.
+
+**Decisión — 5 capabilities nuevas.** `get_status` (`M105` + estado del job en memoria), `print_file(gcode, filename?)`, `pause_print`, `resume_print`, `cancel_print`. `print_file` transmite el G-code **línea por línea por el mismo cable** ("streaming"/"modo host", igual que OctoPrint/Cura/Pronterface por defecto) en vez de subirlo a la SD de la impresora (`M28`/`M29`/`M23`/`M24`) — reusa el mismo primitivo (`sendGcodeLine`) que ya usan las demás capabilities, sin máquina de estados de escritura a SD nueva, y funciona en impresoras sin SD. El progreso lo lleva el propio driver (líneas enviadas/total en un `Map<deviceId, PrintJob>` en memoria), no depende de que el firmware lo reporte bien. `pause_print`/`cancel_print` son `reversible` (parar nunca pide confirmación, mismo criterio que `emergency_stop`); `print_file`/`resume_print` son `irreversible-material` (arrancar o retomar movimiento/extrusión real); `get_status` es `read-only`.
+
+`gcodeProtocol.ts` necesitó un ajuste de protocolo: `sendGcodeLine()` descartaba todo lo que viniera después de "ok" en la misma línea, asumiendo que los datos siempre llegan en una línea aparte (cierto para `M114`, pero `M105` responde `ok T:200.0 /200.0 B:60.0 /60.0` — el dato viaja pegado al "ok"). Ahora ese resto se agrega a `lines` en vez de descartarse — cambio retrocompatible (una línea sin nada después de "ok" sigue funcionando igual).
+
+**Decisión — transporte de red compartido.** Se agregó soporte WiFi/TCP (`KAN_GCODE_WIFI_HOST`/`KAN_GCODE_WIFI_PORT`, junto a `KAN_GCODE_SERIAL_PORT` que reemplaza al viejo `KAN_GCODE_PORTS` plural) mirando el mismo patrón dual-transporte que ya usa `plugin-esp32-arduino`. En vez de duplicar `NodeTcpTransport`/`NetworkTransportPort` en `plugin-gcode`, se extrajeron de `plugin-esp32-arduino` a `@kan/serial-line-transport` — son protocolo-agnósticos (I/O de líneas crudo sobre TCP, sin nada de JSON adentro), mismo criterio que ya se aplicó una vez antes para el transporte serial ("originalmente extraído de plugin-esp32-arduino, ahora compartido con cualquier plugin que hable un protocolo de texto por líneas"). `plugin-esp32-arduino` sigue reexportando ambos símbolos desde su propio `index.ts` para no romper a nadie que ya importe de ahí. `FakeNetworkTransport` (JSON, específico de ESP32) no se movió — se creó `FakeGcodeNetworkTransport` (texto plano) en `plugin-gcode`, mismo rol que `FakeGcodeSerialTransport` para el camino serial.
+
+**Alternativas descartadas:**
+- **Paquete `plugin-3d-printer` nuevo** — descartado, ver diagnóstico arriba.
+- **Impresión desde SD de la impresora** (`M28`/`M29`/`M27`) — descartada a favor de streaming directo (ver justificación en el README del plugin).
+- **Sin límite de tamaño en `print_file`** — descartado; mismo criterio que el límite de imágenes en `/api/chat` (P3): 2.000.000 de caracteres de G-code por request, límite en el borde.
+
+**Consecuencia.** El estado de una impresión vive solo en memoria del plugin — un reinicio del Edge Agent en medio de una impresión pierde el tracking (la impresora sigue haciendo lo que ya se le mandó, pero KAN deja de saber en qué línea iba); sobrevivir un reinicio es un incremento aparte si hace falta. Sin hardware real disponible para esta sesión — construido y testeado contra `FakeGcodeSerialTransport`/`FakeGcodeNetworkTransport`, la validación con una impresora real queda pendiente (documentado en el README del plugin, mismo criterio que el resto de los drivers de hardware de este proyecto).
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.

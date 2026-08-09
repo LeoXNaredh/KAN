@@ -17,7 +17,7 @@ export interface GcodeResponse {
   lines: string[];
 }
 
-const OK_PATTERN = /^ok\b/i;
+const OK_PATTERN = /^ok\b(.*)$/i;
 const ERROR_PATTERN = /^error/i;
 
 /**
@@ -46,10 +46,16 @@ export function sendGcodeLine(connection: LineConnection, line: string, timeoutM
         reject(new Error(received));
         return;
       }
-      if (OK_PATTERN.test(received)) {
+      const okMatch = OK_PATTERN.exec(received);
+      if (okMatch) {
         clearTimeout(timer);
         unsubscribe();
-        resolve({ lines: collected });
+        // Algunos comandos (M105) van la data en la misma línea que "ok"
+        // ("ok T:200.0 /200.0 B:60.0 /60.0"), a diferencia de M114 (línea de
+        // datos aparte, seguida de un "ok" solo) — se agrega ese resto acá
+        // en vez de descartarlo, sin romper el caso de un "ok" sin nada más.
+        const trailing = okMatch[1]?.trim();
+        resolve({ lines: trailing ? [...collected, trailing] : collected });
         return;
       }
       collected.push(received);

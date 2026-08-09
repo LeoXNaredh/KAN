@@ -19,6 +19,16 @@ describe("sendGcodeLine", () => {
     expect(response.lines).toEqual([]);
   });
 
+  it("incluye lo que venga después de 'ok' en la misma línea (M105: 'ok T:.../B:...')", async () => {
+    const transport = new FakeGcodeSerialTransport([
+      { path: "COM1", handle: () => ["ok T:200.0 /200.0 B:60.0 /60.0 @:127 B@:0"] },
+    ]);
+    const connection = await transport.open("COM1", 115200);
+
+    const response = await sendGcodeLine(connection, "M105", 1000);
+    expect(response.lines).toEqual(["T:200.0 /200.0 B:60.0 /60.0 @:127 B@:0"]);
+  });
+
   it("rechaza si el firmware responde una línea 'error...'", async () => {
     const transport = new FakeGcodeSerialTransport([{ path: "COM1", handle: () => ["error:Printer halted"] }]);
     const connection = await transport.open("COM1", 115200);

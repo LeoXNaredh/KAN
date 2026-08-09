@@ -1,4 +1,4 @@
-import type { LineConnection } from "@kan/serial-line-transport";
+import type { LineConnection } from "./LineConnection";
 
 export interface TransportOptions {
   /**

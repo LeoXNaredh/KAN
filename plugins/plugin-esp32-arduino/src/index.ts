@@ -1,9 +1,13 @@
 import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
 import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import { ESP32_PIN_MAP, defaultSeverityFor, findPin, type PinInfo } from "./pinMap";
-import { NodeSerialTransport, type SerialTransportPort, type LineConnection } from "@kan/serial-line-transport";
-import { NodeTcpTransport } from "./infra/NodeTcpTransport";
-import type { NetworkTransportPort } from "./NetworkTransportPort";
+import {
+  NodeSerialTransport,
+  NodeTcpTransport,
+  type SerialTransportPort,
+  type NetworkTransportPort,
+  type LineConnection,
+} from "@kan/serial-line-transport";
 import { sendCommand, SerialTimeoutError, ConnectionNotReadyError } from "./wireProtocol";
 
 const BAUD_RATE = 115200;
@@ -294,10 +298,17 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
 
 export { ESP32_PIN_MAP, findPin, defaultSeverityFor } from "./pinMap";
 export type { PinInfo } from "./pinMap";
-export type { SerialConnection, SerialTransportPort, PortInfo, LineConnection, LineConnectionState } from "@kan/serial-line-transport";
-export { NodeSerialTransport } from "@kan/serial-line-transport";
-export type { NetworkTransportPort, TransportOptions } from "./NetworkTransportPort";
+export type {
+  SerialConnection,
+  SerialTransportPort,
+  PortInfo,
+  LineConnection,
+  LineConnectionState,
+  NetworkTransportPort,
+  TransportOptions,
+  NodeTcpTransportTuning,
+} from "@kan/serial-line-transport";
+export { NodeSerialTransport, NodeTcpTransport } from "@kan/serial-line-transport";
 export { FakeSerialTransport, type FakeDevice } from "./infra/FakeSerialTransport";
-export { NodeTcpTransport, type NodeTcpTransportTuning } from "./infra/NodeTcpTransport";
 export { FakeNetworkTransport, type FakeNetworkDevice } from "./infra/FakeNetworkTransport";
 export { ConnectionNotReadyError, SerialTimeoutError } from "./wireProtocol";

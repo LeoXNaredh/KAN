@@ -42,6 +42,6 @@ El transporte Serial no tiene este problema — requiere acceso físico al puert
 
 1. Al conectar, antes de aceptar cualquier otro comando, el cliente (Node) manda `{"cmd":"auth","token":"<token>"}`.
 2. El firmware compara el token contra uno configurado de antemano (ej. quemado en el sketch al flashear, o guardado en NVS). Si coincide: `{"ok":true}` y la conexión queda habilitada para el resto de los comandos. Si no coincide, o el primer comando no es `auth`: `{"ok":false,"error":"no autorizado"}` y el firmware cierra la conexión.
-3. `NetworkTransportPort.open()` ya acepta un `options.token` para esto (`TransportOptions`, `src/NetworkTransportPort.ts`) — hoy no se usa, es el punto de enganche cuando esto se implemente. Ver el `TODO(seguridad)` en `src/infra/NodeTcpTransport.ts`.
+3. `NetworkTransportPort.open()` ya acepta un `options.token` para esto (`TransportOptions`, movido a `@kan/serial-line-transport` — ver `packages/serial-line-transport/src/NetworkTransportPort.ts`) — hoy no se usa, es el punto de enganche cuando esto se implemente. Ver el `TODO(seguridad)` en `packages/serial-line-transport/src/infra/NodeTcpTransport.ts`.
 
 Bloqueante recomendado antes de usar el transporte WiFi contra cualquier dispositivo con capacidad de causar daño físico real (motores, relés de potencia, láseres) fuera de un banco de pruebas controlado.
