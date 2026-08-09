@@ -1,7 +1,7 @@
 "use client";
 
 import { Cpu, Server } from "lucide-react";
-import { useSystemStatus } from "@/lib/status/useSystemStatus";
+import { useSystemStatusContext } from "@/lib/status/SystemStatusProvider";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 import { Card } from "@/components/ui/Card";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -10,11 +10,11 @@ import { StatusDot } from "@/components/ui/StatusDot";
  * Lista real de Edge Agents/dispositivos ya vinculados — antes /dispositivos
  * solo tenía el formulario de pairing, sin mostrar nunca lo que ya estaba
  * conectado, pese a que /api/status ya lo expone completo (mismo dato que
- * ya usa el Dashboard). Client component porque `useSystemStatus()` hace
- * polling contra `/api/status` (mismo hook que TopBar/DashboardClient).
+ * ya usa el Dashboard). Client component porque consume `SystemStatusProvider`
+ * (mismo Context que TopBar/DashboardClient, un solo polling compartido).
  */
 export function DeviceList() {
-  const { status, loading } = useSystemStatus();
+  const { status, loading } = useSystemStatusContext();
 
   if (loading && !status) {
     return <p className="text-sm text-ink-faint">Buscando dispositivos vinculados…</p>;

@@ -4,10 +4,11 @@ import { useSyncExternalStore } from "react";
 import { Menu, LogOut } from "lucide-react";
 import type { UserIdentity } from "@kan/core";
 import { StatusDot, type StatusLevel } from "@/components/ui/StatusDot";
-import { useSystemStatus } from "@/lib/status/useSystemStatus";
+import { useSystemStatusContext } from "@/lib/status/SystemStatusProvider";
 import { useJobNotificationToasts } from "@/lib/status/useJobNotificationToasts";
 import { NotificationToasts } from "@/components/layout/NotificationToasts";
 import { signOutAction } from "@/lib/auth/actions";
+import type { SystemStatusResponse } from "@/lib/status/types";
 
 // `getSnapshot()` debe devolver el mismo valor entre llamadas hasta que el
 // store realmente cambie — React vuelve a llamarlo justo después de
@@ -44,9 +45,7 @@ function useClock(): Date | null {
   return timestamp === 0 ? null : new Date(timestamp);
 }
 
-function overallConnection(
-  status: ReturnType<typeof useSystemStatus>["status"],
-): { level: StatusLevel; label: string } {
+function overallConnection(status: SystemStatusResponse | null): { level: StatusLevel; label: string } {
   if (!status) return { level: "offline", label: "Verificando…" };
   if (status.gateway === "offline") return { level: "offline", label: "Fuera de línea" };
   const anyAgentOnline = status.edgeAgents.some((agent) => agent.status === "online");
@@ -56,7 +55,7 @@ function overallConnection(
 
 export function TopBar({ onOpenMenu, user }: { onOpenMenu: () => void; user: UserIdentity | undefined }) {
   const now = useClock();
-  const { status } = useSystemStatus();
+  const { status } = useSystemStatusContext();
   const connection = overallConnection(status);
   const { toasts, dismiss } = useJobNotificationToasts(status?.recentActivity ?? []);
 

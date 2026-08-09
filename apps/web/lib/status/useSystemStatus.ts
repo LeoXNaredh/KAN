@@ -6,9 +6,10 @@ import type { SystemStatusResponse } from "./types";
 const POLL_INTERVAL_MS = 15_000;
 
 /**
- * Hook compartido entre TopBar y el Dashboard — cada consumidor sondea de
- * forma independiente (sin estado global) en favor de mantener este
- * incremento sin dependencias nuevas de manejo de estado.
+ * El polling real vive acá. Nadie debería llamar este hook directo — usar
+ * `useSystemStatusContext()` (`SystemStatusProvider.tsx`), montado una sola
+ * vez en `ShellChrome`, para que TopBar/Dashboard/Dispositivos compartan un
+ * único `fetch("/api/status")` en vez de uno cada uno.
  */
 export function useSystemStatus(): { status: SystemStatusResponse | null; loading: boolean } {
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);

@@ -2,7 +2,7 @@
 
 import { Cpu, Brain, FolderKanban, Workflow } from "lucide-react";
 import type { DashboardSummary } from "@kan/core";
-import { useSystemStatus } from "@/lib/status/useSystemStatus";
+import { useSystemStatusContext } from "@/lib/status/SystemStatusProvider";
 import { StatusCard } from "@/components/dashboard/StatusCard";
 import { DeviceCard } from "@/components/dashboard/DeviceCard";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
@@ -15,7 +15,7 @@ import { Card } from "@/components/ui/Card";
 import type { StatusLevel } from "@/components/ui/StatusDot";
 
 export function DashboardClient({ summary }: { summary: DashboardSummary | undefined }) {
-  const { status } = useSystemStatus();
+  const { status } = useSystemStatusContext();
 
   // Antes: un catálogo fijo de 6 íconos (ESP32/Arduino/Robot/Impresora/CNC/
   // Simulador) "encendidos" por un matcher de substring sobre `kind` — con
