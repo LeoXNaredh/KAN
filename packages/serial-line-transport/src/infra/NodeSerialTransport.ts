@@ -16,9 +16,9 @@ export class NodeSerialTransport implements SerialTransportPort {
     return ports.map((port) => ({ path: port.path, manufacturer: port.manufacturer }));
   }
 
-  async open(path: string, baudRate: number): Promise<SerialConnection> {
+  async open(path: string, baudRate: number, delimiter = "\n"): Promise<SerialConnection> {
     const port = new SerialPort({ path, baudRate, autoOpen: false });
-    const parser = port.pipe(new ReadlineParser({ delimiter: "\n" }));
+    const parser = port.pipe(new ReadlineParser({ delimiter }));
 
     await new Promise<void>((resolve, reject) => {
       port.open((error) => (error ? reject(error) : resolve()));
@@ -40,7 +40,7 @@ export class NodeSerialTransport implements SerialTransportPort {
         return state;
       },
       write: (line: string) => {
-        port.write(`${line}\n`);
+        port.write(`${line}${delimiter}`);
       },
       onLine: (handler: (line: string) => void) => {
         const listener = (line: string) => handler(line);

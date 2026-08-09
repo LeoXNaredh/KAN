@@ -15,5 +15,6 @@ export type SerialConnection = LineConnection;
 
 export interface SerialTransportPort {
   list(): Promise<PortInfo[]>;
-  open(path: string, baudRate: number): Promise<SerialConnection>;
+  /** `delimiter` por defecto `"\n"` — SLCAN (plugin-canbus) usa `"\r"`. */
+  open(path: string, baudRate: number, delimiter?: string): Promise<SerialConnection>;
 }
