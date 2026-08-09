@@ -101,6 +101,23 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     updater: new NoopUpdater(),
   });
 
+  // Registrado ANTES de los try/catch de plugins de abajo a propósito (P3.7):
+  // `EdgeAgentBus.emit()` no hace buffering (ver EdgeAgentBus.ts) — un
+  // `logger.warn()` disparado durante el registro de ESP32/Modbus/etc. antes
+  // de que exista un listener del evento "log" se pierde para siempre. Antes
+  // este bloque vivía después de `agent.bootstrap()`, así que el aviso de
+  // "no se pudo cargar el plugin de ESP32 (¿falta Visual Studio?)" nunca
+  // llegaba al renderer — silencio total, aunque el mensaje sí se escribía
+  // bien en el log file. Con el forwarding ya armado, ese mismo "log" llega
+  // al renderer y App.tsx lo muestra como aviso (ver pluginWarnings ahí).
+  for (const eventName of FORWARDED_EVENTS) {
+    bus.on(eventName, (payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("kan:event", { type: eventName, payload });
+      }
+    });
+  }
+
   await agent.registerPlugin(new DeviceSimulatorPlugin());
 
   // Sin binding nativo — puro JS, sin el riesgo de ABI de Electron que sí
@@ -209,14 +226,6 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   }
 
   await agent.bootstrap();
-
-  for (const eventName of FORWARDED_EVENTS) {
-    bus.on(eventName, (payload) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("kan:event", { type: eventName, payload });
-      }
-    });
-  }
 
   return agent;
 }

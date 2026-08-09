@@ -59,6 +59,7 @@ export default function App() {
   const [pending, setPending] = useState<PendingConfirmation[]>([]);
   const [pendingPlugins, setPendingPlugins] = useState<PendingPluginPermission[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [pluginWarnings, setPluginWarnings] = useState<LogEntry[]>([]);
   const [coreStatus, setCoreStatus] = useState<CoreConnectionStatus>("disconnected");
   const [safetyTargets, setSafetyTargets] = useState<Record<string, SafetyTargetListing[]>>({});
   const [paired, setPaired] = useState<boolean | null>(null);
@@ -124,6 +125,16 @@ export default function App() {
           break;
         case "log":
           setLogs((prev) => [...prev.slice(-199), event.payload]);
+          // Un plugin que no pudo registrarse (ej. ESP32/Modbus/serial sin
+          // el binding nativo compilado) hoy solo escribe `logger.warn(...)`
+          // — antes de P3.7 ese aviso quedaba enterrado en el panel de Logs
+          // (o directamente se perdía, ver el comentario sobre el orden del
+          // forwarding en apps/desktop/src/main/index.ts). Estos avisos de
+          // carga de plugin son accionables (instalar Visual Studio Build
+          // Tools) y merecen un banner que no se pueda pasar por alto.
+          if (event.payload.level === "warn" && event.payload.message.startsWith("No se pudo cargar el plugin")) {
+            setPluginWarnings((prev) => [...prev, event.payload]);
+          }
           break;
       }
     });
@@ -155,6 +166,22 @@ export default function App() {
       </header>
 
       {paired !== null && <PairingPanel paired={paired} onPaired={() => setPaired(true)} />}
+
+      {pluginWarnings.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-200">
+          {pluginWarnings.map((warning, index) => (
+            <div key={index} className="flex items-start justify-between gap-3">
+              <span>⚠ {warning.message}</span>
+              <button
+                className="shrink-0 text-xs text-amber-400 underline hover:text-amber-200"
+                onClick={() => setPluginWarnings((prev) => prev.filter((_, i) => i !== index))}
+              >
+                Descartar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid flex-1 grid-cols-[1.4fr_1fr] gap-4 overflow-hidden">
         <section className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-zinc-800 p-4">
