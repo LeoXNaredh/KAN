@@ -10,10 +10,18 @@ const LABEL: Record<LiveSessionStatus, string> = {
   error: "Error en la sesión — click para reintentar",
 };
 
+const SHORT_LABEL: Record<LiveSessionStatus, string> = {
+  idle: "Vivo",
+  connecting: "Conectando…",
+  active: "En vivo",
+  error: "Reintentar",
+};
+
 /**
  * Conversación en tiempo real (ADR-044) — botón distinto del VoiceButton de
  * push-to-talk: un click abre la sesión de voz en vivo, otro click (o el
- * mismo botón, ahora en su estado "active") la cierra.
+ * mismo botón, ahora en su estado "active") la cierra. Etiqueta de texto
+ * siempre visible (P2.5), mismo criterio que VoiceButton.
  */
 export function LiveVoiceButton({ status, onClick }: { status: LiveSessionStatus; onClick: () => void }) {
   return (
@@ -23,7 +31,7 @@ export function LiveVoiceButton({ status, onClick }: { status: LiveSessionStatus
       disabled={status === "connecting"}
       aria-label={LABEL[status]}
       title={LABEL[status]}
-      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
+      className={`flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
         status === "active"
           ? "animate-pulse bg-danger text-white hover:brightness-110"
           : status === "error"
@@ -32,12 +40,13 @@ export function LiveVoiceButton({ status, onClick }: { status: LiveSessionStatus
       }`}
     >
       {status === "connecting" ? (
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
       ) : status === "active" ? (
-        <Square className="h-4 w-4" aria-hidden="true" />
+        <Square className="h-4 w-4 shrink-0" aria-hidden="true" />
       ) : (
-        <Radio className="h-4 w-4" aria-hidden="true" />
+        <Radio className="h-4 w-4 shrink-0" aria-hidden="true" />
       )}
+      <span>{SHORT_LABEL[status]}</span>
     </button>
   );
 }

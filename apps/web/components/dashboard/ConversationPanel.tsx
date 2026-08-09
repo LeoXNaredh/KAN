@@ -221,54 +221,59 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex gap-2">
-        <VoiceButton
-          status={voice.status}
-          onClick={voice.status === "recording" ? voice.stop : voice.start}
-        />
-        <LiveVoiceButton
-          status={live.status}
-          onClick={live.status === "active" ? live.stop : live.start}
-        />
-        {live.status === "active" && (
-          <ScreenShareButton
-            sharing={live.screenSharing}
-            onClick={live.screenSharing ? live.stopScreenShare : live.startScreenShare}
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <VoiceButton
+            status={voice.status}
+            onClick={voice.status === "recording" ? voice.stop : voice.start}
           />
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          className="hidden"
-          onChange={handleImageSelect}
-        />
-        <button
-          type="button"
-          aria-label="Adjuntar imagen"
-          title="Adjuntar imagen"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isSending}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line text-ink-muted transition-colors duration-fast hover:bg-surface-3 hover:text-ink disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-        >
-          <ImagePlus className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <input
-          className="flex-1 rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          placeholder="Escribe un mensaje..."
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          disabled={isSending}
-        />
-        <button
-          type="submit"
-          aria-label="Enviar mensaje"
-          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors duration-fast hover:brightness-110 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          disabled={isSending || !input.trim()}
-        >
-          <Send className="h-4 w-4" aria-hidden="true" />
-          Enviar
-        </button>
+          <LiveVoiceButton
+            status={live.status}
+            onClick={live.status === "active" ? live.stop : live.start}
+          />
+          {live.status === "active" && (
+            <ScreenShareButton
+              sharing={live.screenSharing}
+              onClick={live.screenSharing ? live.stopScreenShare : live.startScreenShare}
+            />
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+          <button
+            type="button"
+            aria-label="Adjuntar imagen"
+            title="Adjuntar imagen"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isSending}
+            className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium text-ink-muted transition-colors duration-fast hover:bg-surface-3 hover:text-ink disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <ImagePlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Imagen</span>
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            placeholder="Escribe un mensaje..."
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            disabled={isSending}
+          />
+          <button
+            type="submit"
+            aria-label="Enviar mensaje"
+            className="flex shrink-0 items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors duration-fast hover:brightness-110 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            disabled={isSending || !input.trim()}
+          >
+            <Send className="h-4 w-4" aria-hidden="true" />
+            Enviar
+          </button>
+        </div>
       </form>
     </Card>
   );
