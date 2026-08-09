@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { buildAuthUseCases } from "@/lib/auth/composition";
+import { toHumanMessage } from "@/lib/errors/toHumanMessage";
 
 export async function signInWithPasswordAction(formData: FormData) {
   const email = String(formData.get("email") ?? "");
@@ -31,5 +32,5 @@ export async function sendMagicLinkAction(formData: FormData) {
 }
 
 function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Error desconocido";
+  return toHumanMessage(error instanceof Error ? error.message : undefined);
 }

@@ -11,6 +11,7 @@ import { useVoiceInput } from "@/lib/voice/useVoiceInput";
 import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
 import { useLiveSession } from "@/lib/voice/useLiveSession";
 import { readSseStream } from "@/lib/chat/parseSseStream";
+import { toHumanMessage } from "@/lib/errors/toHumanMessage";
 
 type ChatRole = "user" | "assistant" | "tool";
 
@@ -133,7 +134,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         const lastAssistantMessage = [...newMessages].reverse().find((m) => m.role === "assistant");
         if (lastAssistantMessage?.content && options?.viaVoice) speak(lastAssistantMessage.content);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Error desconocido");
+        setError(toHumanMessage(err instanceof Error ? err.message : undefined));
       } finally {
         setIsSending(false);
         setStreamingStatus(null);
