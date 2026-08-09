@@ -28,6 +28,8 @@ const WORKSPACE_PACKAGES = [
   "@kan/plugin-opcua",
   "@kan/plugin-serial-generic",
   "@kan/plugin-canbus",
+  "@kan/plugin-mqtt",
+  "@kan/plugin-gcode",
 ];
 
 // `externalizeDepsPlugin` solo lee `dependencies`/`peerDependencies` del

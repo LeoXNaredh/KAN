@@ -19,6 +19,7 @@ import { HomeAssistantDevicePlugin } from "@kan/plugin-home-assistant";
 import { NetworkToolsDevicePlugin } from "@kan/plugin-network-tools";
 import { SshDevicePlugin } from "@kan/plugin-ssh";
 import { OpcuaDevicePlugin } from "@kan/plugin-opcua";
+import { MqttDevicePlugin } from "@kan/plugin-mqtt";
 
 let mainWindow: BrowserWindow | null = null;
 let edgeAgent: EdgeAgent | undefined;
@@ -92,6 +93,19 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   // de ABI de Electron, registro estático.
   await agent.registerPlugin(new SshDevicePlugin());
   await agent.registerPlugin(new OpcuaDevicePlugin());
+  await agent.registerPlugin(new MqttDevicePlugin());
+
+  // plugin-bluetooth-generic NO se registra a propósito (a diferencia de lo
+  // que un comentario más abajo podría sugerir por comparación): no es un
+  // caso de "falla el binding nativo en tiempo de ejecución" como
+  // ESP32/Modbus/serial — es que ese plugin hoy no tiene ningún transporte
+  // real en absoluto. El intento de agregar `@abandonware/noble` se
+  // abandonó (ver plugin-bluetooth-generic/README.md, "un solo intento, sin
+  // depurar el entorno") y su constructor por defecto usa
+  // `FakeBluetoothTransport([])` — registrarlo hoy mostraría un plugin
+  // "Bluetooth" que nunca encuentra nada, más confuso que útil. Queda para
+  // cuando exista el sidecar en Python (`bleak`) documentado como
+  // incremento futuro en ese mismo README.
 
   // Import dinámico + try/catch (ADR-038): `onoff` trae una dependencia
   // nativa transitiva (`epoll`) — si su binding no carga en este proceso de
@@ -158,6 +172,17 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     await agent.registerPlugin(new CanbusDevicePlugin());
   } catch (error) {
     logger.warn(`No se pudo cargar el plugin de CAN Bus (¿falta compilar una dependencia nativa?): ${error}`);
+  }
+
+  // Mismo riesgo de binding nativo — impresoras 3D/CNC por G-code también
+  // dependen de @kan/serial-line-transport para el camino serial (el
+  // camino WiFi/TCP, KAN_GCODE_WIFI_HOST, no lo necesita, pero ambos viven
+  // en el mismo import).
+  try {
+    const { GcodeDevicePlugin } = await import("@kan/plugin-gcode");
+    await agent.registerPlugin(new GcodeDevicePlugin());
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de G-code (¿falta compilar una dependencia nativa?): ${error}`);
   }
 
   await agent.bootstrap();

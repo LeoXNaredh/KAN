@@ -44,6 +44,9 @@ importers:
       '@kan/plugin-esp32-arduino':
         specifier: workspace:*
         version: link:../../plugins/plugin-esp32-arduino
+      '@kan/plugin-gcode':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-gcode
       '@kan/plugin-home-assistant':
         specifier: workspace:*
         version: link:../../plugins/plugin-home-assistant
@@ -53,6 +56,9 @@ importers:
       '@kan/plugin-modbus':
         specifier: workspace:*
         version: link:../../plugins/plugin-modbus
+      '@kan/plugin-mqtt':
+        specifier: workspace:*
+        version: link:../../plugins/plugin-mqtt
       '@kan/plugin-network-tools':
         specifier: workspace:*
         version: link:../../plugins/plugin-network-tools
