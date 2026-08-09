@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
-import type { Gateway, EdgeTicketPort } from "@kan/gateway-core";
+import type { Gateway, EdgeTicketPort, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
 import { createUserAuthMiddleware } from "./userAuthMiddleware";
@@ -25,6 +25,7 @@ export function createRoutes(
   rateLimitOptions?: RateLimitOptions,
   authPort?: AuthPort,
   edgeTicketPort?: EdgeTicketPort,
+  liveVoiceSessionStore?: LiveVoiceSessionStore,
 ): Router {
   const router = Router();
 
@@ -128,6 +129,27 @@ export function createRoutes(
   router.delete("/v1/jobs/:id", (req, res) => {
     gateway.scheduler.cancel(req.params.id);
     res.status(204).end();
+  });
+
+  // Registra la config (system prompt + tools ya resueltos por
+  // CreateLiveSessionUseCase en apps/web) para una sesión de voz en tiempo
+  // real (ADR-044) — devuelve un sessionId de un solo uso, no la config en
+  // sí. El browser lo usa para conectar el WS /live-voice del Gateway
+  // (GeminiLiveProxy), nunca habla directo con Gemini.
+  router.post("/v1/live-sessions", (req, res) => {
+    if (!liveVoiceSessionStore) {
+      res.status(501).json({ error: "El Gateway no tiene configurada la voz en tiempo real (falta GEMINI_API_KEY)." });
+      return;
+    }
+    const model = req.body?.model;
+    const systemPrompt = req.body?.systemPrompt;
+    const tools = Array.isArray(req.body?.tools) ? req.body.tools : [];
+    if (typeof model !== "string" || !model.trim() || typeof systemPrompt !== "string" || !systemPrompt.trim()) {
+      res.status(400).json({ error: "Se requieren 'model' y 'systemPrompt' como strings no vacíos." });
+      return;
+    }
+    const { sessionId, expiresAt } = liveVoiceSessionStore.register({ model, systemPrompt, tools });
+    res.status(201).json({ sessionId, expiresAt });
   });
 
   return router;

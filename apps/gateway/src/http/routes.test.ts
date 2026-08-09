@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
-import type { Gateway, EdgeTicketPort } from "@kan/gateway-core";
+import type { Gateway, EdgeTicketPort, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { createRoutes, type RateLimitOptions } from "./routes";
 
@@ -27,10 +27,11 @@ function appWith(
   rateLimitOptions?: RateLimitOptions,
   authPort?: AuthPort,
   edgeTicketPort?: EdgeTicketPort,
+  liveVoiceSessionStore?: LiveVoiceSessionStore,
 ) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, edgeTicketPort));
+  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, edgeTicketPort, liveVoiceSessionStore));
   return app;
 }
 
@@ -40,6 +41,18 @@ function fakeAuthPort(getCurrentUser: AuthPort["getCurrentUser"]): AuthPort {
 
 function fakeEdgeTicketPort(mint: EdgeTicketPort["mint"]): EdgeTicketPort {
   return { mint, consume: () => undefined };
+}
+
+function fakeLiveVoiceSessionStore(
+  register: (config: Parameters<LiveVoiceSessionStore["register"]>[0]) => string,
+): LiveVoiceSessionStore {
+  return {
+    register: (config: Parameters<LiveVoiceSessionStore["register"]>[0]) => ({
+      sessionId: register(config),
+      expiresAt: "2026-01-01T00:05:00.000Z",
+    }),
+    claim: () => undefined,
+  } as unknown as LiveVoiceSessionStore;
 }
 
 describe("Gateway HTTP routes", () => {
@@ -449,6 +462,67 @@ describe("Gateway HTTP routes", () => {
       );
 
       const response = await request(app).post("/v1/edge-tickets").set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe("POST /v1/live-sessions (ADR-044)", () => {
+    it("sin liveVoiceSessionStore configurado, responde 501 (GEMINI_API_KEY ausente)", async () => {
+      const app = appWith(fakeGateway());
+
+      const response = await request(app)
+        .post("/v1/live-sessions")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ model: "gemini-3.1-flash-live-preview", systemPrompt: "sé breve" });
+
+      expect(response.status).toBe(501);
+    });
+
+    it("rechaza sin 'model' o sin 'systemPrompt'", async () => {
+      const app = appWith(fakeGateway(), undefined, undefined, undefined, fakeLiveVoiceSessionStore(() => "s1"));
+
+      const response = await request(app)
+        .post("/v1/live-sessions")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ model: "gemini-3.1-flash-live-preview" });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("registra la sesión y devuelve el sessionId", async () => {
+      let registeredWith: unknown;
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        undefined,
+        undefined,
+        fakeLiveVoiceSessionStore((config) => {
+          registeredWith = config;
+          return "session-abc";
+        }),
+      );
+
+      const response = await request(app)
+        .post("/v1/live-sessions")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ model: "gemini-3.1-flash-live-preview", systemPrompt: "sé breve", tools: [{ name: "read_sensor" }] });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ sessionId: "session-abc", expiresAt: "2026-01-01T00:05:00.000Z" });
+      expect(registeredWith).toEqual({
+        model: "gemini-3.1-flash-live-preview",
+        systemPrompt: "sé breve",
+        tools: [{ name: "read_sensor" }],
+      });
+    });
+
+    it("sin token interno, rechaza con 401 como el resto de /v1/*", async () => {
+      const app = appWith(fakeGateway(), undefined, undefined, undefined, fakeLiveVoiceSessionStore(() => "s1"));
+
+      const response = await request(app)
+        .post("/v1/live-sessions")
+        .send({ model: "gemini-3.1-flash-live-preview", systemPrompt: "sé breve" });
 
       expect(response.status).toBe(401);
     });

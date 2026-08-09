@@ -5,8 +5,10 @@ import { ImagePlus, Send, Wrench, X } from "lucide-react";
 import type { ChatStreamEvent, Conversation } from "@kan/core";
 import { Card } from "@/components/ui/Card";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
+import { LiveVoiceButton } from "@/components/dashboard/LiveVoiceButton";
 import { useVoiceInput } from "@/lib/voice/useVoiceInput";
 import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
+import { useLiveSession } from "@/lib/voice/useLiveSession";
 import { readSseStream } from "@/lib/chat/parseSseStream";
 
 type ChatRole = "user" | "assistant" | "tool";
@@ -140,6 +142,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
   );
 
   const voice = useVoiceInput((text) => sendMessage(text, { viaVoice: true }));
+  const live = useLiveSession();
 
   async function handleImageSelect(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -184,9 +187,16 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         )}
       </div>
 
-      {(error || voice.error) && (
+      {(error || voice.error || live.error) && (
         <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {error ?? voice.error}
+          {error ?? voice.error ?? live.error}
+        </p>
+      )}
+
+      {live.status === "active" && (
+        <p className="flex items-center gap-1.5 self-start rounded-md border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-danger" aria-hidden="true" />
+          Conversación en vivo — hablá cuando quieras, sin apretar nada.
         </p>
       )}
 
@@ -213,6 +223,10 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
         <VoiceButton
           status={voice.status}
           onClick={voice.status === "recording" ? voice.stop : voice.start}
+        />
+        <LiveVoiceButton
+          status={live.status}
+          onClick={live.status === "active" ? live.stop : live.start}
         />
         <input
           ref={fileInputRef}

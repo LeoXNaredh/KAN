@@ -18,6 +18,8 @@ export * from "./application/AuditService";
 export * from "./application/ToolRegistry";
 export * from "./application/ToolResolver";
 export * from "./application/ToolExecutor";
+export * from "./application/LiveVoiceSessionStore";
+export * from "./infra/GeminiLiveProxy";
 export * from "./infra/WsConnectionManager";
 export * from "./infra/InMemoryEdgeTicketStore";
 export * from "./infra/JsonlAuditStore";

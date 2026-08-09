@@ -13,6 +13,8 @@ import {
   ExpoNotificationService,
   ConsoleLogger,
   InMemoryEdgeTicketStore,
+  LiveVoiceSessionStore,
+  GeminiLiveProxy,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
 import { createPairingRoutes } from "./http/pairingRoutes";
@@ -47,6 +49,11 @@ const ALLOWED_WEB_ORIGINS = (process.env.KAN_WEB_ORIGIN ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+// Voz en tiempo real (ADR-044, rediseño vía proxy): opcional a propósito —
+// sin esto, POST /v1/live-sessions responde 501 y el resto del Gateway
+// sigue andando igual. Nunca sale de este proceso: GeminiLiveProxy es el
+// único lugar que la usa, para abrir el WS saliente hacia Gemini.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const logger = new ConsoleLogger();
 const bus = new GatewayBus();
@@ -81,6 +88,14 @@ const scheduler = new NodeCronScheduler(scheduledJobStore, logger);
 // ExpoNotificationService).
 const pushTokenStore = new SupabasePushTokenStore(supabaseClient);
 const notificationService = new ExpoNotificationService(pushTokenStore, logger);
+const liveVoiceSessionStore = GEMINI_API_KEY ? new LiveVoiceSessionStore() : undefined;
+const geminiLiveProxy =
+  GEMINI_API_KEY && liveVoiceSessionStore
+    ? new GeminiLiveProxy(liveVoiceSessionStore, GEMINI_API_KEY, logger)
+    : undefined;
+if (!GEMINI_API_KEY) {
+  logger.warn("[gateway] GEMINI_API_KEY no configurada — la voz en tiempo real (ADR-044) queda deshabilitada.");
+}
 
 const gateway = new Gateway({ bus, connectionManager, auditStore, scheduler, notificationService });
 
@@ -113,6 +128,7 @@ app.use(
     { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX },
     authPort,
     edgeTicketStore,
+    liveVoiceSessionStore,
   ),
 );
 
@@ -124,6 +140,8 @@ httpServer.on("upgrade", (request, socket, head) => {
   const pathname = new URL(request.url ?? "/", "http://internal").pathname;
   if (pathname === "/edge") {
     connectionManager.handleUpgrade(request, socket, head);
+  } else if (pathname === "/live-voice" && geminiLiveProxy) {
+    geminiLiveProxy.handleUpgrade(request, socket, head);
   } else {
     socket.destroy();
   }
@@ -132,7 +150,7 @@ httpServer.on("upgrade", (request, socket, head) => {
 gateway.bootstrap();
 
 httpServer.listen(PORT, () => {
-  logger.info(`[gateway] escuchando en :${PORT} (HTTP /v1/* + WS /edge)`);
+  logger.info(`[gateway] escuchando en :${PORT} (HTTP /v1/* + WS /edge${geminiLiveProxy ? " + /live-voice" : ""})`);
 });
 
 function shutdown(signal: string): void {
