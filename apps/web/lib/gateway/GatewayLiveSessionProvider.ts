@@ -38,6 +38,9 @@ export class GatewayLiveSessionProvider implements LiveSessionPort {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.config.internalToken}`,
+        // Túnel ngrok gratuito en producción: sin esto, intercepta la
+        // request con su página de advertencia HTML en vez de dejarla pasar.
+        "ngrok-skip-browser-warning": "true",
         ...(this.config.userToken ? { "X-User-Token": this.config.userToken } : {}),
       },
       body: JSON.stringify({ model: this.model, systemPrompt, tools }),

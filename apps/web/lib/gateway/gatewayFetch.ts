@@ -11,7 +11,15 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 export function gatewayFetch(path: string, init: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
   return fetch(`${GATEWAY_URL}${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${GATEWAY_TOKEN}`, ...(init.headers ?? {}) },
+    headers: {
+      Authorization: `Bearer ${GATEWAY_TOKEN}`,
+      // El Gateway en producción corre detrás de un túnel ngrok gratuito,
+      // que sin esto intercepta la request con una página HTML de
+      // advertencia (para navegadores humanos) en vez de dejarla pasar —
+      // rompe cualquier llamada server-to-server como esta (Vercel -> Gateway).
+      "ngrok-skip-browser-warning": "true",
+      ...(init.headers ?? {}),
+    },
     signal: AbortSignal.timeout(timeoutMs),
     cache: "no-store",
   });
