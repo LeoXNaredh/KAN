@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ImagePlus, Send, Volume2, Wrench, X } from "lucide-react";
-import type { ChatStreamEvent, Conversation } from "@kan/core";
+import { translateToolCall, translateToolResult, type ChatStreamEvent, type Conversation } from "@kan/core";
 import { Card } from "@/components/ui/Card";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
 import { LiveVoiceButton } from "@/components/dashboard/LiveVoiceButton";
@@ -12,7 +12,6 @@ import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
 import { useLiveSession } from "@/lib/voice/useLiveSession";
 import { readSseStream } from "@/lib/chat/parseSseStream";
 import { toHumanMessage } from "@/lib/errors/toHumanMessage";
-import { translateToolCall, translateToolResult } from "@/lib/chat/translateToolCall";
 
 type ChatRole = "user" | "assistant" | "tool";
 

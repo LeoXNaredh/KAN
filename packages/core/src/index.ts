@@ -21,6 +21,7 @@ export * from "./domain/ports/VoiceProviderPort";
 export * from "./domain/ports/PairingPort";
 export * from "./domain/ports/PushTokenStorePort";
 export * from "./domain/ports/LiveSessionPort";
+export * from "./application/translateToolCall";
 export * from "./application/memoryTools";
 export * from "./application/sessionContextTools";
 export * from "./application/SessionContext";

@@ -1,14 +1,15 @@
 /**
  * Traduce el nombre técnico de una tool (ej. `read_sensor`, `kan_set_memory`,
- * `kan_schedule_job`) a una frase humana genérica pero descriptiva — mismo
- * principio que `translateAuditEntry.ts` (docs/17 §3.1: el cliente nunca ve
- * un identificador de función cruda). Por patrón de palabras clave, no por
- * nombre exacto: los plugins de hardware agregan capabilities nuevas todo el
- * tiempo (hoy hay ~45 entre los 15 plugins), y una tabla de nombres exactos
- * quedaría desactualizada de inmediato. Orden de los patrones = prioridad —
- * el primero que matchea gana. Cada categoría trae su frase "en curso" (tool
- * call) y su frase "lista" (tool result) por separado — no se derivan una de
- * la otra por regex, para no arriesgar una conjugación mal formada.
+ * `kan_schedule_job`) a una frase humana genérica pero descriptiva — nunca
+ * el nombre de función crudo ni el JSON de su resultado (VISION_PRODUCT_v0.2.md
+ * §3.1/§4.4). Compartida entre `SendMessageUseCase` (el `content` persistido
+ * de un mensaje "tool" — solo para mostrar; lo que realmente vuelve al LLM
+ * es `Message.toolResult`, sin tocar, ver `GeminiProvider`/etc.) y
+ * `apps/web` (el mismo texto mientras la tool corre, antes de que llegue el
+ * mensaje final persistido). Por patrón de palabras clave, no por nombre
+ * exacto: los plugins de hardware agregan capabilities nuevas todo el
+ * tiempo, y una tabla de nombres exactos quedaría desactualizada de
+ * inmediato. Orden de los patrones = prioridad — el primero que matchea gana.
  */
 const CATEGORIES: Array<{ test: RegExp; inProgress: string; done: string }> = [
   { test: /memor/i, inProgress: "Guardando en memoria…", done: "Guardado en memoria." },
@@ -43,7 +44,7 @@ export function translateToolCall(toolName: string): string {
   return categoryFor(toolName).inProgress;
 }
 
-/** Frase para el resultado ya terminado (evento `tool_result`) — nunca JSON crudo ni el nombre técnico en el error. */
+/** Frase para el resultado ya terminado — nunca JSON crudo ni el nombre técnico en el error. */
 export function translateToolResult(toolName: string, success: boolean, error?: string): string {
   if (success) return categoryFor(toolName).done;
   return `No se pudo completar: ${error ?? "error desconocido"}`;

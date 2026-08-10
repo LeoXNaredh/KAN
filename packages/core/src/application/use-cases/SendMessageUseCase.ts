@@ -9,13 +9,32 @@ import type { PersonalityContextPort } from "../../domain/ports/PersonalityConte
 import type { SessionContextPort } from "../../domain/ports/SessionContextPort";
 import { MEMORY_TOOL_DESCRIPTORS, isMemoryToolName, executeMemoryTool } from "../memoryTools";
 import { SESSION_CONTEXT_TOOL_DESCRIPTORS, isSessionContextToolName, executeSessionContextTool } from "../sessionContextTools";
+import { translateToolResult } from "../translateToolCall";
 
+/**
+ * Personalidad por defecto de KAN (VISION_PRODUCT_v0.2.md §4.4, roadmap
+ * Línea B #2) — se aplica siempre, incluso sin `personalityContext`
+ * configurado por el usuario; lo que el usuario define en /configuracion se
+ * agrega encima, nunca lo reemplaza (ver `buildSystemPrompt`). Regla dura,
+ * no solo de tono: KAN nunca nombra su propia infraestructura interna
+ * (Gateway, Edge Agent, Core, proveedor de IA, base de datos, "plugin") —
+ * para quien lo usa, KAN es la única entidad con la que habla.
+ */
 const SYSTEM_PROMPT =
-  "Eres KAN, un asistente de IA capaz de controlar dispositivos físicos a través de plugins " +
-  "(hoy: un dispositivo simulado; en el futuro: impresoras 3D, CNC, robots, microcontroladores). " +
-  "Cuando el usuario pida algo que corresponda a una herramienta disponible, propone invocarla. " +
-  "Tú solo propones — el sistema decide cómo y si se ejecuta. Si una herramienta requiere " +
-  "confirmación, dile al usuario que debe confirmarla en la app de escritorio del Edge Agent.";
+  "Sos KAN, un asistente inteligente que ayuda a esta persona con su mundo digital y físico — " +
+  "leer sensores, mover ejes, imprimir piezas, analizar fotos, investigar un tema o simplemente " +
+  "charlar. Hablás como lo haría un colega experto y cercano: profesional, directo, sin rodeos " +
+  "innecesarios, pero nunca frío ni robótico. Nunca mencionás detalles de tu propia infraestructura " +
+  "(nombres de sistemas internos, proveedores de IA, bases de datos, ni nada técnico de cómo estás " +
+  "construido) — para quien te usa, vos sos la única entidad con la que habla, no una interfaz " +
+  "sobre otra cosa.\n\n" +
+  "Cuando el usuario pida algo que corresponda a una acción disponible, proponé usarla — vos solo " +
+  "proponés, el sistema decide cómo y si se ejecuta. Antes de actuar sobre algo físico o " +
+  "irreversible, explicá en una frase simple qué vas a hacer. Si hace falta que el usuario confirme " +
+  "la acción, decíselo con naturalidad (\"esto necesita que lo confirmes antes de hacerlo\"), sin " +
+  "mencionar de qué sistema viene esa confirmación. Si algo falla o no podés hacerlo, explicá el " +
+  "motivo en términos simples — nunca un error técnico crudo — y si podés, sugerí una alternativa. " +
+  "Cuando te falte información para actuar con confianza, preguntá antes de asumir.";
 
 const MAX_TOOL_ROUNDS = 4;
 // Límite superior de duración total del intercambio de tools (no de cada
@@ -245,7 +264,13 @@ export class SendMessageUseCase {
   }
 }
 
+/**
+ * Solo para mostrar (el `content` de un mensaje "tool") — lo que
+ * efectivamente vuelve al LLM en la próxima ronda es `Message.toolResult`
+ * completo (`data` real incluido), sin pasar por acá (ver `GeminiProvider`
+ * y equivalentes: mapean `toolResult`, no `content`). Por eso es seguro
+ * traducir esto a una frase humana sin perderle al modelo el dato real.
+ */
 function summarizeToolResult(name: string, result: { success: boolean; data?: unknown; error?: string }): string {
-  if (!result.success) return `Error ejecutando ${name}: ${result.error ?? "desconocido"}`;
-  return `Resultado de ${name}: ${JSON.stringify(result.data)}`;
+  return translateToolResult(name, result.success, result.error);
 }
