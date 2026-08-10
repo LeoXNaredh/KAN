@@ -53,6 +53,7 @@ export default async function ConfiguracionPage({
             <User className="h-4 w-4" aria-hidden="true" />
             Perfil
           </h2>
+          <p className="text-xs text-ink-faint">Tu identidad frente a KAN — así te saluda cada vez que abrís la app.</p>
 
           {params.updated && (
             <p className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
@@ -75,13 +76,15 @@ export default async function ConfiguracionPage({
                 name="displayName"
                 type="text"
                 defaultValue={summary?.profile.displayName ?? ""}
-                placeholder="¿Cómo quieres que KAN te llame?"
+                placeholder="Ej: Fabián"
+                maxLength={60}
                 className={`flex-1 ${INPUT_CLASSES}`}
               />
               <button type="submit" className={PRIMARY_BUTTON_CLASSES}>
                 Guardar
               </button>
             </div>
+            <p className="text-xs text-ink-faint">Sin nombre, KAN te va a saludar sin usar ninguno — nunca inventa uno.</p>
           </form>
         </Card>
       )}
@@ -101,11 +104,13 @@ export default async function ConfiguracionPage({
               name="personality"
               defaultValue={personality}
               placeholder="Ej: Sé directo y breve, sin rodeos. Tono técnico. Nunca uses emojis."
+              maxLength={1000}
               className={`min-h-[5rem] ${INPUT_CLASSES}`}
             />
             <button type="submit" className={`self-start ${PRIMARY_BUTTON_CLASSES}`}>
               Guardar
             </button>
+            <p className="text-xs text-ink-faint">Dejalo vacío para usar el tono por defecto de KAN.</p>
           </form>
         </Card>
       )}
