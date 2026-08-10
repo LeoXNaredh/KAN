@@ -7,6 +7,7 @@ import { buildHeroStatus } from "@/lib/status/buildHeroStatus";
 import { buildGreeting, timeOfDayGreeting } from "@/lib/greeting";
 import { useIsClient } from "@/lib/useIsClient";
 import { HeroStatus } from "@/components/dashboard/HeroStatus";
+import { OnboardingWelcome } from "@/components/dashboard/OnboardingWelcome";
 import { DeviceCard } from "@/components/dashboard/DeviceCard";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { SystemStatus } from "@/components/dashboard/SystemStatus";
@@ -17,7 +18,7 @@ import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
 import { Card } from "@/components/ui/Card";
 
 export function DashboardClient({ summary }: { summary: DashboardSummary | undefined }) {
-  const { status } = useSystemStatusContext();
+  const { status, loading } = useSystemStatusContext();
 
   // Se calcula recién después de hidratar (useIsClient) — evita un mismatch
   // entre la hora del servidor (Vercel, UTC) y la del navegador del
@@ -43,6 +44,11 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
 
   const heroStatus = buildHeroStatus(status);
   const displayName = summary?.profile.displayName;
+  // Recién cuando /api/status ya resolvió al menos una vez (no loading) —
+  // sin esto, todo usuario vería la bienvenida guiada un instante mientras
+  // sus dispositivos reales todavía están cargando (allDevices.length
+  // arranca en 0 para cualquiera, no solo para quien es nuevo de verdad).
+  const isNewUser = Boolean(summary) && !loading && summary?.memoriesCount === 0 && allDevices.length === 0;
 
   return (
     <div className="flex flex-col gap-8">
@@ -54,6 +60,8 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
           <HeroStatus status={heroStatus} />
         </div>
       </div>
+
+      {isNewUser && <OnboardingWelcome displayName={displayName} />}
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-ink-muted">Tu espacio</h2>
