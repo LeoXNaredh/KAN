@@ -77,7 +77,18 @@ const pairingPort = new SupabasePairingStore(supabaseClient);
 // InMemoryEdgeTicketStore): mint y consume ocurren en la misma request.
 const pluginRegistry = new SupabasePluginRegistry(supabaseClient);
 const pluginPackageTicketStore = new InMemoryPluginPackageTicketStore();
-const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS, pairingPort, MAX_WS_MESSAGES_PER_SECOND);
+// Los dos `undefined`/`[]` son edgeTicketPort/allowedOrigins (camino de
+// ticket para el Simulador en el navegador) — sin wiring todavía en este
+// archivo; maxMessagesPerSecond (fix de auditoría de backend #7) va
+// último a propósito para no pisar esos dos slots cuando se conecten.
+const connectionManager = new WsConnectionManager(
+  EDGE_TOKEN,
+  MAX_WS_CONNECTIONS,
+  pairingPort,
+  undefined,
+  [],
+  MAX_WS_MESSAGES_PER_SECOND,
+);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );
