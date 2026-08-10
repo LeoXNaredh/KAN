@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildLiveToolDispatcher } from "@/lib/voice/liveComposition";
 import { resolveUserToken } from "@/lib/auth/resolveUserToken";
+import { requireUser } from "@/lib/auth/requireUser";
 
 /**
  * Relay de ejecución de tools para una sesión de voz en tiempo real
@@ -10,6 +11,9 @@ import { resolveUserToken } from "@/lib/auth/resolveUserToken";
  * credencial que el browser tenga en la mano.
  */
 export async function POST(request: Request) {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth.response;
+
   const body = await request.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name : "";
   if (!name) {

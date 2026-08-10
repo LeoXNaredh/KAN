@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildCreateLiveSessionUseCase } from "@/lib/voice/liveComposition";
 import { resolveUserToken } from "@/lib/auth/resolveUserToken";
+import { requireUser } from "@/lib/auth/requireUser";
 
 /**
  * Registra una sesión de voz en tiempo real en el Gateway (ADR-044,
@@ -10,6 +11,9 @@ import { resolveUserToken } from "@/lib/auth/resolveUserToken";
  * `/live-voice` del Gateway, que proxea hacia Gemini con la key real.
  */
 export async function POST(request: Request) {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const useCase = await buildCreateLiveSessionUseCase(await resolveUserToken(request));
     const session = await useCase.execute();

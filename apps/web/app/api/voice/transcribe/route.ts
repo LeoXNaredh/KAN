@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { buildTranscribeAudioUseCase, MissingGroqConfigError } from "@/lib/voice/composition";
+import { requireUser } from "@/lib/auth/requireUser";
 
 export async function POST(request: Request) {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth.response;
+
   const formData = await request.formData().catch(() => null);
   const file = formData?.get("audio");
 

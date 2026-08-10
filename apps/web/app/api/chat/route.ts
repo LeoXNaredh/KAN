@@ -5,6 +5,7 @@ import { GatewayToolProvider } from "@/lib/gateway/GatewayToolProvider";
 import { buildSendMessageUseCase } from "@/lib/chat/composition";
 import { extractBearerToken } from "@/lib/auth/extractBearerToken";
 import { resolveUserToken } from "@/lib/auth/resolveUserToken";
+import { requireUser } from "@/lib/auth/requireUser";
 
 /**
  * Composition root: único lugar donde se instancian implementaciones concretas
@@ -99,6 +100,9 @@ function sseChunk(event: ChatSseEvent): string {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth.response;
+
   const body = await request.json().catch(() => null);
   const userMessage = typeof body?.message === "string" ? body.message.trim() : "";
 

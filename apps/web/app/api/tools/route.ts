@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { gatewayFetch } from "@/lib/gateway/gatewayFetch";
 import { resolveUserToken } from "@/lib/auth/resolveUserToken";
+import { requireUser } from "@/lib/auth/requireUser";
 
 interface RawTool {
   name: string;
@@ -14,6 +15,9 @@ interface RawTool {
  * el Gateway está apagado, mismo criterio que /api/status.
  */
 export async function GET(request: Request) {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const userToken = await resolveUserToken(request);
     const response = await gatewayFetch("/v1/tools", { headers: userToken ? { "X-User-Token": userToken } : {} });

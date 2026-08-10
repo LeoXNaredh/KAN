@@ -1,3 +1,5 @@
+import { getAccessToken } from "../supabase/getAccessToken";
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 
 /**
@@ -6,10 +8,13 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3
  * `expo/fetch` tiene bugs conocidos y no confirmados como resueltos en
  * SDK 57 al subir `FormData` con archivos en nativo. `XMLHttpRequest` es
  * el mecanismo estable de RN para esto, sin relación con esos bugs.
- * Sin header de autenticación: la ruta no consulta sesión de usuario, solo
- * llama a Groq (ver `apps/web/app/api/voice/transcribe/route.ts`).
+ * Manda `Authorization: Bearer <token>` (ADR-029, mismo patrón que
+ * /api/chat en index.tsx) — la ruta ahora exige sesión válida (fix
+ * crítico de auditoría de backend).
  */
-export function uploadAudio(uri: string): Promise<string> {
+export async function uploadAudio(uri: string): Promise<string> {
+  const accessToken = await getAccessToken();
+
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     // Shape clásico de RN para adjuntar un archivo local a FormData — no es
@@ -22,6 +27,7 @@ export function uploadAudio(uri: string): Promise<string> {
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_BASE_URL}/api/voice/transcribe`);
+    if (accessToken) xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
     xhr.onload = () => {
       let body: { text?: string; error?: string } = {};
       try {

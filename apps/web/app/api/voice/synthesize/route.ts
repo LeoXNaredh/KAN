@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { buildSynthesizeSpeechUseCase, MissingVoiceConfigError } from "@/lib/voice/composition";
-import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
+import { requireUser } from "@/lib/auth/requireUser";
 
 export async function POST(request: Request) {
+  const auth = await requireUser(request);
+  if (!auth.ok) return auth.response;
+
   const body = await request.json().catch(() => null);
   const text = typeof body?.text === "string" ? body.text.trim() : "";
 
@@ -11,8 +14,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const user = await getCurrentUserCached();
-    const useCase = await buildSynthesizeSpeechUseCase(user?.userId);
+    const useCase = await buildSynthesizeSpeechUseCase(auth.user.userId);
     const audio = await useCase.execute(text);
     return new NextResponse(audio, { status: 200, headers: { "Content-Type": audio.type || "audio/mpeg" } });
   } catch (error) {
