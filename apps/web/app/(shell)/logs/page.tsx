@@ -20,7 +20,7 @@ export default async function LogsPage() {
       <Card className="fade-in">
         {entries === undefined ? (
           <p className="text-sm text-ink-faint">
-            No se pudo conectar con el Gateway — el historial no está disponible en este momento.
+            No se pudo conectar con KAN — el historial no está disponible en este momento.
           </p>
         ) : entries.length === 0 ? (
           <p className="text-sm text-ink-faint">Sin actividad todavía.</p>

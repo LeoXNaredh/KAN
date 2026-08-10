@@ -158,7 +158,7 @@ export default async function ConfiguracionPage({
           </h2>
           <p className="mb-3 text-xs text-ink-faint">
             Conexiones de cada plugin (hosts SSH, brokers MQTT, targets Modbus, etc.) — sin editar ningún archivo a
-            mano. Un Edge Agent ya vinculado las trae al aparear, o con &quot;Sincronizar configuración&quot; en la
+            mano. Un equipo ya vinculado las trae al aparear, o con &quot;Sincronizar configuración&quot; en la
             app de escritorio. ¿Todavía no vinculaste ninguno?{" "}
             <Link href="/dispositivos" className="text-accent hover:underline">
               Hacelo en Dispositivos
@@ -170,6 +170,12 @@ export default async function ConfiguracionPage({
       )}
 
       <PlaceholderPage title="Proveedores de IA" description="Elegir proveedor de IA y notificaciones llega en un incremento futuro." />
+
+      <p className="text-xs text-ink-faint">
+        <Link href="/logs" className="text-accent hover:underline">
+          Ver registro técnico de actividad
+        </Link>
+      </p>
     </div>
   );
 }

@@ -31,11 +31,14 @@ Sin fuente nueva: Geist Sans (UI) y Geist Mono (`apps/web/app/layout.tsx`, ya ca
 
 | Rol | Clases |
 |---|---|
+| Saludo del Dashboard (único "hero" de la interfaz) | `text-3xl sm:text-4xl font-semibold tracking-tight text-ink` |
 | Título de página (`<h1>`) | `text-lg font-semibold text-ink` |
 | Encabezado de sección (`<h2>`) | `text-sm font-medium text-ink-muted` (opcional `uppercase tracking-wide`) |
 | Cuerpo | `text-sm text-ink` |
 | Caption / metadata | `text-xs text-ink-faint` |
-| Mono (tool calls, IDs, auditoría) | `font-mono text-xs text-ink-muted` |
+| Mono (IDs técnicos, auditoría) | `font-mono text-xs text-ink-muted` |
+
+El "hero" es deliberadamente el único lugar de toda la interfaz con tipografía grande (rediseño de interfaz, `VISION_PRODUCT_v0.2.md` §4.1) — es lo que separa un saludo de asistente de un panel de administración donde todo pesa igual. No se usa en ningún otro título de página.
 
 ## Espaciado y radios
 
@@ -67,6 +70,23 @@ Inventario actual: `LayoutDashboard`, `MessageSquare`, `Cpu`, `Workflow`, `Folde
 - **`Card`** — superficie base (`bg-surface-2 border border-line rounded-xl`), prop `padding` (`sm`/`md`/`lg`) y `interactive` (agrega hover de borde). Toda tarjeta del Dashboard la usa en vez de repetir sus clases.
 - **`Badge`** — pastilla pequeña con acento (`bg-accent/10 border-accent/40 text-accent`), usada hoy en `PlaceholderPage`.
 - **`StatusDot`** — punto de color + texto (nunca solo color, por accesibilidad), niveles `online`/`warning`/`offline` mapeados a `success`/`warning`/`danger`.
+- **`HeroStatus`** (`components/dashboard/`) — el estado de KAN como un ícono + una frase, nunca una grilla de infraestructura. Ver `lib/status/buildHeroStatus.ts`: colapsa gateway/edgeAgents/ai en un solo nivel (`online`/`warning`/`offline`) con una frase humana — la única fuente de verdad de "cómo se ve el estado del sistema" en el Dashboard.
+
+## Terminología (regla dura, no solo estilo)
+
+Ningún nombre interno se muestra al usuario — "Gateway", "Edge Agent", "Core", "Plugin Manager", el `id` de un paquete npm (`kan-plugin-*`) o el `kind` crudo de un dispositivo son bugs de producto si aparecen en la UI (`VISION_PRODUCT_v0.2.md` §3.1). Equivalencias ya establecidas:
+
+| Interno | Humano |
+|---|---|
+| Gateway / Edge Agent / Core (como estados separados) | Un solo estado, ver `HeroStatus` arriba |
+| "Edge Agent" (como nombre de equipo vinculado) | `Tu equipo (Windows)` / `Estación N` (ver `DeviceList.tsx`) |
+| "N plugin(s) cargado(s)" / "Plugins activos" | "Lo que KAN puede hacer ahora" (`PluginCard`, solo `displayName`, nunca el `id` del paquete) |
+| Nombre técnico de una tool (`read_sensor`, `kan_set_memory`) | Frase genérica por categoría — ver `lib/chat/translateToolCall.ts` (mismo principio que `lib/status/translateAuditEntry.ts` para la auditoría) |
+| "Jobs" / "Automatizaciones" | "Recordatorios" / "Tareas programadas" |
+
+## Jerarquía de controles de voz
+
+`VoiceButton` (push-to-talk) es el control primario: círculo de `h-14 w-14`, `bg-accent`, vive directo en la fila del input de `ConversationPanel`. `LiveVoiceButton` (conversación en vivo/duplex) y `ScreenShareButton` son secundarios a propósito — pill chica (`h-8`, `rounded-full`, `text-xs`, sin relleno de color en reposo) para que un usuario nuevo no dude cuál probar primero. Mismo criterio para el botón de adjuntar imagen.
 
 ## Qué NO cambia
 

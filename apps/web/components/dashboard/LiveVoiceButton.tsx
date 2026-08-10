@@ -4,24 +4,26 @@ import { Radio, Square, Loader2 } from "lucide-react";
 import type { LiveSessionStatus } from "@/lib/voice/useLiveSession";
 
 const LABEL: Record<LiveSessionStatus, string> = {
-  idle: "Conversación en vivo con KAN",
+  idle: "Cambiar a conversación en vivo",
   connecting: "Conectando…",
   active: "En vivo — click para cortar",
   error: "Error en la sesión — click para reintentar",
 };
 
 const SHORT_LABEL: Record<LiveSessionStatus, string> = {
-  idle: "Vivo",
+  idle: "Conversación en vivo",
   connecting: "Conectando…",
   active: "En vivo",
   error: "Reintentar",
 };
 
 /**
- * Conversación en tiempo real (ADR-044) — botón distinto del VoiceButton de
- * push-to-talk: un click abre la sesión de voz en vivo, otro click (o el
- * mismo botón, ahora en su estado "active") la cierra. Etiqueta de texto
- * siempre visible (P2.5), mismo criterio que VoiceButton.
+ * Secundario a propósito (rediseño de interfaz): antes tenía el mismo peso
+ * visual que el botón de voz principal (misma pill h-10) — un usuario
+ * nuevo no tiene forma de saber cuál probar primero. Ahora es un toggle de
+ * texto más chico al lado del control primario (`VoiceButton`), mismo
+ * criterio que "modo avanzado" en vez de una alternativa igual de
+ * prominente.
  */
 export function LiveVoiceButton({ status, onClick }: { status: LiveSessionStatus; onClick: () => void }) {
   return (
@@ -31,20 +33,20 @@ export function LiveVoiceButton({ status, onClick }: { status: LiveSessionStatus
       disabled={status === "connecting"}
       aria-label={LABEL[status]}
       title={LABEL[status]}
-      className={`flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
+      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
         status === "active"
-          ? "animate-pulse bg-danger text-white hover:brightness-110"
+          ? "bg-danger/15 text-danger"
           : status === "error"
-            ? "border border-danger/60 text-danger hover:bg-danger/10"
-            : "border border-line text-ink-muted hover:bg-surface-3 hover:text-ink"
+            ? "text-danger hover:bg-danger/10"
+            : "text-ink-faint hover:bg-surface-3 hover:text-ink-muted"
       }`}
     >
       {status === "connecting" ? (
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />
       ) : status === "active" ? (
-        <Square className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <Square className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       ) : (
-        <Radio className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <Radio className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       )}
       <span>{SHORT_LABEL[status]}</span>
     </button>

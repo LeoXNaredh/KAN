@@ -3,7 +3,10 @@
 import { Cpu, Brain, FolderKanban, Workflow } from "lucide-react";
 import type { DashboardSummary } from "@kan/core";
 import { useSystemStatusContext } from "@/lib/status/SystemStatusProvider";
-import { StatusCard } from "@/components/dashboard/StatusCard";
+import { buildHeroStatus } from "@/lib/status/buildHeroStatus";
+import { buildGreeting, timeOfDayGreeting } from "@/lib/greeting";
+import { useIsClient } from "@/lib/useIsClient";
+import { HeroStatus } from "@/components/dashboard/HeroStatus";
 import { DeviceCard } from "@/components/dashboard/DeviceCard";
 import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { SystemStatus } from "@/components/dashboard/SystemStatus";
@@ -12,10 +15,15 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { ConversationPanel } from "@/components/dashboard/ConversationPanel";
 import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
 import { Card } from "@/components/ui/Card";
-import type { StatusLevel } from "@/components/ui/StatusDot";
 
 export function DashboardClient({ summary }: { summary: DashboardSummary | undefined }) {
   const { status } = useSystemStatusContext();
+
+  // Se calcula recién después de hidratar (useIsClient) — evita un mismatch
+  // entre la hora del servidor (Vercel, UTC) y la del navegador del
+  // usuario. "Hola." es el saludo neutro hasta entonces (ver lib/greeting.ts).
+  const isClient = useIsClient();
+  const greeting = isClient ? timeOfDayGreeting() : null;
 
   // Antes: un catálogo fijo de 6 íconos (ESP32/Arduino/Robot/Impresora/CNC/
   // Simulador) "encendidos" por un matcher de substring sobre `kind` — con
@@ -32,46 +40,19 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
   const allPlugins = Array.from(
     new Map((status?.edgeAgents.flatMap((agent) => agent.installedPlugins) ?? []).map((p) => [p.id, p])).values(),
   );
-  const anyAgentOnline = status?.edgeAgents.some((agent) => agent.status === "online") ?? false;
 
-  const coreLevel: StatusLevel = "online";
-  const gatewayLevel: StatusLevel = status?.gateway === "online" ? "online" : "offline";
-  const edgeAgentLevel: StatusLevel = !status ? "offline" : anyAgentOnline ? "online" : "warning";
-  const aiLevel: StatusLevel = status?.ai === "configured" ? "online" : "warning";
-  const overallLevel: StatusLevel =
-    gatewayLevel === "offline"
-      ? "offline"
-      : edgeAgentLevel === "online" && aiLevel === "online"
-        ? "online"
-        : "warning";
-
+  const heroStatus = buildHeroStatus(status);
   const displayName = summary?.profile.displayName;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div>
-        <h1 className="text-lg font-semibold text-ink">{displayName ? `Hola, ${displayName}` : "Dashboard"}</h1>
-        <p className="text-sm text-ink-faint">Resumen general de KAN.</p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <StatusCard title="Core" level={coreLevel} label="Activo" />
-        <StatusCard
-          title="Gateway"
-          level={gatewayLevel}
-          label={gatewayLevel === "online" ? "Conectado" : "Desconectado"}
-        />
-        <StatusCard
-          title="Edge Agent"
-          level={edgeAgentLevel}
-          label={edgeAgentLevel === "online" ? "Conectado" : edgeAgentLevel === "warning" ? "Sin agentes" : "Desconectado"}
-        />
-        <StatusCard title="IA" level={aiLevel} label={aiLevel === "online" ? "Configurada" : "Sin configurar"} />
-        <StatusCard
-          title="Estado General"
-          level={overallLevel}
-          label={overallLevel === "online" ? "Todo bien" : overallLevel === "warning" ? "Atención" : "Desconectado"}
-        />
+        <h1 className="fade-in text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+          {buildGreeting(greeting ?? "Hola", displayName)}
+        </h1>
+        <div className="mt-3">
+          <HeroStatus status={heroStatus} />
+        </div>
       </div>
 
       <section>
@@ -91,25 +72,25 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
           />
           <SummaryCard
             icon={Workflow}
-            title="Automatizaciones"
+            title="Recordatorios"
             value={status ? String(status.jobsCount) : "—"}
-            hint={status && status.jobsCount === 0 ? "Sin automatizaciones programadas" : "Jobs activos"}
+            hint={status && status.jobsCount === 0 ? "Sin nada programado" : "Programados"}
           />
         </div>
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-medium text-ink-muted">Dispositivos</h2>
+        <h2 className="mb-3 text-sm font-medium text-ink-muted">Tus dispositivos</h2>
         {allDevices.length === 0 ? (
           <Card padding="sm" className="fade-in">
             <p className="text-sm text-ink-faint">
-              Ningún dispositivo descubierto todavía — vinculá un Edge Agent desde Dispositivos.
+              Ningún dispositivo conectado todavía — vinculá tu primer equipo desde Dispositivos.
             </p>
           </Card>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {allDevices.map((device) => (
-              <DeviceCard key={device.id} icon={Cpu} label={device.name} connected={device.agentOnline} detail={device.kind} />
+              <DeviceCard key={device.id} icon={Cpu} label={device.name} connected={device.agentOnline} />
             ))}
           </div>
         )}

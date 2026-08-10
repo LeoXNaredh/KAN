@@ -19,16 +19,16 @@ export function ScreenShareButton({ sharing, onClick }: { sharing: boolean; onCl
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={`flex h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
         sharing
-          ? "border-accent bg-accent/10 text-accent hover:bg-accent/20"
-          : "border-line text-ink-muted hover:bg-surface-3 hover:text-ink"
+          ? "bg-accent/15 text-accent hover:bg-accent/25"
+          : "text-ink-faint hover:bg-surface-3 hover:text-ink-muted"
       }`}
     >
       {sharing ? (
-        <ScreenShareOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <ScreenShareOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       ) : (
-        <ScreenShare className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <ScreenShare className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       )}
       <span>{shortLabel}</span>
     </button>

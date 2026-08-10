@@ -17,7 +17,7 @@ export default async function DispositivosPage({
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">Dispositivos</h1>
-        <p className="text-sm text-ink-faint">Tus Edge Agents vinculados y los dispositivos que cada uno descubrió.</p>
+        <p className="text-sm text-ink-faint">Tus equipos vinculados y los dispositivos que cada uno descubrió.</p>
       </div>
 
       {user && (
@@ -29,7 +29,7 @@ export default async function DispositivosPage({
 
       {user && (
         <Card className="fade-in flex flex-col gap-4">
-          <h2 className="text-sm font-medium text-ink-muted">Vincular un nuevo Edge Agent</h2>
+          <h2 className="text-sm font-medium text-ink-muted">Vincular un nuevo equipo</h2>
           <p className="text-xs text-ink-faint">
             Generá un código, abrí la app de escritorio de KAN y escribilo ahí — tenés 10 minutos antes de que venza.
           </p>
@@ -53,7 +53,7 @@ export default async function DispositivosPage({
 
       {user && (
         <p className="text-sm text-ink-faint">
-          ¿Ya vinculaste un Edge Agent?{" "}
+          ¿Ya vinculaste un equipo?{" "}
           <Link href="/configuracion#plugins" className="text-accent hover:underline">
             Configurá sus plugins de hardware
           </Link>

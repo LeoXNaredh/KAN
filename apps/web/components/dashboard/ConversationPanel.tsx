@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { ImagePlus, Send, Wrench, X } from "lucide-react";
+import { ImagePlus, Send, Volume2, Wrench, X } from "lucide-react";
 import type { ChatStreamEvent, Conversation } from "@kan/core";
 import { Card } from "@/components/ui/Card";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
@@ -12,6 +12,7 @@ import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
 import { useLiveSession } from "@/lib/voice/useLiveSession";
 import { readSseStream } from "@/lib/chat/parseSseStream";
 import { toHumanMessage } from "@/lib/errors/toHumanMessage";
+import { translateToolCall, translateToolResult } from "@/lib/chat/translateToolCall";
 
 type ChatRole = "user" | "assistant" | "tool";
 
@@ -21,8 +22,7 @@ type ChatRole = "user" | "assistant" | "tool";
 type ChatSseEvent = ChatStreamEvent | { type: "done"; conversation: Conversation } | { type: "done"; error: string };
 
 function summarizeToolResultForDisplay(event: Extract<ChatStreamEvent, { type: "tool_result" }>): string {
-  if (!event.success) return `Error ejecutando ${event.name}: ${event.error ?? "desconocido"}`;
-  return `Resultado de ${event.name}: ${JSON.stringify(event.data)}`;
+  return translateToolResult(event.name, event.success, event.error);
 }
 
 interface ChatImage {
@@ -59,7 +59,7 @@ function fileToBase64(file: File): Promise<string> {
  * cambios, y la respuesta final se lee en voz alta. Desde P3 (ADR-018),
  * también acepta una imagen adjunta por mensaje.
  */
-export function ConversationPanel({ compact = false }: { compact?: boolean }) {
+export function ConversationPanel({ compact = false, framed = true }: { compact?: boolean; framed?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [input, setInput] = useState("");
@@ -68,7 +68,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { speak } = useSpeechSynthesis();
+  const { speak, isSpeaking } = useSpeechSynthesis();
 
   const sendMessage = useCallback(
     async (userMessage: string, options?: { viaVoice?: boolean }) => {
@@ -104,7 +104,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
 
         for await (const event of readSseStream<ChatSseEvent>(response)) {
           if (event.type === "tool_call") {
-            setStreamingStatus(`Llamando a ${event.name}…`);
+            setStreamingStatus(translateToolCall(event.name));
           } else if (event.type === "tool_result") {
             setStreamingStatus(null);
             setMessages((prev) => [...prev, { role: "tool", content: summarizeToolResultForDisplay(event) }]);
@@ -170,21 +170,36 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
     await sendMessage(input);
   }
 
+  const Wrapper = framed ? Card : "div";
+  const wrapperClassName = framed
+    ? "fade-in flex h-full flex-col gap-3"
+    : "fade-in flex h-full flex-col gap-4";
+
   return (
-    <Card className="fade-in flex h-full flex-col gap-3">
+    <Wrapper className={wrapperClassName}>
       <div
-        className={`flex flex-1 flex-col gap-3 overflow-y-auto ${compact ? "min-h-[16rem]" : "min-h-[24rem]"}`}
+        className={`flex flex-1 flex-col gap-4 overflow-y-auto ${compact ? "min-h-[16rem]" : "min-h-[24rem]"}`}
       >
         {messages.length === 0 && (
-          <p className="text-sm text-ink-faint">Escribe un mensaje o usa el micrófono para empezar.</p>
+          <p className="text-sm text-ink-faint">Escribí un mensaje o tocá el micrófono para empezar.</p>
         )}
         {messages.map((message, index) => (
           <MessageBubble key={index} message={message} />
         ))}
         {isSending && (
           <p className="flex items-center gap-1.5 text-sm text-ink-faint">
-            {streamingStatus && <Wrench className="h-3.5 w-3.5" aria-hidden="true" />}
-            {streamingStatus ?? "KAN está pensando…"}
+            <span className="flex gap-0.5" aria-hidden="true">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-faint [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-faint [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-ink-faint" />
+            </span>
+            {streamingStatus ?? "KAN está pensando"}
+          </p>
+        )}
+        {!isSending && isSpeaking && (
+          <p className="flex items-center gap-1.5 text-sm text-accent">
+            <Volume2 className="h-3.5 w-3.5 animate-pulse" aria-hidden="true" />
+            KAN está hablando
           </p>
         )}
       </div>
@@ -223,14 +238,7 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <VoiceButton
-            status={voice.status}
-            onClick={voice.status === "recording" ? voice.stop : voice.start}
-          />
-          <LiveVoiceButton
-            status={live.status}
-            onClick={live.status === "active" ? live.stop : live.start}
-          />
+          <LiveVoiceButton status={live.status} onClick={live.status === "active" ? live.stop : live.start} />
           {live.status === "active" && (
             <ScreenShareButton
               sharing={live.screenSharing}
@@ -250,16 +258,17 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
             title="Adjuntar imagen"
             onClick={() => fileInputRef.current?.click()}
             disabled={isSending}
-            className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium text-ink-muted transition-colors duration-fast hover:bg-surface-3 hover:text-ink disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-ink-faint transition-colors duration-fast hover:bg-surface-3 hover:text-ink-muted disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
-            <ImagePlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <ImagePlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span>Imagen</span>
           </button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <VoiceButton status={voice.status} onClick={voice.status === "recording" ? voice.stop : voice.start} />
           <input
-            className="flex-1 rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-            placeholder="Escribe un mensaje..."
+            className="h-14 flex-1 rounded-full border border-line bg-surface-3 px-5 text-sm text-ink outline-none focus:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            placeholder="Escribile a KAN…"
             value={input}
             onChange={(event) => setInput(event.target.value)}
             disabled={isSending}
@@ -267,22 +276,21 @@ export function ConversationPanel({ compact = false }: { compact?: boolean }) {
           <button
             type="submit"
             aria-label="Enviar mensaje"
-            className="flex shrink-0 items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors duration-fast hover:brightness-110 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-all duration-fast hover:scale-105 hover:brightness-110 disabled:opacity-50 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             disabled={isSending || !input.trim()}
           >
-            <Send className="h-4 w-4" aria-hidden="true" />
-            Enviar
+            <Send className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
       </form>
-    </Card>
+    </Wrapper>
   );
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "tool") {
     return (
-      <div className="flex items-center gap-1.5 self-start rounded-md border border-dashed border-line-strong bg-surface-3 px-3 py-1.5 font-mono text-xs text-ink-muted">
+      <div className="flex items-center gap-1.5 self-start rounded-full bg-surface-3 px-3 py-1 text-xs text-ink-faint">
         <Wrench className="h-3 w-3 shrink-0" aria-hidden="true" />
         {message.content}
       </div>
@@ -297,7 +305,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     >
       {message.toolCall && (
         <div className="mb-1 flex items-center gap-1 text-xs opacity-70">
-          <Wrench className="h-3 w-3" aria-hidden="true" /> llamando a {message.toolCall.name}
+          <Wrench className="h-3 w-3" aria-hidden="true" /> {translateToolCall(message.toolCall.name)}
         </div>
       )}
       {message.image && (

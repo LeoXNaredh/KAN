@@ -25,20 +25,21 @@ export function DeviceList() {
   if (agents.length === 0) {
     return (
       <p className="text-sm text-ink-faint">
-        Todavía no vinculaste ningún Edge Agent — generá un código más abajo y pegalo en la app de escritorio de KAN.
+        Todavía no vinculaste ningún equipo — generá un código más abajo y pegalo en la app de escritorio de KAN.
       </p>
     );
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {agents.map((agent) => (
+      {agents.map((agent, index) => (
         <Card key={agent.id} padding="sm" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Server className="h-4 w-4 text-ink-faint" aria-hidden="true" />
-              <span className="text-sm font-medium text-ink">Edge Agent {agent.id.slice(0, 8)}</span>
-              {agent.os && <span className="text-xs text-ink-faint">({agent.os})</span>}
+              <span className="text-sm font-medium text-ink">
+                {agent.os ? `Tu equipo (${agent.os})` : `Estación ${index + 1}`}
+              </span>
             </div>
             <StatusDot
               level={agent.status === "online" ? "online" : "offline"}
@@ -56,7 +57,6 @@ export function DeviceList() {
                 <li key={device.id} className="flex items-center gap-2 rounded-lg bg-surface-3 px-3 py-1.5 text-sm">
                   <Cpu className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden="true" />
                   <span className="text-ink">{device.name}</span>
-                  <span className="text-xs text-ink-faint">({device.kind})</span>
                 </li>
               ))}
             </ul>

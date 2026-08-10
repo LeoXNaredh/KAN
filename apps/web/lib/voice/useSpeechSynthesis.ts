@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // Markdown que Gemini suele meter en las respuestas (negrita, listas,
 // encabezados, código, links) — sin esto, tanto el TTS de red como
@@ -46,6 +46,7 @@ function pickSpanishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice 
 export function useSpeechSynthesis() {
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
@@ -67,6 +68,9 @@ export function useSpeechSynthesis() {
     utterance.lang = "es-ES";
     utterance.rate = 0.97;
     utterance.pitch = 1;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
 
     const voice = pickSpanishVoice(voicesRef.current);
     if (voice) utterance.voice = voice;
@@ -83,6 +87,7 @@ export function useSpeechSynthesis() {
       // empezar la nueva — mismo criterio que el cancel() de antes.
       if (typeof window !== "undefined") window.speechSynthesis?.cancel();
       audioRef.current?.pause();
+      setIsSpeaking(false);
 
       void (async () => {
         try {
@@ -97,8 +102,15 @@ export function useSpeechSynthesis() {
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
           audioRef.current = audio;
-          audio.addEventListener("ended", () => URL.revokeObjectURL(url));
-          audio.addEventListener("error", () => URL.revokeObjectURL(url));
+          audio.addEventListener("playing", () => setIsSpeaking(true));
+          audio.addEventListener("ended", () => {
+            setIsSpeaking(false);
+            URL.revokeObjectURL(url);
+          });
+          audio.addEventListener("error", () => {
+            setIsSpeaking(false);
+            URL.revokeObjectURL(url);
+          });
           await audio.play();
         } catch {
           // Sin ruido en consola a propósito (ADR-014/ADR-034): la falla del
@@ -111,5 +123,5 @@ export function useSpeechSynthesis() {
     [speakNative],
   );
 
-  return { speak };
+  return { speak, isSpeaking };
 }

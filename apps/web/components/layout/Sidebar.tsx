@@ -4,24 +4,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import {
-  LayoutDashboard,
-  MessageSquare,
+  MessageSquareText,
+  Home,
   Cpu,
   Workflow,
   FolderKanban,
   Settings,
-  ScrollText,
   type LucideIcon,
 } from "lucide-react";
 
+// Orden por frecuencia de uso (rediseño de interfaz): la conversación es el
+// modo primario de KAN, va primero. "Logs" sale del nivel superior — es
+// jerga técnica de depuración, no algo que un usuario final necesite ver
+// como sección de producto (sigue accesible desde Configuración).
 const NAV_ITEMS: Array<{ href: string; label: string; icon: LucideIcon }> = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/conversacion", label: "Conversación", icon: MessageSquare },
+  { href: "/conversacion", label: "Conversación", icon: MessageSquareText },
+  { href: "/", label: "Inicio", icon: Home },
   { href: "/dispositivos", label: "Dispositivos", icon: Cpu },
-  { href: "/automatizaciones", label: "Automatizaciones", icon: Workflow },
+  { href: "/automatizaciones", label: "Recordatorios", icon: Workflow },
   { href: "/proyectos", label: "Proyectos", icon: FolderKanban },
   { href: "/configuracion", label: "Configuración", icon: Settings },
-  { href: "/logs", label: "Logs", icon: ScrollText },
 ];
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {

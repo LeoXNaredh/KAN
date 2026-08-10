@@ -187,7 +187,7 @@ export function AutomatizacionesClient() {
       {!gatewayOnline && (
         <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
           <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
-          No se pudo conectar con el Gateway — no se pueden crear ni ver automatizaciones ahora mismo.
+          KAN no está disponible en este momento — no se pueden crear ni ver recordatorios ahora mismo.
         </div>
       )}
 

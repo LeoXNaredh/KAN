@@ -9,18 +9,14 @@ const LABEL: Record<VoiceInputStatus, string> = {
   transcribing: "Transcribiendo…",
 };
 
-const SHORT_LABEL: Record<VoiceInputStatus, string> = {
-  idle: "Voz",
-  recording: "Grabando…",
-  transcribing: "Transcribiendo…",
-};
-
 /**
- * Control real de voz (P1) — ya no una tarjeta decorativa: vive junto al
- * input del chat en ConversationPanel, el mismo lugar donde vive la
- * conversación real. Etiqueta de texto siempre visible (P2.5) — un ícono
- * solo con `title` no se ve en mobile (sin hover), así que el texto corto
- * vive en el botón, no solo en el tooltip.
+ * Control primario de voz (P1, rediseño de interfaz) — círculo grande, no
+ * una pill más entre otras: es la acción que más se usa después de
+ * escribir, así que domina visualmente sobre "en vivo"/adjuntar imagen
+ * (`LiveVoiceButton`/botón de imagen quedan como controles secundarios más
+ * chicos al lado). Etiqueta siempre visible como `title`/`aria-label` — el
+ * ícono solo no alcanza para lectores de pantalla ni para quien no sabe
+ * qué hace el botón a primera vista.
  */
 export function VoiceButton({ status, onClick }: { status: VoiceInputStatus; onClick: () => void }) {
   return (
@@ -30,18 +26,17 @@ export function VoiceButton({ status, onClick }: { status: VoiceInputStatus; onC
       disabled={status === "transcribing"}
       aria-label={LABEL[status]}
       title={LABEL[status]}
-      className={`flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
+      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 ${
         status === "recording"
-          ? "bg-danger text-white hover:brightness-110"
-          : "border border-line text-ink-muted hover:bg-surface-3 hover:text-ink"
+          ? "scale-105 bg-danger text-white shadow-lg shadow-danger/30 animate-pulse"
+          : "bg-accent text-white shadow-lg shadow-accent/20 hover:scale-105 hover:brightness-110"
       }`}
     >
       {status === "transcribing" ? (
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+        <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
       ) : (
-        <Mic className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <Mic className="h-6 w-6" aria-hidden="true" />
       )}
-      <span>{SHORT_LABEL[status]}</span>
     </button>
   );
 }
