@@ -14,6 +14,15 @@ function sanitize(part: string): string {
  */
 export class GlobalCapabilityRegistry {
   private readonly byAgent = new Map<string, GlobalCapability[]>();
+  /**
+   * Índice plano ref -> capability (fix de auditoría de backend #6):
+   * `resolve()` se llama en cada ejecución de tool (hot path, un tool call
+   * del LLM por vez) — antes hacía `list()` completo (aplana TODOS los
+   * agentes conectados, de todos los usuarios) + `.find()` lineal, costo
+   * O(total de capabilities del sistema) por cada llamada. Mantenido
+   * incrementalmente en `sync()`/`removeAgent()`, nunca recalculado entero.
+   */
+  private readonly byRef = new Map<string, GlobalCapability>();
 
   /**
    * `agentRegistry` es opcional (P2 incremento 4) — sin él, `list()` no
@@ -33,17 +42,23 @@ export class GlobalCapabilityRegistry {
       deviceId,
       capability,
     }));
+    this.removeAgent(edgeAgentId);
     this.byAgent.set(edgeAgentId, entries);
+    for (const entry of entries) this.byRef.set(entry.ref, entry);
     this.bus.emit("capability.synced", { edgeAgentId, count: entries.length });
   }
 
   removeAgent(edgeAgentId: string): void {
+    const previous = this.byAgent.get(edgeAgentId);
+    if (previous) {
+      for (const entry of previous) this.byRef.delete(entry.ref);
+    }
     this.byAgent.delete(edgeAgentId);
   }
 
   /** Mismo criterio que `AgentRegistry.list()`: sin `agentRegistry` inyectado o sin `requestingUserId`, no filtra. */
   list(requestingUserId?: string): GlobalCapability[] {
-    const all = Array.from(this.byAgent.values()).flat();
+    const all = Array.from(this.byRef.values());
     if (!this.agentRegistry || requestingUserId === undefined) return all;
     return all.filter((c) => {
       const ownerId = this.agentRegistry!.get(c.edgeAgentId)?.ownerId;
@@ -51,7 +66,8 @@ export class GlobalCapabilityRegistry {
     });
   }
 
+  /** Sin filtro de ownership a propósito, igual que antes — `Gateway.executeTool()` ya hace su propio chequeo de dueño después de resolver. */
   resolve(ref: string): GlobalCapability | undefined {
-    return this.list().find((c) => c.ref === ref);
+    return this.byRef.get(ref);
   }
 }

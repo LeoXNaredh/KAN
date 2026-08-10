@@ -61,6 +61,47 @@ describe("AgentRegistry", () => {
     expect(registry.get("no-existe")).toBeUndefined();
   });
 
+  describe("pruneStaleOffline() — limpieza de entradas huérfanas (fix de auditoría de backend)", () => {
+    const NINETY_ONE_DAYS_AGO = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString();
+    const ONE_DAY_AGO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    it("al conectar un agente nuevo, poda un registro offline con lastSeenAt de hace más de 90 días", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "reinstalado-viejo", status: "offline", lastSeenAt: NINETY_ONE_DAYS_AGO }));
+
+      registry.upsert(record({ edgeAgentId: "agente-nuevo" }));
+
+      expect(registry.get("reinstalado-viejo")).toBeUndefined();
+      expect(registry.get("agente-nuevo")).toBeDefined();
+    });
+
+    it("no poda un registro offline reciente — 'la laptop está apagada' no es 'ya no existe'", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "laptop-2", status: "offline", lastSeenAt: ONE_DAY_AGO }));
+
+      registry.upsert(record({ edgeAgentId: "agente-nuevo" }));
+
+      expect(registry.get("laptop-2")).toBeDefined();
+    });
+
+    it("nunca poda un registro online, sin importar lastSeenAt", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "online-viejo", status: "online", lastSeenAt: NINETY_ONE_DAYS_AGO }));
+
+      registry.upsert(record({ edgeAgentId: "agente-nuevo" }));
+
+      expect(registry.get("online-viejo")).toBeDefined();
+    });
+
+    it("no podía a un mismo owner con dos dispositivos, uno offline reciente y otro online", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "laptop-oficina", ownerId: "user-1", status: "online" }));
+      registry.upsert(record({ edgeAgentId: "laptop-casa", ownerId: "user-1", status: "offline", lastSeenAt: ONE_DAY_AGO }));
+
+      expect(registry.list("user-1").map((r) => r.edgeAgentId).sort()).toEqual(["laptop-casa", "laptop-oficina"]);
+    });
+  });
+
   describe("list(requestingUserId) — filtro por owner (P2 incremento 4)", () => {
     it("sin requestingUserId, devuelve todo sin filtrar (retrocompatible)", () => {
       const registry = new AgentRegistry(new GatewayBus());

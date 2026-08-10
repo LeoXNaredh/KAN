@@ -390,6 +390,10 @@ async function pairAgent(code: string): Promise<{ ok: true } | { ok: false; erro
     // antes de aparear, la trae de una — sin esto, quedaría esperando a
     // "Sincronizar configuración" a mano después del primer arranque.
     if (body.pluginConfig) configStore.set("pluginConfig", body.pluginConfig);
+    // La escritura de JsonFileConfigStore ahora es async/debounced (fix de
+    // auditoría de backend #6) — app.exit() no espera al event loop, así
+    // que sin este flush() el pairingToken recién guardado podía perderse.
+    await configStore.flush();
     // El hello ya enviado en esta sesión no lleva el pairingToken — más
     // simple y seguro reiniciar que mutar en caliente la conexión ya
     // establecida. El próximo arranque lo manda desde el primer hello.
