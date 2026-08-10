@@ -9,9 +9,13 @@ import {
   JsonFileConfigStore,
   CoreWebSocketClient,
   NoopUpdater,
+  TarPluginPackageExtractor,
+  PythonVenvManager,
+  NodeProcessLauncher,
   type EdgeAgentEvents,
 } from "@kan/edge-agent-core";
 import type { ActionSeverity } from "@kan/plugin-contract";
+import { GatewayPluginPackageFetcher } from "./GatewayPluginPackageFetcher";
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
 import { HttpDevicePlugin } from "@kan/plugin-http-generic";
 import { WsDevicePlugin } from "@kan/plugin-ws-generic";
@@ -25,6 +29,10 @@ let mainWindow: BrowserWindow | null = null;
 let edgeAgent: EdgeAgent | undefined;
 let configStore: JsonFileConfigStore | undefined;
 let edgeAgentId: string | undefined;
+// ADR-056 (Fase 5) — referencia aparte de `edgeAgent.installPlugin()`: `EdgeAgent`
+// no expone listar el catálogo (Fase 3 solo necesitaba instalar por id), pero
+// la UI sí necesita mostrar qué hay disponible antes de instalar nada.
+let pluginPackageFetcher: GatewayPluginPackageFetcher | undefined;
 
 const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "plugin.loaded",
@@ -41,6 +49,11 @@ const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "safety_policy.changed",
   "core.status",
   "log",
+  // ADR-056 (Fase 5) — progreso/resultado de instalar-desinstalar un plugin sidecar.
+  "plugin.install_progress",
+  "plugin.installed",
+  "plugin.install_failed",
+  "plugin.uninstalled",
 ];
 
 function getOrCreateEdgeAgentId(configStore: JsonFileConfigStore): string {
@@ -99,6 +112,16 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     configStore,
     coreConnection,
     updater: new NoopUpdater(),
+    // ADR-056 (Fase 5): venv puro, sin Docker como prerequisito (decisión
+    // de alcance) — mismos 4 adapters reales diseñados/probados en Fase 3,
+    // ahora conectados al Gateway real en vez de fakes de test.
+    pluginInstaller: {
+      pluginPackageFetcher: (pluginPackageFetcher = new GatewayPluginPackageFetcher(configStore, edgeAgentId)),
+      pluginPackageExtractor: new TarPluginPackageExtractor(),
+      venvManager: new PythonVenvManager(),
+      processLauncher: new NodeProcessLauncher(),
+      pluginsDir: join(userDataDir, "sidecar-plugins"),
+    },
   });
 
   // Registrado ANTES de los try/catch de plugins de abajo a propósito (P3.7):
@@ -268,6 +291,20 @@ function registerIpcHandlers(): void {
   ipcMain.handle("kan:rejectPluginPermissions", (_event, pluginId: string) => {
     if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
     return edgeAgent.rejectPluginPermissions(pluginId);
+  });
+  // ADR-056 (Fase 5) — plugins sidecar bajo demanda.
+  ipcMain.handle("kan:listPluginCatalog", () => {
+    if (!pluginPackageFetcher) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+    return pluginPackageFetcher.listCatalog();
+  });
+  ipcMain.handle("kan:listInstalledPlugins", () => edgeAgent?.listInstalledPlugins() ?? []);
+  ipcMain.handle("kan:installPlugin", (_event, pluginId: string) => {
+    if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+    return edgeAgent.installPlugin(pluginId);
+  });
+  ipcMain.handle("kan:uninstallPlugin", (_event, pluginId: string) => {
+    if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
+    return edgeAgent.uninstallPlugin(pluginId);
   });
 }
 

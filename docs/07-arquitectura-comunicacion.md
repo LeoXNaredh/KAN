@@ -9,10 +9,12 @@
 | Cliente (web/mobile/desktop) → Core Cloud | HTTPS (REST) + WebSocket | Request/response para acciones; WS para chat en tiempo real y progreso | JWT (Supabase Auth), rate limiting |
 | Core Cloud → Cliente | Supabase Realtime (sobre WebSocket) | Push de estado de tareas, telemetría de dispositivos | Suscripción con RLS (row-level security) por usuario |
 | Core Cloud ↔ Edge Agent | WebSocket persistente saliente desde el Edge Agent (nunca entrante) | Comandos (Cloud→Edge) + telemetría/heartbeat (Edge→Cloud) | mTLS o token de larga duración rotable + heartbeat; reconexión con backoff; cola local si cae |
-| Edge Agent ↔ Plugin sidecar | gRPC (o WebSocket local) | Invocación de capabilities, streaming de progreso | Solo loopback/socket local, nunca expuesto a la red |
+| Edge Agent ↔ Plugin sidecar | WebSocket loopback, Edge Agent como servidor (ADR-056, [`sidecarProtocol.ts`](../packages/plugin-contract/src/sidecarProtocol.ts)) | Invocación de capabilities, request/response correlacionado por `requestId`, heartbeat | Bind exclusivo a `127.0.0.1`, token de un solo uso por variable de entorno (`KAN_SIDECAR_TOKEN`, nunca por argv), nunca expuesto a la red |
 | Edge Agent ↔ Dispositivo físico | Serial/USB, MQTT, HTTP, Bluetooth (ver doc 06) | Nativo del dispositivo | Validación de payload antes de enviar al hardware (defensa en profundidad) |
 | Core Cloud → Proveedores de IA | HTTPS (SDK del proveedor) | Request/response o streaming | Claves por variable de entorno/secret manager, nunca en cliente |
 | Marketplace (Fase 2) → Cliente/Edge Agent | HTTPS + verificación de firma | Descarga de paquete de plugin | Paquete firmado, hash verificado antes de ejecutar |
+
+> ADR-056 (Fase 1) ya implementa una descarga de paquete de plugin sidecar vía Gateway (`GET /v1/plugins/catalog`, no un marketplace) para un catálogo cerrado de paquetes oficiales — precursor de la fila "Marketplace (Fase 2)" de arriba, no lo mismo: sin verificación criptográfica de firma real todavía (solo validación estructural del manifest), gap documentado a propósito en ADR-056.
 
 ## 2. Por qué el canal Core↔Edge Agent es siempre saliente desde el Edge Agent
 

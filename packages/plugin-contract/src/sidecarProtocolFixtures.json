@@ -1,0 +1,79 @@
+{
+  "sidecar_hello": {
+    "type": "sidecar_hello",
+    "protocolVersion": "1.0.0",
+    "pluginId": "kan-plugin-vision-py",
+    "pluginVersion": "0.1.0",
+    "token": "5f1c2a9e7b3d4f0a8c6e1b2d3a4f5c6e"
+  },
+  "sidecar_hello_ack": {
+    "type": "sidecar_hello_ack",
+    "ok": true
+  },
+  "discover": {
+    "type": "discover",
+    "requestId": "8f14e45f-ceea-4d5c-8b9a-1a2b3c4d5e6f"
+  },
+  "discover.result": {
+    "type": "discover.result",
+    "requestId": "8f14e45f-ceea-4d5c-8b9a-1a2b3c4d5e6f",
+    "devices": [{ "id": "camera-usb-0", "name": "Cámara USB", "kind": "vision-py" }]
+  },
+  "connect": {
+    "type": "connect",
+    "requestId": "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+    "deviceId": "camera-usb-0"
+  },
+  "connect.result": {
+    "type": "connect.result",
+    "requestId": "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+    "ok": true,
+    "capabilities": [
+      {
+        "name": "detect_objects",
+        "description": "Detecta objetos en el frame actual de la cámara.",
+        "severity": "read-only",
+        "supportsDryRun": false
+      }
+    ]
+  },
+  "disconnect": {
+    "type": "disconnect",
+    "requestId": "1b2c3d4e-5f60-4172-8394-a5b6c7d8e9f0",
+    "deviceId": "camera-usb-0"
+  },
+  "disconnect.result": {
+    "type": "disconnect.result",
+    "requestId": "1b2c3d4e-5f60-4172-8394-a5b6c7d8e9f0",
+    "ok": true
+  },
+  "invoke": {
+    "type": "invoke",
+    "requestId": "2c3d4e5f-6071-4283-95a6-b7c8d9e0f1a2",
+    "deviceId": "camera-usb-0",
+    "capability": "detect_objects",
+    "input": {}
+  },
+  "invoke.result": {
+    "type": "invoke.result",
+    "requestId": "2c3d4e5f-6071-4283-95a6-b7c8d9e0f1a2",
+    "result": { "success": true, "data": { "objects": [] } }
+  },
+  "list_targets": {
+    "type": "list_targets",
+    "requestId": "3d4e5f60-7182-4394-a6b7-c8d9e0f1a2b3",
+    "deviceId": "camera-usb-0"
+  },
+  "list_targets.result": {
+    "type": "list_targets.result",
+    "requestId": "3d4e5f60-7182-4394-a6b7-c8d9e0f1a2b3",
+    "targets": []
+  },
+  "heartbeat": {
+    "type": "heartbeat",
+    "at": "2026-08-09T12:00:00.000Z"
+  },
+  "shutdown": {
+    "type": "shutdown"
+  }
+}

@@ -1,0 +1,13 @@
+# Instalación real (paquete descargado por PluginInstaller, ADR-056 Fase 3):
+# kan-plugin-sdk-py se resuelve desde este mismo repo por ahora, sin
+# publicar a PyPI en este incremento (ver README de kan-plugin-sdk-py).
+kan-plugin-sdk-py @ git+https://github.com/kan-project/kan.git@v0.1.0#subdirectory=packages/kan-plugin-sdk-py
+# El `<5` es load-bearing, no un pin genérico de seguridad: OpenCV 5.0
+# eliminó `cv2.CascadeClassifier` y los datos de `cv2.data.haarcascades`
+# por completo (movieron detección de caras a `FaceDetectorYN`, basado en
+# un modelo ONNX que hay que descargar aparte) — confirmado instalando
+# 5.0.0.93 durante el desarrollo de este plugin. `detect_objects` (Fase 2)
+# depende del Haar cascade clásico a propósito, para no sumar una descarga
+# de modelo externo a un plugin de referencia.
+opencv-python-headless>=4.9,<5
+numpy>=1.26,<3

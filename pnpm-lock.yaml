@@ -368,6 +368,9 @@ importers:
       '@kan/plugin-sdk-ts':
         specifier: workspace:*
         version: link:../plugin-sdk-ts
+      tar:
+        specifier: ^7.4.3
+        version: 7.5.22
       ws:
         specifier: ^8.18.0
         version: 8.21.2
@@ -475,6 +478,9 @@ importers:
       '@kan/gateway-core':
         specifier: workspace:*
         version: link:../gateway-core
+      '@kan/plugin-contract':
+        specifier: workspace:*
+        version: link:../plugin-contract
       '@supabase/supabase-js':
         specifier: ^2.48.0
         version: 2.112.1

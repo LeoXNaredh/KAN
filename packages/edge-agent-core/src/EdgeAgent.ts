@@ -1,16 +1,36 @@
 import type { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
 import type { ActionSeverity, AgentTaskDispatchMessage, TargetDescriptor } from "@kan/plugin-contract";
+import type { InstalledPlugin } from "./domain/entities/InstalledPlugin";
 import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
 import type { LoggerPort } from "./domain/ports/LoggerPort";
 import type { CoreConnectionPort } from "./domain/ports/CoreConnectionPort";
 import type { UpdaterPort } from "./domain/ports/UpdaterPort";
+import type { PluginPackageExtractorPort } from "./domain/ports/PluginPackageExtractorPort";
+import type { PluginPackageFetcherPort } from "./domain/ports/PluginPackageFetcherPort";
+import type { ProcessLauncherPort } from "./domain/ports/ProcessLauncherPort";
+import type { VenvManagerPort } from "./domain/ports/VenvManagerPort";
 import type { SafetyPolicyEntry } from "./domain/entities/SafetyPolicyEntry";
 import type { EdgeAgentBus } from "./application/EdgeAgentBus";
 import { PluginManager } from "./application/PluginManager";
+import { PluginInstaller } from "./application/PluginInstaller";
 import { DeviceManager } from "./application/DeviceManager";
 import { PermissionManager } from "./application/PermissionManager";
 import { SafetyPolicyStore } from "./application/SafetyPolicyStore";
 import { CapabilityRegistry, type CapabilityListing, type InvokeOutcome } from "./application/CapabilityRegistry";
+
+/**
+ * Dependencias del sistema de plugins bajo demanda (ADR-056, Fase 3) — las
+ * cuatro juntas, opcionales: sin ellas, `EdgeAgent` funciona exactamente
+ * como antes (sin `installPlugin`/`uninstallPlugin`), para no romper
+ * ningún host existente. `apps/desktop` las provee recién en Fase 5.
+ */
+export interface PluginInstallerConfig {
+  pluginPackageFetcher: PluginPackageFetcherPort;
+  pluginPackageExtractor: PluginPackageExtractorPort;
+  venvManager: VenvManagerPort;
+  processLauncher: ProcessLauncherPort;
+  pluginsDir: string;
+}
 
 export interface SafetyTargetListing extends TargetDescriptor {
   alias?: string;
@@ -28,6 +48,8 @@ export interface EdgeAgentDeps {
   configStore: ConfigStorePort;
   coreConnection: CoreConnectionPort;
   updater: UpdaterPort;
+  /** ADR-056 (Fase 3) — opcional a propósito, ver `PluginInstallerConfig`. */
+  pluginInstaller?: PluginInstallerConfig;
 }
 
 /**
@@ -43,11 +65,25 @@ export class EdgeAgent {
   private readonly permissionManager: PermissionManager;
   private readonly safetyPolicyStore: SafetyPolicyStore;
   private readonly capabilityRegistry: CapabilityRegistry;
+  private readonly pluginInstaller: PluginInstaller | undefined;
 
   constructor(private readonly deps: EdgeAgentDeps) {
     this.bus = deps.bus;
     this.pluginManager = new PluginManager(deps.bus, deps.logger, deps.configStore);
     this.deviceManager = new DeviceManager(deps.bus, deps.logger);
+    if (deps.pluginInstaller) {
+      this.pluginInstaller = new PluginInstaller({
+        pluginManager: this.pluginManager,
+        bus: deps.bus,
+        logger: deps.logger,
+        configStore: deps.configStore,
+        fetcher: deps.pluginInstaller.pluginPackageFetcher,
+        extractor: deps.pluginInstaller.pluginPackageExtractor,
+        venvManager: deps.pluginInstaller.venvManager,
+        processLauncher: deps.pluginInstaller.processLauncher,
+        pluginsDir: deps.pluginInstaller.pluginsDir,
+      });
+    }
     this.permissionManager = new PermissionManager(deps.bus, deps.logger);
     this.safetyPolicyStore = new SafetyPolicyStore(deps.configStore, deps.bus);
     this.capabilityRegistry = new CapabilityRegistry(
@@ -109,7 +145,33 @@ export class EdgeAgent {
     await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
   }
 
+  /** Plugins sidecar instalados (ADR-056) — `undefined` si este host no pasó `pluginInstaller` en `EdgeAgentDeps`. */
+  listInstalledPlugins(): InstalledPlugin[] | undefined {
+    return this.pluginInstaller?.listInstalled();
+  }
+
+  /** Descarga, instala y registra un plugin sidecar. Dispara el mismo flujo de aprobación de permisos que cualquier plugin (`plugin.permission_pending`). */
+  async installPlugin(pluginId: string): Promise<InstalledPlugin> {
+    if (!this.pluginInstaller) {
+      throw new Error("Este Edge Agent no tiene configurado el instalador de plugins (falta pluginInstaller en EdgeAgentDeps).");
+    }
+    const installed = await this.pluginInstaller.install(pluginId);
+    await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
+    return installed;
+  }
+
+  async uninstallPlugin(pluginId: string): Promise<void> {
+    if (!this.pluginInstaller) {
+      throw new Error("Este Edge Agent no tiene configurado el instalador de plugins (falta pluginInstaller en EdgeAgentDeps).");
+    }
+    await this.pluginInstaller.uninstall(pluginId);
+  }
+
   async bootstrap(): Promise<void> {
+    // Reconstruye cada sidecar instalado ANTES de descubrir dispositivos —
+    // mismo lugar donde hoy se registran estáticamente los plugins
+    // in-process en apps/desktop, ahora dinámico (ADR-056).
+    await this.pluginInstaller?.restoreInstalled();
     await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
 
     this.deps.coreConnection.onMessage((message) => this.handleCoreMessage(message));

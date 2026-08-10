@@ -13,6 +13,7 @@
   "dependencies": {
     "@kan/plugin-contract": "workspace:*",
     "@kan/plugin-sdk-ts": "workspace:*",
+    "tar": "^7.4.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {

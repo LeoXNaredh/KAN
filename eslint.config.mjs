@@ -29,4 +29,14 @@ export default tseslint.config(
       "no-console": "off",
     },
   },
+  {
+    // `.ts` no necesita esto (typescript-eslint ya apaga `no-undef` para TS,
+    // el compilador cubre eso mejor). Primer `.js`/`.mjs` real del repo
+    // (fixtures de test de ADR-056, ej. fakeSidecarProcess.mjs) — sin esto,
+    // `process` se reporta como no definido.
+    files: ["**/*.mjs", "**/*.js"],
+    languageOptions: {
+      globals: { process: "readonly" },
+    },
+  },
 );

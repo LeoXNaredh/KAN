@@ -6,9 +6,10 @@ import type {
   CoreConnectionStatus,
   SafetyTargetListing,
   PluginInstance,
+  InstalledPlugin,
 } from "@kan/edge-agent-core";
 import type { ActionSeverity, PluginPermissions } from "@kan/plugin-contract";
-import type { BusEvent } from "../../preload/index";
+import type { BusEvent, PluginCatalogEntryDTO } from "../../preload/index";
 
 const SEVERITY_OPTIONS: ActionSeverity[] = ["read-only", "reversible", "irreversible-material", "safety-critical"];
 
@@ -63,6 +64,14 @@ export default function App() {
   const [coreStatus, setCoreStatus] = useState<CoreConnectionStatus>("disconnected");
   const [safetyTargets, setSafetyTargets] = useState<Record<string, SafetyTargetListing[]>>({});
   const [paired, setPaired] = useState<boolean | null>(null);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogEntryDTO[]>([]);
+  const [installedPlugins, setInstalledPlugins] = useState<InstalledPlugin[]>([]);
+  const [installProgress, setInstallProgress] = useState<Record<string, string>>({});
+  const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
+
+  function refreshInstalledPlugins() {
+    window.kan.listInstalledPlugins().then(setInstalledPlugins);
+  }
 
   function loadSafetyTargets(deviceId: string) {
     window.kan.listSafetyTargets(deviceId).then((targets: SafetyTargetListing[]) => {
@@ -80,6 +89,12 @@ export default function App() {
       setPaired((await window.kan.getPairingStatus()).paired);
       const pendingInstances: PluginInstance[] = await window.kan.listPendingPluginPermissions();
       setPendingPlugins(pendingInstances.map(toPendingPluginPermission));
+      setInstalledPlugins(await window.kan.listInstalledPlugins());
+      // Sin vincular con una cuenta todavía, listPluginCatalog() lanza
+      // ("Todavía no vinculaste..."): no es un error a mostrar, el catálogo
+      // simplemente queda vacío hasta que el usuario vincule (PairingPanel
+      // arriba ya comunica eso) — PluginsPanel no se renderiza sin nada que mostrar.
+      await window.kan.listPluginCatalog().then(setPluginCatalog).catch(() => undefined);
     })();
 
     const unsubscribe = window.kan.onEvent((event: BusEvent) => {
@@ -119,6 +134,30 @@ export default function App() {
           break;
         case "plugin.permission_resolved":
           setPendingPlugins((prev) => prev.filter((p) => p.pluginId !== event.payload.pluginId));
+          break;
+        case "plugin.install_progress":
+          setInstallProgress((prev) => ({ ...prev, [event.payload.pluginId]: event.payload.step }));
+          setInstallErrors((prev) => {
+            const { [event.payload.pluginId]: _removed, ...rest } = prev;
+            return rest;
+          });
+          break;
+        case "plugin.installed":
+          setInstallProgress((prev) => {
+            const { [event.payload.pluginId]: _removed, ...rest } = prev;
+            return rest;
+          });
+          refreshInstalledPlugins();
+          break;
+        case "plugin.install_failed":
+          setInstallProgress((prev) => {
+            const { [event.payload.pluginId]: _removed, ...rest } = prev;
+            return rest;
+          });
+          setInstallErrors((prev) => ({ ...prev, [event.payload.pluginId]: event.payload.error }));
+          break;
+        case "plugin.uninstalled":
+          refreshInstalledPlugins();
           break;
         case "core.status":
           setCoreStatus(event.payload.status);
@@ -182,6 +221,14 @@ export default function App() {
           ))}
         </div>
       )}
+
+      <PluginsPanel
+        catalog={pluginCatalog}
+        installed={installedPlugins}
+        progress={installProgress}
+        errors={installErrors}
+        onInstalledChanged={refreshInstalledPlugins}
+      />
 
       <div className="grid flex-1 grid-cols-[1.4fr_1fr] gap-4 overflow-hidden">
         <section className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-zinc-800 p-4">
@@ -403,6 +450,108 @@ function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => v
       </button>
       {error && <span className="text-sm text-red-400">{error}</span>}
     </div>
+  );
+}
+
+/**
+ * Catálogo + instalados de plugins sidecar (ADR-056) — sin nada que
+ * mostrar (sin vincular todavía, o catálogo vacío, y ningún plugin
+ * instalado) no se renderiza nada, para no ocupar espacio de la pantalla
+ * principal con una sección vacía. Instalar dispara el mismo flujo de
+ * aprobación de permisos que cualquier plugin (`PluginPermissionModal`
+ * arriba) — esta sección no lo duplica.
+ */
+function PluginsPanel({
+  catalog,
+  installed,
+  progress,
+  errors,
+  onInstalledChanged,
+}: {
+  catalog: PluginCatalogEntryDTO[];
+  installed: InstalledPlugin[];
+  progress: Record<string, string>;
+  errors: Record<string, string>;
+  onInstalledChanged: () => void;
+}) {
+  const installedIds = new Set(installed.map((plugin) => plugin.pluginId));
+
+  async function install(pluginId: string) {
+    // El resultado real (éxito o error) llega por los eventos
+    // plugin.installed/plugin.install_failed — este catch solo evita una
+    // promesa rechazada sin manejar si install() lanza antes de emitir nada.
+    await window.kan.installPlugin(pluginId).catch(() => undefined);
+  }
+
+  async function uninstall(pluginId: string) {
+    if (!window.confirm(`¿Desinstalar "${pluginId}"? Esto borra el paquete descargado del disco.`)) return;
+    await window.kan.uninstallPlugin(pluginId);
+    onInstalledChanged();
+  }
+
+  if (catalog.length === 0 && installed.length === 0) return null;
+
+  return (
+    <section className="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-lg border border-zinc-800 p-4">
+      <h2 className="text-sm font-medium text-zinc-400">Plugins sidecar — instalables bajo demanda (ADR-056)</h2>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <h3 className="mb-1 text-xs font-medium text-zinc-500">Catálogo</h3>
+          <div className="flex flex-col gap-1.5">
+            {catalog.length === 0 && <p className="text-xs text-zinc-600">Sin plugins en el catálogo.</p>}
+            {catalog.map((entry) => {
+              const pluginId = entry.manifest.id;
+              const step = progress[pluginId];
+              const error = errors[pluginId];
+              const alreadyInstalled = installedIds.has(pluginId);
+              return (
+                <div
+                  key={pluginId}
+                  className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-zinc-200">{entry.manifest.displayName}</div>
+                    {entry.description && <div className="truncate text-zinc-500">{entry.description}</div>}
+                    {step && <div className="text-sky-400">Instalando: {step}…</div>}
+                    {error && <div className="text-red-400">{error}</div>}
+                  </div>
+                  <button
+                    className="btn shrink-0"
+                    disabled={alreadyInstalled || Boolean(step)}
+                    onClick={() => install(pluginId)}
+                  >
+                    {alreadyInstalled ? "Instalado" : step ? "Instalando…" : "Instalar"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="mb-1 text-xs font-medium text-zinc-500">Instalados</h3>
+          <div className="flex flex-col gap-1.5">
+            {installed.length === 0 && <p className="text-xs text-zinc-600">Ningún plugin sidecar instalado todavía.</p>}
+            {installed.map((plugin) => (
+              <div
+                key={plugin.pluginId}
+                className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <div className="font-medium text-zinc-200">{plugin.manifest.displayName}</div>
+                  <div className="text-zinc-500">
+                    v{plugin.version} · instalado el {new Date(plugin.installedAt).toLocaleDateString()}
+                  </div>
+                </div>
+                <button className="btn shrink-0" onClick={() => uninstall(plugin.pluginId)}>
+                  Desinstalar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

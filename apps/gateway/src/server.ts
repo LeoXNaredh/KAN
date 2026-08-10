@@ -8,6 +8,7 @@ import {
   SupabaseAuthAdapter,
   SupabaseMemoryStore,
   SupabasePairingStore,
+  SupabasePluginRegistry,
   SupabasePushTokenStore,
 } from "@kan/supabase-adapter";
 import {
@@ -22,9 +23,11 @@ import {
   GeminiLiveProxy,
   GeminiDeviceResearchAdapter,
   DeviceEnrichmentService,
+  InMemoryPluginPackageTicketStore,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
 import { createPairingRoutes } from "./http/pairingRoutes";
+import { createPluginRoutes } from "./http/pluginRoutes";
 
 // Carga explícita del .env propio del Gateway, sin depender del cwd desde el
 // que Turbo/pnpm invoquen el script (evita "Falta KAN_SUPABASE_URL" cuando el
@@ -66,6 +69,12 @@ const authPort = new SupabaseAuthAdapter(supabaseClient);
 // P2 incremento 3 (docs/19): mismo cliente otra vez — resuelve el ownerId de
 // un Edge Agent ya vinculado a partir del pairingToken de su hello.
 const pairingPort = new SupabasePairingStore(supabaseClient);
+// ADR-056 (Fase 4): mismo cliente service_role otra vez, sin credenciales
+// nuevas — catálogo cerrado de plugins sidecar oficiales + bucket privado
+// de Storage. Ticket de descarga en memoria (mismo criterio que
+// InMemoryEdgeTicketStore): mint y consume ocurren en la misma request.
+const pluginRegistry = new SupabasePluginRegistry(supabaseClient);
+const pluginPackageTicketStore = new InMemoryPluginPackageTicketStore();
 const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS, pairingPort);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
@@ -135,6 +144,9 @@ app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 // (apps/desktop nunca lo tiene, ver pairingRoutes.ts) — su única defensa es
 // el código de pairing + un rate limit propio, más estricto.
 app.use(createPairingRoutes(pairingPort));
+// Mismo criterio que createPairingRoutes (ADR-056, Fase 4): sin token
+// interno, autenticado por el secreto de pairing que ya usa /v1/pairing/config.
+app.use(createPluginRoutes(pairingPort, pluginRegistry, pluginPackageTicketStore));
 app.use(
   createRoutes(
     gateway,

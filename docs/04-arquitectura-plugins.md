@@ -52,7 +52,7 @@ Publicado (firmado) → Descubierto (marketplace/registro) → Instalado (usuari
 ## 5. SDK de plugins
 
 - **`@kan/plugin-sdk-ts`** (implementado): `KanPlugin`/`KanDeviceDriverPlugin` como clases base, `defineCapability()` para declarar capabilities con chequeo de tipos, `definePermissions()` (P8) para declarar `manifest.permissions`. Ver [README del paquete](../packages/plugin-sdk-ts/README.md) y la [guía de desarrollo de plugins](plugin-development.md).
-- **`kan-plugin-sdk-py`** (sin implementar todavía): equivalente Python (basado en FastAPI/gRPC), mismos conceptos, para plugins de visión/CAD/robótica.
+- **`kan-plugin-sdk-py`** (implementado, ADR-056): equivalente Python, mismos conceptos (`KanDeviceDriverPlugin`, permisos deny-by-default), para plugins de visión/CAD/robótica que corren como sidecar (proceso separado). Se comunica con el Edge Agent por WebSocket loopback, no gRPC/FastAPI (ver §7 y [`sidecarProtocol.ts`](../packages/plugin-contract/src/sidecarProtocol.ts)) — evita sumar un toolchain de protobuf para un primer incremento. Ver [README del paquete](../packages/kan-plugin-sdk-py/README.md).
 - El manifest deliberadamente no incluye `capabilities` (ver §3) — es la forma en que el SDK evita que manifest e implementación diverjan, no generándolo por anotaciones sino no duplicándolo.
 
 ## 6. Instalación selectiva ("ligero por defecto")

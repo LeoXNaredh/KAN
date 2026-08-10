@@ -1,0 +1,12 @@
+{
+  "id": "kan-plugin-vision-py",
+  "version": "0.1.0",
+  "displayName": "Visión artificial (OpenCV)",
+  "kind": "device-driver",
+  "runtime": "python-sidecar",
+  "permissions": {
+    "devices": ["camera-usb"],
+    "network": false,
+    "filesystem": []
+  }
+}

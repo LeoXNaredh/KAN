@@ -11,6 +11,14 @@ export interface EdgeAgentEvents {
   /** P8 (ADR-041): deny-by-default — el plugin quedó registrado pero no habilitado hasta que se apruebe. */
   "plugin.permission_pending": { pluginId: string; displayName: string; permissions: PluginPermissions };
   "plugin.permission_resolved": { pluginId: string; approved: boolean };
+  /** ADR-056 (Fase 3) — progreso de instalación de un plugin sidecar, para que la UI (Fase 5) muestre algo real, no un spinner ciego. */
+  "plugin.install_progress": {
+    pluginId: string;
+    step: "fetching" | "extracting" | "creating_venv" | "installing_dependencies";
+  };
+  "plugin.installed": { pluginId: string };
+  "plugin.install_failed": { pluginId: string; error: string };
+  "plugin.uninstalled": { pluginId: string };
   "device.connected": { device: Device };
   "device.disconnected": { deviceId: string };
   "capability.invoked": { deviceId: string; capability: string; severity: ActionSeverity };

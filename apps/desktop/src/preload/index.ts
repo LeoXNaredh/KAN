@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { EdgeAgentEvents } from "@kan/edge-agent-core";
-import type { ActionSeverity } from "@kan/plugin-contract";
+import type { EdgeAgentEvents, InstalledPlugin } from "@kan/edge-agent-core";
+import type { ActionSeverity, PluginManifest } from "@kan/plugin-contract";
+
+export interface PluginCatalogEntryDTO {
+  manifest: PluginManifest;
+  description?: string;
+}
 
 export type BusEvent = {
   [K in keyof EdgeAgentEvents]: { type: K; payload: EdgeAgentEvents[K] };
@@ -25,6 +30,11 @@ const kanApi = {
   listPendingPluginPermissions: () => ipcRenderer.invoke("kan:listPendingPluginPermissions"),
   approvePluginPermissions: (pluginId: string) => ipcRenderer.invoke("kan:approvePluginPermissions", pluginId),
   rejectPluginPermissions: (pluginId: string) => ipcRenderer.invoke("kan:rejectPluginPermissions", pluginId),
+  // ADR-056 (Fase 5) — plugins sidecar bajo demanda.
+  listPluginCatalog: (): Promise<PluginCatalogEntryDTO[]> => ipcRenderer.invoke("kan:listPluginCatalog"),
+  listInstalledPlugins: (): Promise<InstalledPlugin[]> => ipcRenderer.invoke("kan:listInstalledPlugins"),
+  installPlugin: (pluginId: string): Promise<InstalledPlugin> => ipcRenderer.invoke("kan:installPlugin", pluginId),
+  uninstallPlugin: (pluginId: string): Promise<void> => ipcRenderer.invoke("kan:uninstallPlugin", pluginId),
   onEvent: (handler: (event: BusEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: BusEvent) => handler(data);
     ipcRenderer.on("kan:event", listener);

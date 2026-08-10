@@ -7,3 +7,4 @@ export * from "./SupabaseUserPreferencesStore";
 export * from "./SupabaseAuditStore";
 export * from "./SupabasePairingStore";
 export * from "./SupabasePushTokenStore";
+export * from "./SupabasePluginRegistry";

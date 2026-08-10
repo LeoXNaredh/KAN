@@ -8,3 +8,11 @@ apps/gateway/data/
 .env.local
 *.log
 .DS_Store
+
+# Python (packages/kan-plugin-sdk-py, plugins/plugin-vision-py — ADR-056)
+__pycache__/
+*.pyc
+.venv/
+.venv-test/
+*.egg-info/
+.pytest_cache/
