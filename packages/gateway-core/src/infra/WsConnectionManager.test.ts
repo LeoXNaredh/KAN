@@ -357,4 +357,103 @@ describe("WsConnectionManager (integración WS real)", () => {
     expect(manager.getState("agent-shape")).toBe("connected");
     ws.close();
   });
+
+  describe("rate limiting por mensaje (fix de auditoría de backend #7)", () => {
+    async function buildLimitedManager(maxMessagesPerSecond: number) {
+      const limitedManager = new WsConnectionManager(TOKEN, undefined, undefined, maxMessagesPerSecond);
+      limitedManager.start();
+      const limitedServer = createServer();
+      limitedServer.on("upgrade", (request, socket, head) => {
+        if (request.url === "/edge") limitedManager.handleUpgrade(request, socket, head);
+        else socket.destroy();
+      });
+      await new Promise<void>((resolve) => limitedServer.listen(0, resolve));
+      const limitedPort = (limitedServer.address() as { port: number }).port;
+      return {
+        manager: limitedManager,
+        connect: () => new WebSocket(`ws://localhost:${limitedPort}/edge`, { headers: { authorization: `Bearer ${TOKEN}` } }),
+        cleanup: async () => {
+          limitedManager.stop();
+          await new Promise<void>((resolve) => limitedServer.close(() => resolve()));
+        },
+      };
+    }
+
+    it("por encima de maxMessagesPerSecond, los mensajes de más se ignoran dentro de la misma ventana — la conexión sigue viva", async () => {
+      const { manager: limitedManager, connect: connectLimited, cleanup } = await buildLimitedManager(3);
+      let ws: WebSocket | undefined;
+      try {
+        ws = connectLimited();
+        await waitForOpen(ws);
+        const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => limitedManager.onAgentConnected(resolve));
+        // El "hello" también cuenta contra el límite (es un mensaje más) —
+        // con max=3, deja lugar para 2 heartbeats más en esta ventana antes
+        // de que el resto se empiece a ignorar.
+        ws.send(hello("agent-rate-limited"));
+        await connectedPromise;
+
+        const received: unknown[] = [];
+        limitedManager.onMessage((_edgeAgentId, message) => received.push(message));
+        for (let i = 0; i < 5; i++) {
+          ws.send(JSON.stringify({ type: "heartbeat", at: String(i) }));
+        }
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(received).toHaveLength(2);
+        // No se cerró la conexión por superar el límite — mismo criterio que un mensaje malformado (hallazgo M5).
+        expect(limitedManager.getState("agent-rate-limited")).toBe("connected");
+      } finally {
+        ws?.close();
+        await cleanup();
+      }
+    });
+
+    it("tras pasar la ventana de 1s, vuelve a aceptar mensajes normalmente", async () => {
+      // max=2: el "hello" ya ocupa 1 de los 2 mensajes de la primera
+      // ventana, dejando lugar para exactamente un heartbeat más antes de
+      // que el resto se empiece a ignorar.
+      const { manager: limitedManager, connect: connectLimited, cleanup } = await buildLimitedManager(2);
+      let ws: WebSocket | undefined;
+      try {
+        ws = connectLimited();
+        await waitForOpen(ws);
+        const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => limitedManager.onAgentConnected(resolve));
+        ws.send(hello("agent-rate-window"));
+        await connectedPromise;
+
+        const received: unknown[] = [];
+        limitedManager.onMessage((_edgeAgentId, message) => received.push(message));
+        ws.send(JSON.stringify({ type: "heartbeat", at: "primero" }));
+        ws.send(JSON.stringify({ type: "heartbeat", at: "descartado-misma-ventana" }));
+        await new Promise((r) => setTimeout(r, 1100));
+        ws.send(JSON.stringify({ type: "heartbeat", at: "segunda-ventana" }));
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(received).toHaveLength(2);
+        expect((received[0] as { at: string }).at).toBe("primero");
+        expect((received[1] as { at: string }).at).toBe("segunda-ventana");
+      } finally {
+        ws?.close();
+        await cleanup();
+      }
+    });
+
+    it("sin pasar maxMessagesPerSecond, usa el default (100/seg) — una ráfaga chica no se ve afectada", async () => {
+      const ws = connect();
+      await waitForOpen(ws);
+      const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => manager.onAgentConnected(resolve));
+      ws.send(hello("agent-default-rate"));
+      await connectedPromise;
+
+      const received: unknown[] = [];
+      manager.onMessage((_edgeAgentId, message) => received.push(message));
+      for (let i = 0; i < 10; i++) {
+        ws.send(JSON.stringify({ type: "heartbeat", at: String(i) }));
+      }
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(received).toHaveLength(10);
+      ws.close();
+    });
+  });
 });

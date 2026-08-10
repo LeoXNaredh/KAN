@@ -50,6 +50,8 @@ const INTERNAL_TOKEN = process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-t
 const RATE_LIMIT_WINDOW_MS = Number(process.env.KAN_GATEWAY_RATE_LIMIT_WINDOW_MS) || undefined;
 const RATE_LIMIT_MAX = Number(process.env.KAN_GATEWAY_RATE_LIMIT_MAX) || undefined;
 const MAX_WS_CONNECTIONS = Number(process.env.KAN_GATEWAY_MAX_WS_CONNECTIONS) || undefined;
+// Fix de auditoría de backend #7: mismo criterio "undefined = default sensato".
+const MAX_WS_MESSAGES_PER_SECOND = Number(process.env.KAN_GATEWAY_MAX_WS_MESSAGES_PER_SECOND) || undefined;
 // Voz en tiempo real (ADR-044, rediseño vía proxy): opcional a propósito —
 // sin esto, POST /v1/live-sessions responde 501 y el resto del Gateway
 // sigue andando igual. Nunca sale de este proceso: GeminiLiveProxy es el
@@ -75,7 +77,7 @@ const pairingPort = new SupabasePairingStore(supabaseClient);
 // InMemoryEdgeTicketStore): mint y consume ocurren en la misma request.
 const pluginRegistry = new SupabasePluginRegistry(supabaseClient);
 const pluginPackageTicketStore = new InMemoryPluginPackageTicketStore();
-const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS, pairingPort);
+const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS, pairingPort, MAX_WS_MESSAGES_PER_SECOND);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );

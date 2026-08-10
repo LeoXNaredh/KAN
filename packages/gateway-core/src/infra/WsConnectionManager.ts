@@ -24,6 +24,17 @@ const MAX_PAYLOAD_BYTES = 64 * 1024;
  * completan `hello`, o simplemente contra demasiadas conexiones a la vez.
  */
 const DEFAULT_MAX_CONNECTIONS = 50;
+/**
+ * Rate limiting por mensaje (fix de auditoría de backend #7) — límite por
+ * conexión ya autenticada, no por IP/token: cada socket que ya pasó el
+ * hello puede mandar como máximo esta cantidad de mensajes por segundo
+ * (ventana fija de 1s). Un socket sobre el límite no se cierra — los
+ * mensajes de más simplemente se ignoran hasta que arranca la ventana
+ * siguiente, mismo criterio "no tumbar la conexión por una anomalía" que
+ * ya usa este archivo para mensajes con forma inesperada (hallazgo M5).
+ */
+const DEFAULT_MAX_MESSAGES_PER_SECOND = 100;
+const RATE_LIMIT_WINDOW_MS = 1000;
 
 interface TrackedConnection {
   socket: WebSocket;
@@ -39,6 +50,9 @@ interface TrackedConnection {
    * de docs/13, antes garantizado gratis por ser todo síncrono).
    */
   helloInFlight?: boolean;
+  /** Rate limiting por mensaje — inicio de la ventana actual (epoch ms) y cuántos mensajes ya se contaron en ella. */
+  rateLimitWindowStart?: number;
+  rateLimitCount?: number;
 }
 
 function majorVersion(version: string): string {
@@ -69,6 +83,7 @@ export class WsConnectionManager implements ConnectionManagerPort {
     private readonly authToken: string,
     private readonly maxConnections: number = DEFAULT_MAX_CONNECTIONS,
     private readonly pairingPort?: PairingPort,
+    private readonly maxMessagesPerSecond: number = DEFAULT_MAX_MESSAGES_PER_SECOND,
   ) {}
 
   start(): void {
@@ -140,6 +155,8 @@ export class WsConnectionManager implements ConnectionManagerPort {
 
   private onSocketMessage(conn: TrackedConnection, raw: unknown): void {
     conn.lastSeen = Date.now();
+    if (this.isOverRateLimit(conn)) return;
+
     let message: EdgeToCoreMessage;
     try {
       message = JSON.parse(String(raw));
@@ -209,6 +226,17 @@ export class WsConnectionManager implements ConnectionManagerPort {
       ownerId,
     };
     this.connectedHandlers.forEach((handler) => handler(info));
+  }
+
+  /** Ventana fija de 1s (no sliding window/token bucket) — simple y suficiente para un límite "razonable", no una SLA de precisión. */
+  private isOverRateLimit(conn: TrackedConnection): boolean {
+    const now = Date.now();
+    if (conn.rateLimitWindowStart === undefined || now - conn.rateLimitWindowStart >= RATE_LIMIT_WINDOW_MS) {
+      conn.rateLimitWindowStart = now;
+      conn.rateLimitCount = 0;
+    }
+    conn.rateLimitCount = (conn.rateLimitCount ?? 0) + 1;
+    return conn.rateLimitCount > this.maxMessagesPerSecond;
   }
 
   private onSocketClosed(conn: TrackedConnection): void {
