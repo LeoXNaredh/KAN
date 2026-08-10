@@ -6,6 +6,16 @@ import type { EdgeAgentBus } from "../application/EdgeAgentBus";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const MAX_BACKOFF_MS = 30_000;
+/**
+ * Cola offline (fix de auditoría de backend): antes, `send()` con el WS
+ * caído simplemente descartaba el mensaje en silencio — un `audit.local` o
+ * `telemetry` disparado mientras el Core Cloud está inalcanzable se perdía
+ * para siempre. Tope razonable para no crecer sin límite mientras dura un
+ * corte largo; al llegar acá se descarta el mensaje más viejo (FIFO), no el
+ * que se está por encolar — el mensaje nuevo siempre es al menos tan
+ * relevante como el que reemplaza.
+ */
+export const MAX_QUEUE_SIZE = 200;
 
 /**
  * Conexión saliente y persistente hacia el Core Cloud (requisito 8;
@@ -13,7 +23,9 @@ const MAX_BACKOFF_MS = 30_000;
  * Edge Agent, nunca al revés). Sin un servidor real todavía (ADR-009,
  * incremento siguiente), esto queda reintentando con backoff exponencial —
  * comportamiento correcto que además demuestra el Modo Offline (requisito 14):
- * nada más en el Edge Agent depende de que esta conexión exista.
+ * nada más en el Edge Agent depende de que esta conexión exista. Los
+ * mensajes mandados mientras está caída se encolan (`pendingQueue`) y se
+ * reenvían en orden apenas se reconecta, en vez de perderse.
  */
 export class CoreWebSocketClient implements CoreConnectionPort {
   private ws: WebSocket | undefined;
@@ -23,6 +35,7 @@ export class CoreWebSocketClient implements CoreConnectionPort {
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   private readonly messageHandlers: Array<(message: CoreToEdgeMessage) => void> = [];
   private readonly statusHandlers: Array<(status: CoreConnectionStatus) => void> = [];
+  private readonly pendingQueue: EdgeToCoreMessage[] = [];
   private stopped = true;
 
   constructor(
@@ -52,6 +65,26 @@ export class CoreWebSocketClient implements CoreConnectionPort {
   send(message: EdgeToCoreMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
+      return;
+    }
+    if (this.pendingQueue.length >= MAX_QUEUE_SIZE) {
+      this.pendingQueue.shift();
+      this.logger.warn(`Cola offline del Core Cloud llena (${MAX_QUEUE_SIZE}) — se descarta el mensaje más viejo.`);
+    }
+    this.pendingQueue.push(message);
+  }
+
+  /** Cuántos mensajes esperan a que la conexión vuelva — expuesto para diagnóstico/tests, no forma parte de CoreConnectionPort. */
+  get queuedMessageCount(): number {
+    return this.pendingQueue.length;
+  }
+
+  private flushQueue(): void {
+    if (this.pendingQueue.length === 0) return;
+    const pending = this.pendingQueue.splice(0, this.pendingQueue.length);
+    this.logger.info(`Reenviando ${pending.length} mensaje(s) acumulados mientras el Core Cloud estaba caído`);
+    for (const message of pending) {
+      this.send(message);
     }
   }
 
@@ -85,6 +118,7 @@ export class CoreWebSocketClient implements CoreConnectionPort {
       this.reconnectAttempt = 0;
       this.setStatus("connected");
       this.logger.info("Conectado al Core Cloud");
+      this.flushQueue();
       this.heartbeatTimer = setInterval(() => {
         this.send({ type: "heartbeat", at: new Date().toISOString() });
       }, HEARTBEAT_INTERVAL_MS);
