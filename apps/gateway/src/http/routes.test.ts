@@ -234,6 +234,79 @@ describe("Gateway HTTP routes", () => {
     expect(cancelledId).toBe("job-1");
   });
 
+  describe("DELETE /v1/jobs/:id — autorización por owner (fix de auditoría de backend)", () => {
+    it("rechaza con 403 cuando el job tiene createdBy y no coincide con el usuario del request", async () => {
+      let cancelled = false;
+      let recorded: unknown;
+      const gateway = fakeGateway({
+        scheduler: {
+          list: () => [{ id: "job-1", createdBy: "user-owner" }],
+          cancel: () => {
+            cancelled = true;
+          },
+        } as unknown as Gateway["scheduler"],
+        auditService: {
+          list: () => [],
+          record: (entry: unknown) => {
+            recorded = entry;
+          },
+        } as unknown as Gateway["auditService"],
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-otro", email: "" })));
+
+      const response = await request(app)
+        .delete("/v1/jobs/job-1")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(403);
+      expect(cancelled).toBe(false);
+      expect(recorded).toMatchObject({ actor: "user", action: "job.cancel.denied", subject: "job-1" });
+    });
+
+    it("permite cancelar cuando el job tiene createdBy y sí coincide con el usuario del request", async () => {
+      let cancelledId: string | undefined;
+      const gateway = fakeGateway({
+        scheduler: {
+          list: () => [{ id: "job-1", createdBy: "user-1" }],
+          cancel: (id: string) => {
+            cancelledId = id;
+          },
+        } as unknown as Gateway["scheduler"],
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      const response = await request(app)
+        .delete("/v1/jobs/job-1")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(204);
+      expect(cancelledId).toBe("job-1");
+    });
+
+    it("permite cancelar un job sin createdBy (retrocompatible) sin importar quién lo pida", async () => {
+      let cancelledId: string | undefined;
+      const gateway = fakeGateway({
+        scheduler: {
+          list: () => [{ id: "job-1" }],
+          cancel: (id: string) => {
+            cancelledId = id;
+          },
+        } as unknown as Gateway["scheduler"],
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "cualquier-usuario", email: "" })));
+
+      const response = await request(app)
+        .delete("/v1/jobs/job-1")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(204);
+      expect(cancelledId).toBe("job-1");
+    });
+  });
+
   it("sin authPort configurado (retrocompatibilidad), las rutas existentes funcionan igual que siempre", async () => {
     const app = appWith(fakeGateway());
     const response = await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`);

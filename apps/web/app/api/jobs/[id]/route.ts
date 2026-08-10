@@ -4,11 +4,11 @@ import { resolveUserToken } from "@/lib/auth/resolveUserToken";
 
 /**
  * `X-User-Token` reenviado igual que en GET/POST /v1/jobs (`jobs/route.ts`)
- * — hoy no cambia si la cancelación se permite (`ScheduledJob` queda fuera
- * del alcance de autorización por owner a propósito, ADR-033), pero sí
- * queda el identity trail consistente para cuando eso se revise, y evita
- * la inconsistencia de mandar esta request sin ningún header de sesión
- * mientras las otras dos sí lo hacen.
+ * — desde el fix de autorización de jobs por owner, el Gateway puede
+ * devolver 403 acá si el recordatorio pertenece a otro usuario (`routes.ts`
+ * en apps/gateway); se reenvía tal cual en vez de aplastarlo a un 502
+ * genérico, para que la UI pueda distinguir "no te pertenece" de "el
+ * Gateway está apagado".
  */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,6 +19,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       method: "DELETE",
       headers: userToken ? { "X-User-Token": userToken } : {},
     });
+    if (response.status === 403) {
+      return NextResponse.json({ error: "Ese recordatorio pertenece a otra cuenta." }, { status: 403 });
+    }
     if (!response.ok && response.status !== 204) {
       return NextResponse.json({ error: "No se pudo cancelar el recordatorio en este momento." }, { status: 502 });
     }

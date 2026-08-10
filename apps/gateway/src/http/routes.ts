@@ -112,6 +112,25 @@ export function createRoutes(
   });
 
   router.delete("/v1/jobs/:id", (req, res) => {
+    // Mismo criterio de ownership que executeTool() (Gateway.ts): un job sin
+    // createdBy (creado antes de ADR-040, o sin sesión al crearlo) queda
+    // abierto para cualquiera, igual que hoy; uno con createdBy solo lo
+    // puede cancelar su dueño. ADR-033 dejaba ScheduledJob deliberadamente
+    // fuera de la autorización por owner -- esto lo reabre puntualmente
+    // para DELETE, que es la única operación destructiva sobre un job.
+    const job = gateway.scheduler.list().find((candidate) => candidate.id === req.params.id);
+    if (job && job.createdBy !== undefined && job.createdBy !== req.userId) {
+      gateway.auditService.record({
+        actor: "user",
+        action: "job.cancel.denied",
+        subject: req.params.id,
+        userId: req.userId,
+        metadata: { requestingUserId: req.userId, ownerId: job.createdBy },
+      });
+      res.status(403).json({ error: "No autorizado: este recordatorio pertenece a otro usuario." });
+      return;
+    }
+
     gateway.scheduler.cancel(req.params.id);
     res.status(204).end();
   });

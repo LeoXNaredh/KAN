@@ -26,6 +26,8 @@ export function translateAuditEntry(entry: RawAuditEntry): string {
       return `Notificación de automatización: "${entry.subject}"`;
     case "device.enriched":
       return `Investigué tu dispositivo "${entry.subject}"`;
+    case "job.cancel.denied":
+      return `Se rechazó un intento de cancelar un recordatorio ajeno`;
     default:
       return `${entry.action}: ${entry.subject}`;
   }

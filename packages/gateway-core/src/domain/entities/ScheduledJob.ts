@@ -27,9 +27,12 @@ export interface ScheduledJob {
   /**
    * Usuario que creó el job (P7, ADR-040) — opcional porque `ScheduledJob`
    * quedó, a propósito, fuera del alcance de la autorización por owner
-   * (ADR-033). Se usa solo para decidir a quién mandarle el push al
-   * disparar `notification`; jobs sin `createdBy` (creados antes de este
-   * incremento) degradan a sin-push, nunca a error.
+   * (ADR-033). Se usa para decidir a quién mandarle el push al disparar
+   * `notification`, y desde el fix de auditoría de backend también para
+   * autorizar `DELETE /v1/jobs/:id` (mismo criterio que
+   * `Gateway.executeTool()`: sin `createdBy`, cualquiera puede cancelarlo,
+   * igual que antes) — el resto de ADR-033 (ejecución de los `steps`) sigue
+   * sin chequeo de owner, sin cambios acá.
    */
   createdBy?: string;
 }
