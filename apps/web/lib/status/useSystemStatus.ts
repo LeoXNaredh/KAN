@@ -18,7 +18,16 @@ export function useSystemStatus(): { status: SystemStatusResponse | null; loadin
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    async function load(options: { skipIfHidden?: boolean } = {}) {
+      // Pestaña en segundo plano: se salta el fetch (llamada serverless +
+      // batería del dispositivo del usuario de gratis) — nunca en la
+      // primera carga (`skipIfHidden` solo lo pasan los ticks del
+      // `setInterval` de abajo), para no dejar `loading` trabado en `true`
+      // si la pestaña arranca en segundo plano. El `setInterval` sigue
+      // corriendo igual mientras está oculta, así que apenas vuelve a foco
+      // el próximo tick ya trae datos frescos, sin lógica de resync aparte.
+      if (options.skipIfHidden && typeof document !== "undefined" && document.hidden) return;
+
       try {
         const response = await fetch("/api/status", { cache: "no-store" });
         if (!response.ok) return;
@@ -32,7 +41,7 @@ export function useSystemStatus(): { status: SystemStatusResponse | null; loadin
     }
 
     load();
-    const interval = setInterval(load, POLL_INTERVAL_MS);
+    const interval = setInterval(() => load({ skipIfHidden: true }), POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
