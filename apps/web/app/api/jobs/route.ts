@@ -63,10 +63,10 @@ export async function POST(request: Request) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      return NextResponse.json({ error: data.error ?? "El Gateway rechazó el job." }, { status: response.status });
+      return NextResponse.json({ error: data.error ?? "No se pudo programar el recordatorio." }, { status: response.status });
     }
     return NextResponse.json(data, { status: 201 });
   } catch {
-    return NextResponse.json({ error: "No se pudo contactar al Gateway. ¿Está corriendo?" }, { status: 502 });
+    return NextResponse.json({ error: "KAN no está disponible en este momento." }, { status: 502 });
   }
 }
