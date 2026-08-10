@@ -17,15 +17,10 @@ export default async function DispositivosPage({
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-lg font-semibold text-ink">Dispositivos</h1>
-        <p className="text-sm text-ink-faint">Tus equipos vinculados y los dispositivos que cada uno descubrió.</p>
+        <p className="text-sm text-ink-faint">Tu entorno físico — todo lo que KAN puede tocar por vos.</p>
       </div>
 
-      {user && (
-        <div>
-          <h2 className="mb-3 text-sm font-medium text-ink-muted">Tus dispositivos</h2>
-          <DeviceList />
-        </div>
-      )}
+      {user && <DeviceList />}
 
       {user && (
         <Card className="fade-in flex flex-col gap-4">
