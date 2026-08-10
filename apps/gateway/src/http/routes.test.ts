@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
-import type { Gateway, EdgeTicketPort, LiveVoiceSessionStore } from "@kan/gateway-core";
+import type { Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { createRoutes, type RateLimitOptions } from "./routes";
 
@@ -26,21 +26,16 @@ function appWith(
   gateway: Gateway,
   rateLimitOptions?: RateLimitOptions,
   authPort?: AuthPort,
-  edgeTicketPort?: EdgeTicketPort,
   liveVoiceSessionStore?: LiveVoiceSessionStore,
 ) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, edgeTicketPort, liveVoiceSessionStore));
+  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, liveVoiceSessionStore));
   return app;
 }
 
 function fakeAuthPort(getCurrentUser: AuthPort["getCurrentUser"]): AuthPort {
   return { getCurrentUser } as AuthPort;
-}
-
-function fakeEdgeTicketPort(mint: EdgeTicketPort["mint"]): EdgeTicketPort {
-  return { mint, consume: () => undefined };
 }
 
 function fakeLiveVoiceSessionStore(
@@ -406,67 +401,6 @@ describe("Gateway HTTP routes", () => {
     });
   });
 
-  describe("POST /v1/edge-tickets", () => {
-    it("sin X-User-Token (sin userId resuelto), rechaza con 401", async () => {
-      const app = appWith(
-        fakeGateway(),
-        undefined,
-        fakeAuthPort(async () => ({ userId: "no-debería-llamarse", email: "" })),
-        fakeEdgeTicketPort(() => ({ ticket: "t1", expiresAt: "2026-01-01T00:00:00.000Z" })),
-      );
-
-      const response = await request(app).post("/v1/edge-tickets").set("Authorization", `Bearer ${TOKEN}`);
-
-      expect(response.status).toBe(401);
-    });
-
-    it("sin edgeTicketPort configurado, rechaza con 401 aunque haya userId", async () => {
-      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
-
-      const response = await request(app)
-        .post("/v1/edge-tickets")
-        .set("Authorization", `Bearer ${TOKEN}`)
-        .set("X-User-Token", "jwt-valido");
-
-      expect(response.status).toBe(401);
-    });
-
-    it("con X-User-Token válido y edgeTicketPort configurado, emite un ticket para ese userId", async () => {
-      let mintedFor: string | undefined;
-      const app = appWith(
-        fakeGateway(),
-        undefined,
-        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
-        fakeEdgeTicketPort((ownerId) => {
-          mintedFor = ownerId;
-          return { ticket: "ticket-abc", expiresAt: "2026-01-01T00:01:00.000Z" };
-        }),
-      );
-
-      const response = await request(app)
-        .post("/v1/edge-tickets")
-        .set("Authorization", `Bearer ${TOKEN}`)
-        .set("X-User-Token", "jwt-valido");
-
-      expect(response.status).toBe(201);
-      expect(response.body).toEqual({ ticket: "ticket-abc", expiresAt: "2026-01-01T00:01:00.000Z" });
-      expect(mintedFor).toBe("user-1");
-    });
-
-    it("sin token interno, rechaza con 401 como el resto de /v1/*", async () => {
-      const app = appWith(
-        fakeGateway(),
-        undefined,
-        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
-        fakeEdgeTicketPort(() => ({ ticket: "t1", expiresAt: "2026-01-01T00:00:00.000Z" })),
-      );
-
-      const response = await request(app).post("/v1/edge-tickets").set("X-User-Token", "jwt-valido");
-
-      expect(response.status).toBe(401);
-    });
-  });
-
   describe("POST /v1/live-sessions (ADR-044)", () => {
     it("sin liveVoiceSessionStore configurado, responde 501 (GEMINI_API_KEY ausente)", async () => {
       const app = appWith(fakeGateway());
@@ -480,7 +414,7 @@ describe("Gateway HTTP routes", () => {
     });
 
     it("rechaza sin 'model' o sin 'systemPrompt'", async () => {
-      const app = appWith(fakeGateway(), undefined, undefined, undefined, fakeLiveVoiceSessionStore(() => "s1"));
+      const app = appWith(fakeGateway(), undefined, undefined, fakeLiveVoiceSessionStore(() => "s1"));
 
       const response = await request(app)
         .post("/v1/live-sessions")
@@ -494,7 +428,6 @@ describe("Gateway HTTP routes", () => {
       let registeredWith: unknown;
       const app = appWith(
         fakeGateway(),
-        undefined,
         undefined,
         undefined,
         fakeLiveVoiceSessionStore((config) => {
@@ -518,7 +451,7 @@ describe("Gateway HTTP routes", () => {
     });
 
     it("sin token interno, rechaza con 401 como el resto de /v1/*", async () => {
-      const app = appWith(fakeGateway(), undefined, undefined, undefined, fakeLiveVoiceSessionStore(() => "s1"));
+      const app = appWith(fakeGateway(), undefined, undefined, fakeLiveVoiceSessionStore(() => "s1"));
 
       const response = await request(app)
         .post("/v1/live-sessions")

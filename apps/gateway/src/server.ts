@@ -18,7 +18,6 @@ import {
   JsonFileScheduledJobStore,
   ExpoNotificationService,
   ConsoleLogger,
-  InMemoryEdgeTicketStore,
   LiveVoiceSessionStore,
   GeminiLiveProxy,
   GeminiDeviceResearchAdapter,
@@ -48,15 +47,6 @@ const INTERNAL_TOKEN = process.env.KAN_GATEWAY_INTERNAL_TOKEN ?? "dev-internal-t
 const RATE_LIMIT_WINDOW_MS = Number(process.env.KAN_GATEWAY_RATE_LIMIT_WINDOW_MS) || undefined;
 const RATE_LIMIT_MAX = Number(process.env.KAN_GATEWAY_RATE_LIMIT_MAX) || undefined;
 const MAX_WS_CONNECTIONS = Number(process.env.KAN_GATEWAY_MAX_WS_CONNECTIONS) || undefined;
-// Origin(es) permitido(s) para el camino de ticket del WS /edge (Simulador
-// corriendo en apps/web) — a diferencia del camino de token nativo, acá el
-// Origin sí es una prueba confiable porque JS de navegador no puede
-// falsearlo. Sin esto configurado, toda conexión de navegador se rechaza
-// con 403 (ver apps/gateway/.env.example).
-const ALLOWED_WEB_ORIGINS = (process.env.KAN_WEB_ORIGIN ?? "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 // Voz en tiempo real (ADR-044, rediseño vía proxy): opcional a propósito —
 // sin esto, POST /v1/live-sessions responde 501 y el resto del Gateway
 // sigue andando igual. Nunca sale de este proceso: GeminiLiveProxy es el
@@ -76,17 +66,7 @@ const authPort = new SupabaseAuthAdapter(supabaseClient);
 // P2 incremento 3 (docs/19): mismo cliente otra vez — resuelve el ownerId de
 // un Edge Agent ya vinculado a partir del pairingToken de su hello.
 const pairingPort = new SupabasePairingStore(supabaseClient);
-// Efímero y en memoria a propósito (ver InMemoryEdgeTicketStore) — no es
-// pairing, es la prueba de identidad de un solo uso para el Simulador
-// corriendo en el navegador.
-const edgeTicketStore = new InMemoryEdgeTicketStore();
-const connectionManager = new WsConnectionManager(
-  EDGE_TOKEN,
-  MAX_WS_CONNECTIONS,
-  pairingPort,
-  edgeTicketStore,
-  ALLOWED_WEB_ORIGINS,
-);
+const connectionManager = new WsConnectionManager(EDGE_TOKEN, MAX_WS_CONNECTIONS, pairingPort);
 const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );
@@ -161,7 +141,6 @@ app.use(
     INTERNAL_TOKEN,
     { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX },
     authPort,
-    edgeTicketStore,
     liveVoiceSessionStore,
   ),
 );
@@ -169,8 +148,6 @@ app.use(
 const httpServer = createServer(app);
 
 httpServer.on("upgrade", (request, socket, head) => {
-  // Con el camino de ticket, la URL trae query string (/edge?ticket=...) —
-  // ya no alcanza comparar request.url completo, hay que mirar el pathname.
   const pathname = new URL(request.url ?? "/", "http://internal").pathname;
   if (pathname === "/edge") {
     connectionManager.handleUpgrade(request, socket, head);

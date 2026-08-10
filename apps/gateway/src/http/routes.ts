@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
-import type { Gateway, EdgeTicketPort, LiveVoiceSessionStore } from "@kan/gateway-core";
+import type { Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
 import { createUserAuthMiddleware } from "./userAuthMiddleware";
@@ -24,7 +24,6 @@ export function createRoutes(
   internalToken: string,
   rateLimitOptions?: RateLimitOptions,
   authPort?: AuthPort,
-  edgeTicketPort?: EdgeTicketPort,
   liveVoiceSessionStore?: LiveVoiceSessionStore,
 ): Router {
   const router = Router();
@@ -66,20 +65,6 @@ export function createRoutes(
 
   router.get("/v1/agents", (req, res) => {
     res.json({ agents: gateway.agentRegistry.list(req.userId) });
-  });
-
-  // Ticket de un solo uso para que el Simulador corriendo en apps/web se
-  // conecte a /edge desde el navegador — el WebSocket nativo no puede mandar
-  // el header Authorization que usa el camino de token compartido. Requiere
-  // sesión de usuario real (createUserAuthMiddleware ya corrió arriba); el
-  // ticket lleva ese userId ya verificado, sin pasar por el pairing manual.
-  router.post("/v1/edge-tickets", (req, res) => {
-    if (!req.userId || !edgeTicketPort) {
-      res.status(401).json({ error: "No autorizado" });
-      return;
-    }
-    const { ticket, expiresAt } = edgeTicketPort.mint(req.userId);
-    res.status(201).json({ ticket, expiresAt });
   });
 
   router.get("/v1/audit", async (req, res) => {
