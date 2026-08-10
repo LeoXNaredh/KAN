@@ -161,6 +161,61 @@ describe("EdgeAgent.invokeCapability() — auditoría de invocaciones manuales (
     expect(auditLocalMessages(coreConnection)).toHaveLength(0);
   });
 
+});
+
+describe("EdgeAgent.resolveConfirmation() — auditoría de confirmaciones resueltas (fix de auditoría de backend)", () => {
+  it("aprobar una confirmación pendiente ejecuta la capability y envía audit.local con success:true", async () => {
+    const { edgeAgent, coreConnection } = await buildEdgeAgent();
+
+    const pending = await edgeAgent.invokeCapability("fake-1", "dangerous_cap", {});
+    if (pending.status !== "pending_confirmation") throw new Error("se esperaba pending_confirmation");
+    coreConnection.send.mockClear();
+
+    const outcome = await edgeAgent.resolveConfirmation(pending.confirmationId, true);
+
+    expect(outcome?.status).toBe("executed");
+    const messages = auditLocalMessages(coreConnection);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      type: "audit.local",
+      deviceId: "fake-1",
+      capability: "dangerous_cap",
+      success: true,
+    });
+  });
+
+  it("rechazar una confirmación pendiente NO ejecuta la capability pero igual queda auditada, con success:false", async () => {
+    const { edgeAgent, coreConnection } = await buildEdgeAgent();
+
+    const pending = await edgeAgent.invokeCapability("fake-1", "dangerous_cap", {});
+    if (pending.status !== "pending_confirmation") throw new Error("se esperaba pending_confirmation");
+    coreConnection.send.mockClear();
+
+    const outcome = await edgeAgent.resolveConfirmation(pending.confirmationId, false);
+
+    expect(outcome?.status).toBe("executed");
+    const messages = auditLocalMessages(coreConnection);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      type: "audit.local",
+      deviceId: "fake-1",
+      capability: "dangerous_cap",
+      success: false,
+    });
+    expect((messages[0] as { error?: string }).error).toMatch(/Rechazado por el usuario/);
+  });
+
+  it("un confirmationId desconocido no envía audit.local", async () => {
+    const { edgeAgent, coreConnection } = await buildEdgeAgent();
+
+    const outcome = await edgeAgent.resolveConfirmation("no-existe", true);
+
+    expect(outcome).toBeUndefined();
+    expect(auditLocalMessages(coreConnection)).toHaveLength(0);
+  });
+});
+
+describe("EdgeAgent — dispatch del Gateway (auditoría distinta)", () => {
   it("handleCoreMessage() (dispatch del Gateway) no envía audit.local — ese camino se audita como actor 'llm' del lado del Gateway", async () => {
     const { coreConnection, edgeAgent } = await buildEdgeAgent();
     let dispatchHandler: ((message: { type: "agent_task.dispatch" } & Record<string, unknown>) => void) | undefined;

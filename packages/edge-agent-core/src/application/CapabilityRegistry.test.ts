@@ -133,6 +133,8 @@ describe("CapabilityRegistry", () => {
     expect(outcome).toEqual({
       status: "executed",
       result: { success: true, data: { capabilityName: "dangerous_cap" } },
+      deviceId: "fake-1",
+      capabilityName: "dangerous_cap",
     });
   });
 
@@ -141,7 +143,12 @@ describe("CapabilityRegistry", () => {
     if (pending.status !== "pending_confirmation") throw new Error("se esperaba pending_confirmation");
 
     const outcome = await registry.executeConfirmed(pending.confirmationId, false);
-    expect(outcome).toEqual({ status: "executed", result: { success: false, error: "Rechazado por el usuario" } });
+    expect(outcome).toEqual({
+      status: "executed",
+      result: { success: false, error: "Rechazado por el usuario" },
+      deviceId: "fake-1",
+      capabilityName: "dangerous_cap",
+    });
   });
 
   it("executeConfirmed() con un id desconocido devuelve undefined", async () => {

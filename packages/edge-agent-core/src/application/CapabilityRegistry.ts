@@ -18,6 +18,21 @@ export type InvokeOutcome =
   | { status: "pending_confirmation"; confirmationId: string };
 
 /**
+ * Devuelto por `executeConfirmed()` — a diferencia de `InvokeOutcome`
+ * (donde `invoke()` ya conoce `deviceId`/`capabilityName` porque son sus
+ * propios argumentos), acá el único dato de entrada es `confirmationId`,
+ * así que el resultado necesita traer de vuelta a qué dispositivo/capability
+ * correspondía para que quien llama pueda auditar la acción (fix de
+ * auditoría de backend: antes esto no dejaba ningún rastro).
+ */
+export interface ConfirmedOutcome {
+  status: "executed";
+  result: CapabilityResult;
+  deviceId: string;
+  capabilityName: string;
+}
+
+/**
  * Lista agregada de todo lo invocable ahora mismo (requisito 5) y único
  * punto de entrada para invocar una capability: siempre pasa primero por el
  * Permission Manager (ADR-004) antes de tocar el driver del dispositivo.
@@ -74,15 +89,16 @@ export class CapabilityRegistry {
   }
 
   /** Ejecuta directo tras una confirmación explícita del Permission Manager. */
-  async executeConfirmed(confirmationId: string, approved: boolean): Promise<InvokeOutcome | undefined> {
+  async executeConfirmed(confirmationId: string, approved: boolean): Promise<ConfirmedOutcome | undefined> {
     const confirmation = this.permissionManager.resolve(confirmationId, approved);
     if (!confirmation) return undefined;
+    const { deviceId, capabilityName } = confirmation;
     if (!approved) {
-      this.logger.info(`Invocación rechazada: ${confirmation.capabilityName} en ${confirmation.deviceId}`);
-      return { status: "executed", result: { success: false, error: "Rechazado por el usuario" } };
+      this.logger.info(`Invocación rechazada: ${capabilityName} en ${deviceId}`);
+      return { status: "executed", result: { success: false, error: "Rechazado por el usuario" }, deviceId, capabilityName };
     }
-    const result = await this.execute(confirmation.deviceId, confirmation.capabilityName, confirmation.input);
-    return { status: "executed", result };
+    const result = await this.execute(deviceId, capabilityName, confirmation.input);
+    return { status: "executed", result, deviceId, capabilityName };
   }
 
   private async execute(deviceId: string, capabilityName: string, input: unknown): Promise<CapabilityResult> {

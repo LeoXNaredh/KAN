@@ -16,7 +16,7 @@ import { PluginInstaller } from "./application/PluginInstaller";
 import { DeviceManager } from "./application/DeviceManager";
 import { PermissionManager } from "./application/PermissionManager";
 import { SafetyPolicyStore } from "./application/SafetyPolicyStore";
-import { CapabilityRegistry, type CapabilityListing, type InvokeOutcome } from "./application/CapabilityRegistry";
+import { CapabilityRegistry, type CapabilityListing, type InvokeOutcome, type ConfirmedOutcome } from "./application/CapabilityRegistry";
 
 /**
  * Dependencias del sistema de plugins bajo demanda (ADR-056, Fase 3) — las
@@ -232,8 +232,29 @@ export class EdgeAgent {
     return outcome;
   }
 
-  resolveConfirmation(confirmationId: string, approved: boolean): Promise<InvokeOutcome | undefined> {
-    return this.capabilityRegistry.executeConfirmed(confirmationId, approved);
+  /**
+   * Resuelve una acción que había quedado `pending_confirmation` (fix de
+   * auditoría de backend): antes esto no dejaba rastro — el comentario
+   * histórico en `invokeCapability()` lo marcaba como "trabajo futuro".
+   * Mismo mecanismo que `invokeCapability()` (`audit.local` → Gateway lo
+   * graba con `actor: "user"`, ver `Gateway.ts`), y mismo criterio de
+   * alcance: solo si la acción efectivamente se ejecutó (aprobada) o quedó
+   * en error; un rechazo (`approved: false`) no ejecuta nada, así que
+   * `executeConfirmed()` no devuelve un outcome "executed" para auditar.
+   */
+  async resolveConfirmation(confirmationId: string, approved: boolean): Promise<ConfirmedOutcome | undefined> {
+    const outcome = await this.capabilityRegistry.executeConfirmed(confirmationId, approved);
+    if (outcome) {
+      this.deps.coreConnection.send({
+        type: "audit.local",
+        deviceId: outcome.deviceId,
+        capability: outcome.capabilityName,
+        success: outcome.result.success,
+        error: outcome.result.error,
+        at: new Date().toISOString(),
+      });
+    }
+    return outcome;
   }
 
   getCoreConnectionStatus() {
