@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { access, constants, readFile } from "node:fs/promises";
 import { platform } from "node:os";
 import { app, BrowserWindow, ipcMain } from "electron";
 import {
@@ -12,9 +13,13 @@ import {
   TarPluginPackageExtractor,
   PythonVenvManager,
   NodeProcessLauncher,
+  SidecarProxyPlugin,
+  resolveVenvPythonPath,
   type EdgeAgentEvents,
+  type InstalledPlugin,
+  type LoggerPort,
 } from "@kan/edge-agent-core";
-import type { ActionSeverity } from "@kan/plugin-contract";
+import { validatePluginManifest, type ActionSeverity } from "@kan/plugin-contract";
 import { GatewayPluginPackageFetcher } from "./GatewayPluginPackageFetcher";
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
 import { HttpDevicePlugin } from "@kan/plugin-http-generic";
@@ -55,6 +60,48 @@ const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "plugin.install_failed",
   "plugin.uninstalled",
 ];
+
+/**
+ * plugin-bluetooth-py (fix de auditoría de backend #5, BLE real vía
+ * `bleak`) — a diferencia del resto de los sidecars de ADR-056 (instalados
+ * bajo demanda vía `EdgeAgent.installPlugin()`, que descarga desde un
+ * catálogo real en Supabase), este se registra "empaquetado": directo
+ * desde su carpeta en el monorepo, sin pasar por el catálogo, porque no
+ * hay uno real desplegado todavía (mismo límite ya documentado en ADR-056
+ * Fase 4: "publicar un plugin al catálogo es un paso manual/admin"). Crea
+ * su venv al primer arranque si hace falta (puede tardar — pip instala
+ * `bleak` + `kan-plugin-sdk-py`) y lo reutiliza en los siguientes arranques.
+ * Solo funciona corriendo desde un checkout del monorepo (dev): un build
+ * empaquetado de Electron necesitaría copiar este directorio como recurso
+ * — fuera de alcance de este fix, mismo criterio que "verificación manual"
+ * ya aceptado para el resto de los sidecars Python (ADR-056, Fase 3).
+ */
+async function registerBundledBluetoothSidecar(agent: EdgeAgent, logger: LoggerPort): Promise<void> {
+  const pluginDir = join(__dirname, "../../../../plugins/plugin-bluetooth-py");
+  const manifestRaw = JSON.parse(await readFile(join(pluginDir, "manifest.json"), "utf-8"));
+  const validation = validatePluginManifest(manifestRaw);
+  if (!validation.ok) throw new Error(validation.error);
+
+  const pythonPath = resolveVenvPythonPath(pluginDir);
+  const venvReady = await access(pythonPath, constants.X_OK)
+    .then(() => true)
+    .catch(() => false);
+  if (!venvReady) {
+    logger.info("Creando el entorno virtual de Python para el plugin de Bluetooth (primera vez, puede tardar)...");
+    const venvManager = new PythonVenvManager();
+    const { pythonExecutablePath } = await venvManager.create(pluginDir);
+    await venvManager.install(pythonExecutablePath, join(pluginDir, "requirements.txt"));
+  }
+
+  const installed: InstalledPlugin = {
+    pluginId: validation.manifest.id,
+    version: validation.manifest.version,
+    manifest: validation.manifest,
+    installDir: pluginDir,
+    installedAt: new Date().toISOString(),
+  };
+  await agent.registerPlugin(new SidecarProxyPlugin(installed, new NodeProcessLauncher()));
+}
 
 function getOrCreateEdgeAgentId(configStore: JsonFileConfigStore): string {
   const existing = configStore.get<string>("edgeAgentId");
@@ -158,17 +205,19 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   await agent.registerPlugin(new OpcuaDevicePlugin());
   await agent.registerPlugin(new MqttDevicePlugin());
 
-  // plugin-bluetooth-generic NO se registra a propósito (a diferencia de lo
-  // que un comentario más abajo podría sugerir por comparación): no es un
-  // caso de "falla el binding nativo en tiempo de ejecución" como
-  // ESP32/Modbus/serial — es que ese plugin hoy no tiene ningún transporte
-  // real en absoluto. El intento de agregar `@abandonware/noble` se
+  // plugin-bluetooth-generic (TS, FakeBluetoothTransport) sigue sin
+  // registrarse a propósito: el intento de agregar `@abandonware/noble` se
   // abandonó (ver plugin-bluetooth-generic/README.md, "un solo intento, sin
-  // depurar el entorno") y su constructor por defecto usa
-  // `FakeBluetoothTransport([])` — registrarlo hoy mostraría un plugin
-  // "Bluetooth" que nunca encuentra nada, más confuso que útil. Queda para
-  // cuando exista el sidecar en Python (`bleak`) documentado como
-  // incremento futuro en ese mismo README.
+  // depurar el entorno") y ese plugin hoy no tiene ningún transporte real.
+  // Reemplazado por plugin-bluetooth-py (sidecar Python + bleak, fix de
+  // auditoría de backend #5) — registrado abajo con el mismo criterio
+  // try/catch que ESP32/Raspberry Pi: sin Python instalable, no tumba el
+  // resto del Edge Agent.
+  try {
+    await registerBundledBluetoothSidecar(agent, logger);
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de Bluetooth (sidecar Python, ¿falta Python o bleak?): ${error}`);
+  }
 
   // Import dinámico + try/catch (ADR-038): `onoff` trae una dependencia
   // nativa transitiva (`epoll`) — si su binding no carga en este proceso de

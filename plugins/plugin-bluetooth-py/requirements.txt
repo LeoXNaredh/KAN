@@ -1,0 +1,8 @@
+# Instalación real (paquete descargado por PluginInstaller, ADR-056 Fase 3):
+# kan-plugin-sdk-py se resuelve desde este mismo repo por ahora, sin
+# publicar a PyPI en este incremento (ver README de kan-plugin-sdk-py).
+kan-plugin-sdk-py @ git+https://github.com/kan-project/kan.git@v0.1.0#subdirectory=packages/kan-plugin-sdk-py
+# bleak: BLE central-mode multiplataforma sin binding nativo que compilar
+# (a diferencia de @abandonware/noble del lado Node, que sí lo requiere y
+# fue la razón de este sidecar — ver plugin-bluetooth-generic/README.md).
+bleak>=0.22,<1

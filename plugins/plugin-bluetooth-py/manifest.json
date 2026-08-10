@@ -1,0 +1,12 @@
+{
+  "id": "kan-plugin-bluetooth-py",
+  "version": "0.1.0",
+  "displayName": "Bluetooth (BLE genérico, sidecar Python)",
+  "kind": "device-driver",
+  "runtime": "python-sidecar",
+  "permissions": {
+    "devices": ["bluetooth-generic"],
+    "network": false,
+    "filesystem": []
+  }
+}

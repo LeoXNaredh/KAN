@@ -22,11 +22,11 @@ gyp ERR! find VS including the "Desktop development with C++" workload.
 
 Por regla, no se intentó instalar Visual Studio Build Tools ni depurar más allá de este punto. **`FakeBluetoothTransport` queda como la implementación *por defecto* del plugin** (no solo para tests) — `BluetoothDevicePlugin` funciona igual, con periféricos simulados, hasta que exista un adaptador real.
 
-## Fase 2 (no implementada): microservicio BLE en Python
+## Fase 2 — implementada: `@kan/plugin-bluetooth-py`
 
-Para BLE real en Windows sin depender de un binding nativo de Node, la vía queda documentada para un incremento futuro: un **sidecar en Python** usando [`bleak`](https://github.com/hbldh/bleak) (BLE multiplataforma, sin problemas de compilación en Windows), comunicándose con el Edge Agent vía RPC/WebSocket con un contrato de mensajes versionado.
+BLE real vía un **sidecar en Python** usando [`bleak`](https://github.com/hbldh/bleak) — ver `plugins/plugin-bluetooth-py/`. Se implementó como un plugin sidecar nuevo (`runtime: "python-sidecar"`, mismo patrón que `plugin-vision-py`, ADR-056) en vez de un `BluetoothTransportPort` adicional acá: expone la misma superficie de capabilities que este plugin TS, pero corre fuera de proceso, sin ningún binding nativo de Node que compilar. `apps/desktop` lo registra directo (ver `registerBundledBluetoothSidecar()` en `main/index.ts`) — este plugin TS con `FakeBluetoothTransport` queda igual de sin registrar, como referencia/fixture de test.
 
-Esto no es una idea nueva — es aplicar **ADR-003** (`docs/00`: *"Plugins de hardware/IA pesada corren fuera de proceso (sidecars), no in-process"*), ya decidido para exactamente este tipo de caso (BLE, visión artificial, CAD, robótica). `BluetoothTransportPort` ya está diseñado para que un adaptador que hable con ese sidecar (`RpcBluetoothTransport`, o como se llame) lo implemente sin tocar `BluetoothDevicePlugin` ni las capabilities — mismo principio de puertos/adaptadores que el resto del proyecto.
+Esto aplicó **ADR-003** (`docs/00`: *"Plugins de hardware/IA pesada corren fuera de proceso (sidecars), no in-process"*), ya decidido para exactamente este tipo de caso (BLE, visión artificial, CAD, robótica).
 
 ## Uso
 
