@@ -33,6 +33,7 @@ const COLOR_TOKENS = [
   { name: "ink-muted", className: "bg-ink-muted" },
   { name: "ink-faint", className: "bg-ink-faint" },
   { name: "accent", className: "bg-accent" },
+  { name: "accent-2", className: "bg-accent-2" },
   { name: "success", className: "bg-success" },
   { name: "warning", className: "bg-warning" },
   { name: "danger", className: "bg-danger" },
@@ -68,7 +69,7 @@ export default function DesignSystemPage() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h1 className="text-lg font-semibold text-ink">Design System v1</h1>
+        <h1 className="text-lg font-semibold text-ink">Design System v2 — Aurora</h1>
         <p className="text-sm text-ink-faint">
           Catálogo vivo de tokens y componentes de KAN. Ver DESIGN_SYSTEM.md para la referencia completa.
         </p>
@@ -83,6 +84,30 @@ export default function DesignSystemPage() {
               <span className="font-mono text-xs text-ink-muted">{token.name}</span>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-ink-muted">Gradiente y glow</h2>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-col gap-2">
+            <div className="bg-gradient-accent h-16 w-32 rounded-lg" />
+            <span className="font-mono text-xs text-ink-muted">bg-gradient-accent</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="bg-gradient-accent-soft h-16 w-32 rounded-lg border border-line" />
+            <span className="font-mono text-xs text-ink-muted">bg-gradient-accent-soft</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <p className="text-gradient h-16 w-32 text-2xl font-bold">Aurora</p>
+            <span className="font-mono text-xs text-ink-muted">text-gradient</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="glass glow-accent flex h-16 w-32 items-center justify-center rounded-lg border border-line/80 text-xs text-ink-faint">
+              glass + glow
+            </div>
+            <span className="font-mono text-xs text-ink-muted">glass / glow-accent(-sm)</span>
+          </div>
         </div>
       </section>
 
@@ -105,6 +130,7 @@ export default function DesignSystemPage() {
           {[
             ["rounded-lg", "rounded-lg"],
             ["rounded-xl", "rounded-xl"],
+            ["rounded-2xl", "rounded-2xl"],
             ["rounded-full", "rounded-full"],
           ].map(([label, className]) => (
             <div key={label} className="flex flex-col items-center gap-2">

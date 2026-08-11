@@ -13,8 +13,7 @@ import { SummaryCard } from "@/components/dashboard/SummaryCard";
 import { SystemStatus } from "@/components/dashboard/SystemStatus";
 import { PluginCard } from "@/components/dashboard/PluginCard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
-import { ConversationPanel } from "@/components/dashboard/ConversationPanel";
-import { DashboardGrid } from "@/components/dashboard/DashboardGrid";
+import { KANHome } from "@/components/kan/KANHome";
 import { Card } from "@/components/ui/Card";
 
 export function DashboardClient({ summary }: { summary: DashboardSummary | undefined }) {
@@ -51,69 +50,64 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
   const isNewUser = Boolean(summary) && !loading && summary?.memoriesCount === 0 && allDevices.length === 0;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="fade-in text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
-          {buildGreeting(greeting ?? "Hola", displayName)}
-        </h1>
-        <div className="mt-3">
-          <HeroStatus status={heroStatus} />
-        </div>
-      </div>
-
+    <div className="flex flex-1 flex-col gap-4">
       {isNewUser && <OnboardingWelcome displayName={displayName} />}
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-ink-muted">Tu espacio</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <SummaryCard
-            icon={Brain}
-            title="Memoria"
-            value={summary ? String(summary.memoriesCount) : "—"}
-            hint={summary && summary.memoriesCount === 0 ? "Vacía — KAN empezará a recordar según la uses" : "Recuerdos guardados"}
-          />
-          <SummaryCard
-            icon={FolderKanban}
-            title="Proyectos"
-            value={summary ? String(summary.projectsCount) : "—"}
-            hint={summary && summary.projectsCount === 0 ? "Sin proyectos todavía" : "Proyectos activos"}
-          />
-          <SummaryCard
-            icon={Workflow}
-            title="Recordatorios"
-            value={status ? String(status.jobsCount) : "—"}
-            hint={status && status.jobsCount === 0 ? "Sin nada programado" : "Programados"}
-          />
-        </div>
-      </section>
+      <KANHome
+        greeting={buildGreeting(greeting ?? "Hola", displayName)}
+        panelExtras={
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-ink-muted">Estado de KAN</h2>
+              <HeroStatus status={heroStatus} />
+            </div>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-ink-muted">Tus dispositivos</h2>
-        {allDevices.length === 0 ? (
-          <Card padding="sm" className="fade-in">
-            <p className="text-sm text-ink-faint">
-              Ningún dispositivo conectado todavía — vinculá tu primer equipo desde Dispositivos.
-            </p>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {allDevices.map((device) => (
-              <DeviceCard key={device.id} icon={Cpu} label={device.name} connected={device.agentOnline} />
-            ))}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <SummaryCard
+                icon={Brain}
+                title="Memoria"
+                value={summary ? String(summary.memoriesCount) : "—"}
+                hint={summary && summary.memoriesCount === 0 ? "Vacía — KAN empezará a recordar según la uses" : "Recuerdos guardados"}
+              />
+              <SummaryCard
+                icon={FolderKanban}
+                title="Proyectos"
+                value={summary ? String(summary.projectsCount) : "—"}
+                hint={summary && summary.projectsCount === 0 ? "Sin proyectos todavía" : "Proyectos activos"}
+              />
+              <SummaryCard
+                icon={Workflow}
+                title="Recordatorios"
+                value={status ? String(status.jobsCount) : "—"}
+                hint={status && status.jobsCount === 0 ? "Sin nada programado" : "Programados"}
+              />
+            </div>
+
+            <div>
+              <h2 className="mb-3 text-sm font-medium text-ink-muted">Tus dispositivos</h2>
+              {allDevices.length === 0 ? (
+                <Card padding="sm" className="fade-in">
+                  <p className="text-sm text-ink-faint">
+                    Ningún dispositivo conectado todavía — vinculá tu primer equipo desde Dispositivos.
+                  </p>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                  {allDevices.map((device) => (
+                    <DeviceCard key={device.id} icon={Cpu} label={device.name} connected={device.agentOnline} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <SystemStatus status={status} />
+              <ActivityFeed activity={status?.recentActivity ?? []} />
+              <PluginCard plugins={allPlugins} />
+            </div>
           </div>
-        )}
-      </section>
-
-      <DashboardGrid>
-        <div className="flex flex-col gap-4 lg:col-span-2">
-          <ConversationPanel compact />
-        </div>
-        <div className="flex flex-col gap-4">
-          <SystemStatus status={status} />
-          <ActivityFeed activity={status?.recentActivity ?? []} />
-          <PluginCard plugins={allPlugins} />
-        </div>
-      </DashboardGrid>
+        }
+      />
     </div>
   );
 }

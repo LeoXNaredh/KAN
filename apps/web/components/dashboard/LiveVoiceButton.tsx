@@ -35,10 +35,10 @@ export function LiveVoiceButton({ status, onClick }: { status: LiveSessionStatus
       title={LABEL[status]}
       className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
         status === "active"
-          ? "bg-danger/15 text-danger"
+          ? "bg-danger/15 text-danger shadow-[0_0_16px_-4px_var(--color-danger)]"
           : status === "error"
             ? "text-danger hover:bg-danger/10"
-            : "text-ink-faint hover:bg-surface-3 hover:text-ink-muted"
+            : "text-ink-faint hover:bg-surface-3/80 hover:text-ink-muted"
       }`}
     >
       {status === "connecting" ? (

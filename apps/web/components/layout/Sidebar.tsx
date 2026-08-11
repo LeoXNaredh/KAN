@@ -10,6 +10,7 @@ import {
   Workflow,
   FolderKanban,
   Settings,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -51,12 +52,18 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       <aside
         aria-modal={open ? true : undefined}
         role={open ? "dialog" : undefined}
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 border-r border-line bg-surface-2 p-4 transition-transform duration-base md:static md:z-auto md:w-56 md:translate-x-0 ${
+        className={`glass fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 border-r border-line/80 p-4 transition-transform duration-base md:static md:z-auto md:w-60 md:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="mb-4 flex items-center gap-2 px-2">
-          <span className="text-sm font-semibold tracking-wide text-accent">KAN</span>
+        <div className="mb-6 flex items-center gap-2.5 px-2">
+          <span className="bg-gradient-accent glow-accent-sm animate-glow-pulse flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white">
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 leading-tight">
+            <p className="text-gradient text-base font-bold tracking-tight">KAN</p>
+            <p className="text-[10px] tracking-wide text-ink-faint uppercase">Asistente</p>
+          </div>
         </div>
         <nav aria-label="Principal" className="flex flex-1 flex-col gap-1">
           {NAV_ITEMS.map((item) => {
@@ -68,8 +75,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 href={item.href}
                 onClick={onClose}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                  active ? "bg-accent/10 text-accent" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
+                className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                  active
+                    ? "bg-gradient-accent glow-accent-sm text-white"
+                    : "text-ink-muted hover:translate-x-0.5 hover:bg-surface-3 hover:text-ink"
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />

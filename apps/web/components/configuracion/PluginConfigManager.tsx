@@ -93,7 +93,7 @@ function ListField({ field, value }: { field: PluginConfigField; value: string }
           {entries.map((entry, index) => (
             <li
               key={index}
-              className="flex items-center justify-between gap-2 rounded-lg bg-surface-3 px-3 py-1.5 text-sm"
+              className="flex items-center justify-between gap-2 rounded-lg bg-surface-3/70 px-3 py-1.5 text-sm transition-colors hover:bg-surface-3"
             >
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">{entry}</span>
               <div className="flex shrink-0 items-center gap-1">

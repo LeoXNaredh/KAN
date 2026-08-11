@@ -46,9 +46,17 @@ export function OnboardingWelcome({ displayName }: { displayName: string | undef
         </p>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {STEPS.map((step) => (
-          <div key={step.title} className="flex flex-col gap-2 rounded-lg bg-surface-3 p-3">
-            <step.icon className="h-5 w-5 text-accent" aria-hidden="true" />
+        {STEPS.map((step, index) => (
+          <div
+            key={step.title}
+            className="flex flex-col gap-2 rounded-xl border border-line/60 bg-surface-3/60 p-3 transition-colors hover:border-accent/40 hover:bg-surface-3"
+          >
+            <div className="flex items-center gap-2">
+              <span className="bg-gradient-accent flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white">
+                {index + 1}
+              </span>
+              <step.icon className="h-4 w-4 text-accent" aria-hidden="true" />
+            </div>
             <p className="text-sm font-medium text-ink">{step.title}</p>
             <p className="flex-1 text-xs text-ink-faint">{step.body}</p>
             <Link href={step.href} className="text-xs font-medium text-accent hover:underline">

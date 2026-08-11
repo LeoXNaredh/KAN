@@ -32,7 +32,7 @@ export default async function LogsPage() {
               .map((entry) => (
                 <li
                   key={entry.id}
-                  className="flex flex-col gap-1 rounded-lg bg-surface-3 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                  className="flex flex-col gap-1 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-colors hover:bg-surface-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                 >
                   <div className="min-w-0">
                     <span className="mr-2 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-accent uppercase">

@@ -36,7 +36,7 @@ function Toast({ toast, onDismiss }: { toast: JobNotificationToast; onDismiss: (
   }, [toast.id, onDismiss]);
 
   return (
-    <div className="fade-in pointer-events-auto flex w-[min(22rem,calc(100vw-2rem))] items-start gap-3 rounded-lg border border-line bg-surface-2 px-4 py-3 shadow-lg">
+    <div className="glass glow-accent fade-in pointer-events-auto flex w-[min(22rem,calc(100vw-2rem))] items-start gap-3 rounded-2xl border border-line/80 px-4 py-3">
       <Bell className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">{toast.title}</p>

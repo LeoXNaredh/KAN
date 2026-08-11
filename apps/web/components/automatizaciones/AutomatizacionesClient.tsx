@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Bell, Clock, Loader2, Plus, Repeat, Trash2, TriangleAlert, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import type { ScheduledJobView } from "@/lib/jobs/types";
 
 interface ToolOption {
@@ -197,11 +198,14 @@ export function AutomatizacionesClient() {
           <div className="flex flex-col gap-2">
             <span className="text-sm text-ink-muted">Pasos (se ejecutan en orden; se detiene si uno falla)</span>
             {steps.map((step, index) => (
-              <div key={index} className="flex flex-col gap-2 rounded-lg border border-line bg-surface-3 p-3">
+              <div
+                key={index}
+                className="flex flex-col gap-2 rounded-xl border border-line/70 bg-surface-3/60 p-3"
+              >
                 <div className="flex items-center gap-2">
                   <span className="shrink-0 text-xs font-medium text-ink-faint">#{index + 1}</span>
                   <select
-                    className="flex-1 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                    className={`flex-1 ${INPUT_CLASSES}`}
                     value={step.capabilityRef}
                     onChange={(event) => updateStep(index, { capabilityRef: event.target.value })}
                     disabled={!gatewayOnline || tools.length === 0}
@@ -225,7 +229,7 @@ export function AutomatizacionesClient() {
                   )}
                 </div>
                 <textarea
-                  className="min-h-[3rem] rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-xs text-ink outline-none focus:border-accent"
+                  className={`min-h-[3rem] font-mono text-xs ${INPUT_CLASSES}`}
                   placeholder="Argumentos (JSON, opcional)"
                   value={step.inputJson}
                   onChange={(event) => updateStep(index, { inputJson: event.target.value })}
@@ -256,7 +260,7 @@ export function AutomatizacionesClient() {
           {scheduleType === "cron" ? (
             <div className="flex flex-col gap-2">
               <input
-                className="rounded-lg border border-line bg-surface-3 px-3 py-2 font-mono text-sm text-ink outline-none focus:border-accent"
+                className={`font-mono text-sm ${INPUT_CLASSES}`}
                 value={cron}
                 onChange={(event) => setCron(event.target.value)}
                 placeholder="0 8 * * *"
@@ -279,7 +283,7 @@ export function AutomatizacionesClient() {
           ) : (
             <input
               type="datetime-local"
-              className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              className={INPUT_CLASSES}
               value={runAtLocal}
               onChange={(event) => setRunAtLocal(event.target.value)}
             />
@@ -293,13 +297,13 @@ export function AutomatizacionesClient() {
             {notifyEnabled && (
               <div className="flex flex-col gap-2">
                 <input
-                  className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  className={INPUT_CLASSES}
                   placeholder="Título (ej. Riego completado)"
                   value={notifyTitle}
                   onChange={(event) => setNotifyTitle(event.target.value)}
                 />
                 <input
-                  className="rounded-lg border border-line bg-surface-3 px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  className={INPUT_CLASSES}
                   placeholder="Mensaje (ej. Se regó el jardín sin problemas)"
                   value={notifyBody}
                   onChange={(event) => setNotifyBody(event.target.value)}
@@ -315,7 +319,7 @@ export function AutomatizacionesClient() {
           <button
             type="submit"
             disabled={submitting || !gatewayOnline}
-            className="self-start rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-colors duration-fast hover:brightness-110 disabled:opacity-50"
+            className={`self-start ${PRIMARY_BUTTON_CLASSES}`}
           >
             {submitting ? "Programando..." : "Programar"}
           </button>
@@ -333,7 +337,10 @@ export function AutomatizacionesClient() {
         ) : (
           <ul className="flex flex-col gap-2">
             {jobs.map((job) => (
-              <li key={job.id} className="flex items-center justify-between gap-3 rounded-lg bg-surface-3 px-3 py-2 text-sm">
+              <li
+                key={job.id}
+                className="flex items-center justify-between gap-3 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-colors hover:bg-surface-3"
+              >
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-ink">
                     {job.steps.map((step) => toolLabel(step.capabilityRef)).join(" → ")}

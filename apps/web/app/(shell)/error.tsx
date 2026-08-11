@@ -10,8 +10,10 @@ export default function ShellError({ error, reset }: { error: Error & { digest?:
   }, [error]);
 
   return (
-    <div className="fade-in flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-line bg-surface-2/60 px-6 py-20 text-center">
-      <AlertTriangle className="h-6 w-6 text-danger" aria-hidden="true" />
+    <div className="glass fade-in flex flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-line/80 px-6 py-20 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-danger/10" style={{ boxShadow: "0 0 20px -6px var(--color-danger)" }}>
+        <AlertTriangle className="h-6 w-6 text-danger" aria-hidden="true" />
+      </div>
       <h1 className="text-xl font-semibold text-ink">Algo salió mal</h1>
       <p className="max-w-md text-sm text-ink-muted">
         No se pudo cargar esta página. Podés intentar de nuevo — si el problema sigue, probá recargar KAN.

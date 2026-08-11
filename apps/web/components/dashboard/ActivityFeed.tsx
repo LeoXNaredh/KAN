@@ -13,7 +13,7 @@ export function ActivityFeed({ activity }: { activity: ActivityEntry[] }) {
   return (
     <Card className="fade-in">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-ink-muted">
-        <Activity className="h-4 w-4" aria-hidden="true" />
+        <Activity className="h-4 w-4 text-accent" aria-hidden="true" />
         Actividad reciente
       </h2>
       {activity.length === 0 ? (
@@ -21,7 +21,10 @@ export function ActivityFeed({ activity }: { activity: ActivityEntry[] }) {
       ) : (
         <ul className="flex flex-col gap-2">
           {activity.map((entry) => (
-            <li key={entry.id} className="flex items-center justify-between gap-2 rounded-lg bg-surface-3 px-3 py-2 text-sm">
+            <li
+              key={entry.id}
+              className="flex items-center justify-between gap-2 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-colors hover:bg-surface-3"
+            >
               <span className="text-ink">{entry.label}</span>
               <span className="shrink-0 text-xs text-ink-faint">{formatRelativeTime(entry.at)}</span>
             </li>

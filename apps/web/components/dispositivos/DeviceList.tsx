@@ -70,7 +70,10 @@ export function DeviceList() {
           ) : (
             <ul className="flex flex-col gap-1.5">
               {agent.devices.map((device) => (
-                <li key={device.id} className="flex items-center gap-2 rounded-lg bg-surface-3 px-3 py-1.5 text-sm">
+                <li
+                  key={device.id}
+                  className="flex items-center gap-2 rounded-lg bg-surface-3/70 px-3 py-1.5 text-sm transition-colors hover:bg-surface-3"
+                >
                   <Cpu className="h-3.5 w-3.5 shrink-0 text-ink-faint" aria-hidden="true" />
                   <span className="text-ink">{device.name}</span>
                   {agent.status === "online" && <LiveIndicator online label="" compact />}

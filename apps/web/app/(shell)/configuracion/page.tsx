@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { User, Brain, Sparkles, Volume2, Puzzle } from "lucide-react";
+import { User, Brain, Sparkles, Volume2, Puzzle, Palette } from "lucide-react";
 import { GEMINI_TTS_VOICES, DEFAULT_VOICE } from "@kan/voice-abstraction";
 import { Card } from "@/components/ui/Card";
 import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import { MemoryManager } from "@/components/configuracion/MemoryManager";
 import { PluginConfigManager } from "@/components/configuracion/PluginConfigManager";
+import { ThemeAccentPicker } from "@/components/configuracion/ThemeAccentPicker";
 import { buildAuthUseCases } from "@/lib/auth/composition";
 import { updateDisplayNameAction } from "@/lib/auth/actions";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
@@ -88,6 +89,15 @@ export default async function ConfiguracionPage({
           </form>
         </Card>
       )}
+
+      <Card className="fade-in flex flex-col gap-4">
+        <h2 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+          <Palette className="h-4 w-4" aria-hidden="true" />
+          Identidad visual
+        </h2>
+        <p className="text-xs text-ink-faint">El color de acento de KAN — HUD, avatar, botones y glow. Se guarda en este navegador.</p>
+        <ThemeAccentPicker />
+      </Card>
 
       {user && (
         <Card className="fade-in flex flex-col gap-4">

@@ -26,17 +26,31 @@ export function VoiceButton({ status, onClick }: { status: VoiceInputStatus; onC
       disabled={status === "transcribing"}
       aria-label={LABEL[status]}
       title={LABEL[status]}
-      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 ${
-        status === "recording"
-          ? "scale-105 bg-danger text-white shadow-lg shadow-danger/30 animate-pulse"
-          : "bg-accent text-white shadow-lg shadow-accent/20 hover:scale-105 hover:brightness-110"
-      }`}
+      className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
     >
-      {status === "transcribing" ? (
-        <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
-      ) : (
-        <Mic className="h-6 w-6" aria-hidden="true" />
+      {status === "recording" && (
+        <>
+          <span className="absolute inset-0 animate-ping rounded-full bg-danger/50" aria-hidden="true" />
+          <span
+            className="absolute -inset-1.5 rounded-full opacity-60"
+            style={{ boxShadow: "0 0 0 3px var(--color-danger)" }}
+            aria-hidden="true"
+          />
+        </>
       )}
+      <span
+        className={`relative flex h-14 w-14 items-center justify-center rounded-full text-white transition-all duration-fast ${
+          status === "recording"
+            ? "scale-105 bg-danger shadow-lg shadow-danger/40"
+            : "bg-gradient-accent glow-accent hover:scale-105 hover:brightness-110"
+        }`}
+      >
+        {status === "transcribing" ? (
+          <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" />
+        ) : (
+          <Mic className="h-6 w-6" aria-hidden="true" />
+        )}
+      </span>
     </button>
   );
 }

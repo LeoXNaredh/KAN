@@ -60,7 +60,7 @@ export function TopBar({ onOpenMenu, user }: { onOpenMenu: () => void; user: Use
   const { toasts, dismiss } = useJobNotificationToasts(status?.recentActivity ?? []);
 
   return (
-    <header className="flex items-center justify-between gap-4 border-b border-line bg-surface-2/80 px-4 py-3 backdrop-blur">
+    <header className="glass sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-line/80 px-4 py-3">
       <NotificationToasts toasts={toasts} onDismiss={dismiss} />
       <div className="flex items-center gap-3">
         <button
