@@ -3,6 +3,8 @@ import type { ConnectionManagerPort } from "./domain/ports/ConnectionManagerPort
 import type { AuditStorePort } from "./domain/ports/AuditStorePort";
 import type { SchedulerPort } from "./domain/ports/SchedulerPort";
 import type { NotificationServicePort } from "./domain/ports/NotificationServicePort";
+import type { AgentRegistryStorePort } from "./domain/ports/AgentRegistryStorePort";
+import type { TaskStorePort } from "./domain/ports/TaskStorePort";
 import type { GatewayBus } from "./application/GatewayBus";
 import type { DeviceEnrichmentService } from "./application/DeviceEnrichmentService";
 import { AgentRegistry } from "./application/AgentRegistry";
@@ -23,6 +25,9 @@ export interface GatewayDeps {
   notificationService: NotificationServicePort;
   /** Investigación automática de dispositivos nuevos (ADR-053) — ausente si no hay GEMINI_API_KEY configurada, mismo criterio que geminiLiveProxy en server.ts. */
   deviceEnrichmentService?: DeviceEnrichmentService;
+  /** Fix de auditoría de backend #2 — sin esto, AgentRegistry/TaskOrchestrator son puramente en memoria (comportamiento previo, retrocompatible). */
+  agentRegistryStore?: AgentRegistryStorePort;
+  taskStore?: TaskStorePort;
 }
 
 /**
@@ -45,7 +50,7 @@ export class Gateway {
 
   constructor(private readonly deps: GatewayDeps) {
     this.bus = deps.bus;
-    this.agentRegistry = new AgentRegistry(deps.bus);
+    this.agentRegistry = new AgentRegistry(deps.bus, deps.agentRegistryStore);
     // agentRegistry inyectado (P2 incremento 4): permite que list()/resolve
     // de capacidades sepan a qué usuario pertenece cada Edge Agent.
     this.capabilityRegistry = new GlobalCapabilityRegistry(deps.bus, this.agentRegistry);
@@ -56,6 +61,7 @@ export class Gateway {
       this.capabilityRegistry,
       deps.connectionManager,
       deps.bus,
+      deps.taskStore,
     );
     this.toolRegistry = new CapabilityBackedToolRegistry(this.capabilityRegistry);
     this.toolResolver = new RegistryToolResolver(this.toolRegistry);

@@ -1,4 +1,5 @@
 import type { AgentRecord } from "../domain/entities/AgentRecord";
+import type { AgentRegistryStorePort } from "../domain/ports/AgentRegistryStorePort";
 import type { GatewayBus } from "./GatewayBus";
 
 /**
@@ -13,18 +14,37 @@ import type { GatewayBus } from "./GatewayBus";
  */
 const STALE_OFFLINE_MS = 90 * 24 * 60 * 60 * 1000;
 
-/** In-memory hoy (docs/12 §2) — swap a Supabase es cambio de adaptador, mismo patrón que ADR-007. */
+/**
+ * En memoria por default; con un `store` (fix de auditoría de backend #2,
+ * `JsonFileAgentRegistryStore` en `apps/gateway`) sobrevive un reinicio del
+ * Gateway — mismo patrón de adaptador opcional que `NodeCronScheduler` con
+ * `ScheduledJobStorePort`. `status` cargado del disco siempre se corrige a
+ * "offline" al hidratar: un Edge Agent solo puede ser "online" de verdad
+ * mientras exista una conexión WS viva en este proceso, y un registro
+ * persistido nunca la tiene (la conexión murió con el proceso anterior) —
+ * mentir "online" hasta que reconecte confundiría al Dashboard.
+ */
 export class AgentRegistry {
   private readonly agents = new Map<string, AgentRecord>();
 
-  constructor(private readonly bus: GatewayBus) {}
+  constructor(
+    private readonly bus: GatewayBus,
+    private readonly store?: AgentRegistryStorePort,
+  ) {
+    if (this.store) {
+      for (const record of this.store.load()) {
+        this.agents.set(record.edgeAgentId, { ...record, status: "offline" });
+      }
+    }
+  }
 
   upsert(record: AgentRecord): void {
     this.agents.set(record.edgeAgentId, record);
+    this.store?.save(record);
     // Limpieza de entradas huérfanas (fix de auditoría de backend #6): se
     // corre al conectar un agente nuevo ("al reconectar"), no con un timer
-    // propio — AgentRegistry sigue siendo una clase en memoria sin
-    // dependencias de scheduling.
+    // propio — AgentRegistry sigue siendo una clase sin dependencias de
+    // scheduling propias.
     this.pruneStaleOffline();
   }
 
@@ -33,13 +53,17 @@ export class AgentRegistry {
     if (record) {
       record.status = "online";
       record.lastSeenAt = new Date().toISOString();
+      this.store?.save(record);
     }
     this.bus.emit("agent.connected", { edgeAgentId });
   }
 
   markOffline(edgeAgentId: string): void {
     const record = this.agents.get(edgeAgentId);
-    if (record) record.status = "offline";
+    if (record) {
+      record.status = "offline";
+      this.store?.save(record);
+    }
     this.bus.emit("agent.disconnected", { edgeAgentId });
   }
 
@@ -65,6 +89,7 @@ export class AgentRegistry {
       if (record.status !== "offline") continue;
       if (now - new Date(record.lastSeenAt).getTime() > STALE_OFFLINE_MS) {
         this.agents.delete(edgeAgentId);
+        this.store?.remove(edgeAgentId);
       }
     }
   }

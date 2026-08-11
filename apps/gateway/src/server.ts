@@ -17,6 +17,8 @@ import {
   WsConnectionManager,
   NodeCronScheduler,
   JsonFileScheduledJobStore,
+  JsonFileAgentRegistryStore,
+  JsonFileTaskStore,
   ExpoNotificationService,
   ConsoleLogger,
   LiveVoiceSessionStore,
@@ -93,6 +95,13 @@ const scheduledJobStore = new JsonFileScheduledJobStore(
   fileURLToPath(new URL("../data/scheduled-jobs.json", import.meta.url)),
 );
 const scheduler = new NodeCronScheduler(scheduledJobStore, logger);
+// Fix de auditoría de backend #2: mismo patrón de archivo JSON local que
+// scheduledJobStore arriba — AgentRegistry/TaskOrchestrator sobreviven un
+// reinicio del Gateway en vez de arrancar vacíos cada vez.
+const agentRegistryStore = new JsonFileAgentRegistryStore(
+  fileURLToPath(new URL("../data/agent-registry.json", import.meta.url)),
+);
+const taskStore = new JsonFileTaskStore(fileURLToPath(new URL("../data/tasks.json", import.meta.url)));
 // P7 (ADR-040): mismo cliente service_role, solo para leer los tokens Expo
 // del dueño del job al dispararle su notificación (best-effort, ver
 // ExpoNotificationService).
@@ -129,6 +138,8 @@ const gateway = new Gateway({
   scheduler,
   notificationService,
   deviceEnrichmentService,
+  agentRegistryStore,
+  taskStore,
 });
 
 bus.on("agent.connected", ({ edgeAgentId }) => logger.info(`[gateway] Edge Agent conectado: ${edgeAgentId}`));

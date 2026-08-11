@@ -5,6 +5,8 @@ export interface GatewayTask {
   capabilityRef: string;
   status: GatewayTaskStatus;
   createdAt: string;
+  /** Solo presente si status="failed" por reconciliación al reiniciar (ver TaskOrchestrator) o por timeout/error real. */
+  error?: string;
 }
 
 export interface TaskRequest {

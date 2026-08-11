@@ -5,6 +5,24 @@ import { AgentRegistry } from "./AgentRegistry";
 import { GlobalCapabilityRegistry } from "./GlobalCapabilityRegistry";
 import { TaskOrchestrator } from "./TaskOrchestrator";
 import type { ConnectionManagerPort, Unsubscribe } from "../domain/ports/ConnectionManagerPort";
+import type { TaskStorePort } from "../domain/ports/TaskStorePort";
+import type { GatewayTask } from "../domain/entities/GatewayTask";
+
+class FakeTaskStore implements TaskStorePort {
+  tasks = new Map<string, GatewayTask>();
+  saveCalls: GatewayTask[] = [];
+
+  load(): GatewayTask[] {
+    return Array.from(this.tasks.values());
+  }
+  save(task: GatewayTask): void {
+    this.tasks.set(task.id, { ...task });
+    this.saveCalls.push({ ...task });
+  }
+  remove(taskId: string): void {
+    this.tasks.delete(taskId);
+  }
+}
 
 const CAP: CapabilityDescriptor = {
   name: "read_sensor",
@@ -181,5 +199,84 @@ describe("TaskOrchestrator", () => {
     await resultPromise;
 
     expect(orchestrator.getTask(sent.taskId)?.status).toBe("done");
+  });
+
+  describe("con store (fix de auditoría de backend #2)", () => {
+    it("submit() persiste la tarea despachada de inmediato", async () => {
+      const bus = new GatewayBus();
+      const agentRegistry = new AgentRegistry(bus);
+      const capabilityRegistry = new GlobalCapabilityRegistry(bus);
+      const connectionManager = new FakeConnectionManager();
+      const store = new FakeTaskStore();
+      const orchestrator = new TaskOrchestrator(agentRegistry, capabilityRegistry, connectionManager, bus, store);
+      const ref = registerOnlineAgent(agentRegistry, capabilityRegistry, "agent-1");
+
+      void orchestrator.submit({ capabilityRef: ref, input: {} });
+
+      expect(store.saveCalls).toHaveLength(1);
+      expect(store.saveCalls[0].status).toBe("dispatched");
+    });
+
+    it("resolvePending() persiste el estado final", async () => {
+      const bus = new GatewayBus();
+      const agentRegistry = new AgentRegistry(bus);
+      const capabilityRegistry = new GlobalCapabilityRegistry(bus);
+      const connectionManager = new FakeConnectionManager();
+      const store = new FakeTaskStore();
+      const orchestrator = new TaskOrchestrator(agentRegistry, capabilityRegistry, connectionManager, bus, store);
+      const ref = registerOnlineAgent(agentRegistry, capabilityRegistry, "agent-1");
+
+      const resultPromise = orchestrator.submit({ capabilityRef: ref, input: {} });
+      const sent = connectionManager.sentMessages[0].message as { taskId: string };
+      orchestrator.handleTelemetry({ type: "telemetry", taskId: sent.taskId, status: "done", at: new Date().toISOString() });
+      await resultPromise;
+
+      expect(store.tasks.get(sent.taskId)?.status).toBe("done");
+    });
+
+    it("al hidratar, una tarea que quedó 'dispatched' se reconcilia a 'failed' — el Gateway se reinició en el medio", () => {
+      const store = new FakeTaskStore();
+      store.tasks.set("huerfana", {
+        id: "huerfana",
+        capabilityRef: "algo",
+        status: "dispatched",
+        createdAt: new Date().toISOString(),
+      });
+
+      const bus = new GatewayBus();
+      const orchestrator = new TaskOrchestrator(
+        new AgentRegistry(bus),
+        new GlobalCapabilityRegistry(bus),
+        new FakeConnectionManager(),
+        bus,
+        store,
+      );
+
+      const task = orchestrator.getTask("huerfana");
+      expect(task?.status).toBe("failed");
+      expect(task?.error).toMatch(/reinició/);
+      expect(store.tasks.get("huerfana")?.status).toBe("failed");
+    });
+
+    it("al hidratar, una tarea ya resuelta ('done') se conserva tal cual", () => {
+      const store = new FakeTaskStore();
+      store.tasks.set("resuelta", {
+        id: "resuelta",
+        capabilityRef: "algo",
+        status: "done",
+        createdAt: new Date().toISOString(),
+      });
+
+      const bus = new GatewayBus();
+      const orchestrator = new TaskOrchestrator(
+        new AgentRegistry(bus),
+        new GlobalCapabilityRegistry(bus),
+        new FakeConnectionManager(),
+        bus,
+        store,
+      );
+
+      expect(orchestrator.getTask("resuelta")?.status).toBe("done");
+    });
   });
 });

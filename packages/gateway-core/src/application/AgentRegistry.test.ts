@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import { GatewayBus } from "./GatewayBus";
 import { AgentRegistry } from "./AgentRegistry";
 import type { AgentRecord } from "../domain/entities/AgentRecord";
+import type { AgentRegistryStorePort } from "../domain/ports/AgentRegistryStorePort";
+
+class FakeAgentRegistryStore implements AgentRegistryStorePort {
+  records = new Map<string, AgentRecord>();
+  saveCalls: AgentRecord[] = [];
+  removeCalls: string[] = [];
+
+  load(): AgentRecord[] {
+    return Array.from(this.records.values());
+  }
+  save(record: AgentRecord): void {
+    this.records.set(record.edgeAgentId, { ...record });
+    this.saveCalls.push({ ...record });
+  }
+  remove(edgeAgentId: string): void {
+    this.records.delete(edgeAgentId);
+    this.removeCalls.push(edgeAgentId);
+  }
+}
 
 function record(overrides: Partial<AgentRecord> = {}): AgentRecord {
   return {
@@ -118,6 +137,54 @@ describe("AgentRegistry", () => {
       registry.upsert(record({ edgeAgentId: "de-otro", ownerId: "user-2" }));
 
       expect(registry.list("user-1").map((r) => r.edgeAgentId).sort()).toEqual(["mio", "sin-owner"]);
+    });
+  });
+
+  describe("con store (fix de auditoría de backend #2)", () => {
+    it("hidrata desde store.load() al construirse", () => {
+      const store = new FakeAgentRegistryStore();
+      store.records.set("agent-1", record({ edgeAgentId: "agent-1", status: "offline" }));
+
+      const registry = new AgentRegistry(new GatewayBus(), store);
+
+      expect(registry.get("agent-1")?.edgeAgentId).toBe("agent-1");
+    });
+
+    it("un registro hidratado como 'online' se corrige a 'offline' — la conexión WS murió con el proceso anterior", () => {
+      const store = new FakeAgentRegistryStore();
+      store.records.set("agent-1", record({ edgeAgentId: "agent-1", status: "online" }));
+
+      const registry = new AgentRegistry(new GatewayBus(), store);
+
+      expect(registry.get("agent-1")?.status).toBe("offline");
+    });
+
+    it("upsert()/markOnline()/markOffline() persisten en el store", () => {
+      const store = new FakeAgentRegistryStore();
+      const registry = new AgentRegistry(new GatewayBus(), store);
+
+      registry.upsert(record({ edgeAgentId: "agent-1", status: "offline" }));
+      registry.markOnline("agent-1");
+      registry.markOffline("agent-1");
+
+      expect(store.saveCalls.map((r) => r.status)).toEqual(["offline", "online", "offline"]);
+    });
+
+    it("pruneStaleOffline() también borra del store", () => {
+      const store = new FakeAgentRegistryStore();
+      const registry = new AgentRegistry(new GatewayBus(), store);
+      const NINETY_ONE_DAYS_AGO = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString();
+      registry.upsert(record({ edgeAgentId: "viejo", status: "offline", lastSeenAt: NINETY_ONE_DAYS_AGO }));
+
+      registry.upsert(record({ edgeAgentId: "nuevo" }));
+
+      expect(store.removeCalls).toContain("viejo");
+    });
+
+    it("sin store, se comporta exactamente igual que antes (retrocompatible)", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record());
+      expect(registry.get("agent-1")?.edgeAgentId).toBe("agent-1");
     });
   });
 });

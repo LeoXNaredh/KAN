@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 import type { AgentTaskDispatchMessage, TelemetryMessage } from "@kan/plugin-contract";
 import type { GatewayTask, TaskRequest, TaskResult } from "../domain/entities/GatewayTask";
 import type { ConnectionManagerPort } from "../domain/ports/ConnectionManagerPort";
+import type { TaskStorePort } from "../domain/ports/TaskStorePort";
 import type { AgentRegistry } from "./AgentRegistry";
 import type { GlobalCapabilityRegistry } from "./GlobalCapabilityRegistry";
 import type { GatewayBus } from "./GatewayBus";
+
+const RESTART_RECONCILIATION_ERROR =
+  "El Gateway se reinició mientras la tarea estaba en curso — no se sabe si llegó a ejecutarse.";
 
 // 40s (ADR-027, docs/16 P7): cubre la operación más lenta conocida hoy
 // (`home_axes` en plugin-gcode, HOME_TIMEOUT_MS=30s) más margen de
@@ -23,6 +27,15 @@ interface PendingTask {
  * "pending_confirmation" (ADR-004), resuelve de inmediato sin esperar más:
  * la confirmación de una acción física peligrosa se queda en el Edge Agent,
  * nunca se delega al canal de chat — decisión de seguridad, no una limitación.
+ *
+ * Con un `store` (fix de auditoría de backend #2, `JsonFileTaskStore` en
+ * `apps/gateway`) el historial de tareas sobrevive un reinicio. Lo que NO
+ * sobrevive nunca es la Promise en vuelo de `submit()` — si había un caller
+ * HTTP esperando, su conexión murió con el proceso anterior igual que la
+ * tarea; no hay forma honesta de "reanudarla". Por eso al hidratar, toda
+ * tarea que haya quedado en "dispatched" se reconcilia a "failed" con una
+ * razón explícita en vez de quedar en un limbo eterno que ningún caller va
+ * a resolver jamás.
  */
 export class TaskOrchestrator {
   private readonly tasks = new Map<string, GatewayTask>();
@@ -33,7 +46,21 @@ export class TaskOrchestrator {
     private readonly capabilityRegistry: GlobalCapabilityRegistry,
     private readonly connectionManager: ConnectionManagerPort,
     private readonly bus: GatewayBus,
-  ) {}
+    private readonly store?: TaskStorePort,
+  ) {
+    if (this.store) {
+      for (const task of this.store.load()) {
+        if (task.status === "dispatched") {
+          const reconciled: GatewayTask = { ...task, status: "failed", error: RESTART_RECONCILIATION_ERROR };
+          this.tasks.set(task.id, reconciled);
+          this.store.save(reconciled);
+        } else {
+          this.tasks.set(task.id, task);
+        }
+        this.forgetLater(task.id);
+      }
+    }
+  }
 
   async submit(request: TaskRequest): Promise<TaskResult> {
     const capability = this.capabilityRegistry.resolve(request.capabilityRef);
@@ -49,6 +76,7 @@ export class TaskOrchestrator {
     const taskId = randomUUID();
     const task: GatewayTask = { id: taskId, capabilityRef: request.capabilityRef, status: "dispatched", createdAt: new Date().toISOString() };
     this.tasks.set(taskId, task);
+    this.store?.save(task);
 
     const message: AgentTaskDispatchMessage = {
       type: "agent_task.dispatch",
@@ -68,8 +96,11 @@ export class TaskOrchestrator {
         this.pending.delete(taskId);
         const timeoutResult: TaskResult = { status: "failed", error: "Timeout esperando respuesta del Edge Agent" };
         task.status = "failed";
+        task.error = timeoutResult.error;
+        this.store?.save(task);
         this.bus.emit("task.failed", { taskId, error: timeoutResult.error! });
         resolve(timeoutResult);
+        this.forgetLater(taskId);
       }, TASK_TIMEOUT_MS);
       this.pending.set(taskId, { resolve, timer });
     });
@@ -101,7 +132,11 @@ export class TaskOrchestrator {
   private resolvePending(taskId: string, result: TaskResult): void {
     const pending = this.pending.get(taskId);
     const task = this.tasks.get(taskId);
-    if (task) task.status = result.status;
+    if (task) {
+      task.status = result.status;
+      task.error = result.error;
+      this.store?.save(task);
+    }
     if (!pending) return;
     clearTimeout(pending.timer);
     this.pending.delete(taskId);
@@ -111,6 +146,13 @@ export class TaskOrchestrator {
       this.bus.emit("task.completed", { taskId, result });
     }
     pending.resolve(result);
-    setTimeout(() => this.tasks.delete(taskId), TASK_RETENTION_MS);
+    this.forgetLater(taskId);
+  }
+
+  private forgetLater(taskId: string): void {
+    setTimeout(() => {
+      this.tasks.delete(taskId);
+      this.store?.remove(taskId);
+    }, TASK_RETENTION_MS);
   }
 }
