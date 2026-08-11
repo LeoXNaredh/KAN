@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint . --config ../../eslint.config.mjs",
     "test": "vitest run --passWithNoTests",
-    "rebuild:native": "electron-rebuild -f -w serialport"
+    "rebuild:native": "electron-rebuild -f -o @serialport/bindings-cpp"
   },
   "dependencies": {
     "@kan/edge-agent-core": "workspace:*",

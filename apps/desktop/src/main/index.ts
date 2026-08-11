@@ -242,62 +242,53 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     logger.warn(`No se pudo cargar el plugin de Raspberry Pi (¿falta compilar una dependencia nativa?): ${error}`);
   }
 
-  // Import dinámico + try/catch, mismo criterio que Raspberry Pi: el
-  // constructor de Esp32ArduinoPlugin por defecto usa transportes reales
-  // (NodeSerialTransport/NodeTcpTransport, @kan/serial-line-transport), y
-  // serialport trae un binding nativo (.node). Confirmado en vivo (no solo
-  // hipotético, como para Raspberry Pi): carga bien bajo el Node del
-  // sistema (por eso los tests de este plugin siempre pasan), pero NO bajo
-  // el ABI de Node que usa Electron — sin binario prebuildeado para
-  // platform=win32/electron/abi=130 en esta máquina. `pnpm --filter desktop
-  // rebuild:native` (electron-rebuild) puede resolverlo si tenés instalado
-  // Visual Studio Build Tools ("Desktop development with C++") — acá no
-  // está, mismo bloqueo exacto que @abandonware/noble en
-  // plugin-bluetooth-generic (ver ese README). No se automatizó como
-  // postinstall a propósito: un postinstall que falla por Visual Studio
-  // ausente rompe `pnpm install` para todo el monorepo, no solo este
-  // plugin. Sin ESP32 conectado, discover() no debe tumbar nada — con
-  // KAN_ESP32_PORT sin fijar, igual escanea todos los puertos seriales
-  // disponibles (a diferencia de Raspberry Pi, que no escanea nada fuera de
-  // una Pi real), así que este catch cubre tanto un fallo de carga del
-  // binding como cualquier error de descubrimiento.
+  // Import dinámico + try/catch — no por un ABI mismatch real (ADR-057:
+  // verificado en vivo bajo el Node interno de Electron, `serialport` carga
+  // y funciona sin rebuild, gracias a que `@serialport/bindings-cpp`
+  // distribuye prebuilts N-API, estables de ABI entre Node y Electron), sino
+  // como defensa barata ante una plataforma/arquitectura sin prebuild
+  // publicado (ej. Windows ARM64) y ante fallos reales de discover() — con
+  // KAN_ESP32_PORT sin fijar, este plugin escanea todos los puertos
+  // seriales disponibles, y ese escaneo no debe tumbar el resto del Edge
+  // Agent si falla.
   try {
     const { Esp32ArduinoPlugin } = await import("@kan/plugin-esp32-arduino");
     await agent.registerPlugin(new Esp32ArduinoPlugin());
   } catch (error) {
-    logger.warn(`No se pudo cargar el plugin de ESP32/Arduino (¿falta compilar una dependencia nativa?): ${error}`);
+    logger.warn(`No se pudo cargar el plugin de ESP32/Arduino: ${error}`);
   }
 
-  // Mismo riesgo de binding nativo que ESP32/Arduino: `modbus-serial` trae
-  // `serialport` para su modo RTU (el modo TCP no lo necesita, pero ambos
-  // viven en el mismo paquete/import). Import dinámico + try/catch.
+  // Mismo criterio que ESP32 (ADR-057) — `modbus-serial` trae `serialport`
+  // como dependencia opcional para su modo RTU (el modo TCP no lo
+  // necesita, pero ambos viven en el mismo import). Import dinámico +
+  // try/catch como defensa, no por un bloqueo de ABI real.
   try {
     const { ModbusDevicePlugin } = await import("@kan/plugin-modbus");
     await agent.registerPlugin(new ModbusDevicePlugin());
   } catch (error) {
-    logger.warn(`No se pudo cargar el plugin de Modbus (¿falta compilar una dependencia nativa?): ${error}`);
+    logger.warn(`No se pudo cargar el plugin de Modbus: ${error}`);
   }
 
-  // Mismo riesgo de binding nativo — depende de @kan/serial-line-transport,
-  // que envuelve `serialport` directamente.
+  // Mismo criterio (ADR-057) — depende de @kan/serial-line-transport, que
+  // envuelve `serialport` directamente.
   try {
     const { SerialGenericDevicePlugin } = await import("@kan/plugin-serial-generic");
     await agent.registerPlugin(new SerialGenericDevicePlugin());
   } catch (error) {
-    logger.warn(`No se pudo cargar el plugin de puerto serial genérico (¿falta compilar una dependencia nativa?): ${error}`);
+    logger.warn(`No se pudo cargar el plugin de puerto serial genérico: ${error}`);
   }
 
-  // Mismo riesgo de binding nativo — también depende de
+  // Mismo criterio (ADR-057) — también depende de
   // @kan/serial-line-transport (el adaptador SLCAN se enumera como puerto
   // serial estándar, sin ninguna dependencia de CAN Bus propia).
   try {
     const { CanbusDevicePlugin } = await import("@kan/plugin-canbus");
     await agent.registerPlugin(new CanbusDevicePlugin());
   } catch (error) {
-    logger.warn(`No se pudo cargar el plugin de CAN Bus (¿falta compilar una dependencia nativa?): ${error}`);
+    logger.warn(`No se pudo cargar el plugin de CAN Bus: ${error}`);
   }
 
-  // Mismo riesgo de binding nativo — impresoras 3D/CNC por G-code también
+  // Mismo criterio (ADR-057) — impresoras 3D/CNC por G-code también
   // dependen de @kan/serial-line-transport para el camino serial (el
   // camino WiFi/TCP, KAN_GCODE_WIFI_HOST, no lo necesita, pero ambos viven
   // en el mismo import).
@@ -305,7 +296,7 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     const { GcodeDevicePlugin } = await import("@kan/plugin-gcode");
     await agent.registerPlugin(new GcodeDevicePlugin());
   } catch (error) {
-    logger.warn(`No se pudo cargar el plugin de G-code (¿falta compilar una dependencia nativa?): ${error}`);
+    logger.warn(`No se pudo cargar el plugin de G-code: ${error}`);
   }
 
   await agent.bootstrap();

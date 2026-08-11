@@ -896,6 +896,23 @@ El bloqueo real: `Gateway.ts` llamaba `notificationService.notify({ userId: "sys
 
 ---
 
+### ADR-057: El binding nativo de `serialport` NO tiene desajuste de ABI con Electron — verificado en vivo, no asumido
+
+**Contexto.** ADR-056 (arriba) y `docs/13-auditoria-v0.1.md` daban por hecho, sin haberlo corrido nunca contra el runtime real de Electron, que los 5 plugins que dependen de `serialport` (ESP32, Modbus, Serial genérico, CAN bus, G-code — todos vía `@kan/serial-line-transport` o, en el caso de Modbus, la dependencia opcional `serialport` de `modbus-serial`) estaban bloqueados por un desajuste de ABI entre el Node.js del host (usado por `pnpm install`) y el Node.js que Electron empaqueta internamente. El propio script `rebuild:native` (`electron-rebuild -f -w serialport`) nunca se había ejecutado con éxito: `-w`/`--which-module` no acota el árbol de dependencias como parece indicar su nombre, y el intento arrastraba a `cpu-features`/`epoll` (bloqueados a propósito en `pnpm-workspace.yaml`, sin toolchain de C++ disponible), haciendo fallar el comando completo antes de llegar a `serialport`.
+
+**Verificación (esta sesión, con hardware Windows real, no simulado).**
+1. `npx electron-rebuild -f -o @serialport/bindings-cpp` (`-o`/`--only`, no `-w`) — completa con éxito, sin necesitar compilador: `@serialport/bindings-cpp` distribuye binarios prebuilt basados en **N-API** (`prebuilds/win32-x64/node.napi.node`), que es **estable de ABI** entre versiones de Node.js y Electron por diseño — no existe el desajuste que se asumía.
+2. Confirmado además ejecutando el binding directo bajo el Node.js interno de Electron (`ELECTRON_RUN_AS_NODE=1 electron.exe`, reporta `Node.js v20.18.3` frente al v26 del host): `SerialPort.list()` corrió el código nativo real y devolvió los 2 puertos serie de la máquina de prueba.
+3. Confirmado un nivel más arriba, cargando el código fuente real de los 5 plugins (vía `tsx`, mismo runtime de Electron) — los cinco exportan sus clases (`Esp32ArduinoPlugin`, `ModbusDevicePlugin`, `SerialGenericDevicePlugin`, `CanbusDevicePlugin`, `GcodeDevicePlugin`) sin ningún error de carga.
+
+**Decisión.** Corregir la premisa: de los "6 plugins bloqueados por binding nativo" que citaba ADR-056, solo **1 sigue siendo un riesgo real — `plugin-raspberry-pi`** (`onoff` → `epoll`, un binding específico de Linux que no compila ni hace falta en una máquina de desarrollo Windows/Mac; se resuelve en la Raspberry Pi real, no acá — sin cambios sobre lo que ya documentaba ADR-038). Los otros 5 nunca estuvieron bloqueados de verdad. Se corrige:
+- `apps/desktop/package.json`: `rebuild:native` pasa de `-w serialport` (nunca funcionó) a `-o @serialport/bindings-cpp` (verificado arriba) — se mantiene el script como red de seguridad ante un futuro cambio de `serialport` que abandone N-API, no porque haga falta hoy.
+- Comentarios en `apps/desktop/src/main/index.ts` sobre los 5 registros de plugins: se mantiene el `try/catch` con import dinámico (defensa barata ante una plataforma/arquitectura sin prebuild — ej. Windows ARM64 no listado arriba) pero se corrige el texto que sugería un bloqueo activo.
+
+**Consecuencia.** No hace falta ninguna acción de build adicional para paquetear ESP32/Modbus/Serial genérico/CAN bus/G-code — ya funcionan hoy en un build de Electron real. La única pieza de hardware que sigue necesitando verificación en su propio dispositivo (no simulable desde esta sesión) es Raspberry Pi, ya documentado como tal.
+
+---
+
 ## 4. Puntos donde recomiendo recortar el alcance del MVP (sin abandonar la visión)
 
 - **"Plugin Lenguaje de Señas"** y **Drones**: quedan en el roadmap de Fase 2+, no en las primeras 50 tareas. Son plugins válidos pero no prueban el concepto central (lenguaje natural → acción física) mejor que ESP32 o impresión 3D, que son más baratos de tener en un banco de pruebas real.
