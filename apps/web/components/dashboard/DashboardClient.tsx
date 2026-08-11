@@ -51,10 +51,9 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
 
   return (
     <div className="flex flex-1 flex-col gap-4">
-      {isNewUser && <OnboardingWelcome displayName={displayName} />}
-
       <KANHome
         greeting={buildGreeting(greeting ?? "Hola", displayName)}
+        homeContent={isNewUser && <OnboardingWelcome displayName={displayName} />}
         panelExtras={
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">

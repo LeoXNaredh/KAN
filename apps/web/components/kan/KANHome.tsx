@@ -28,7 +28,16 @@ const SIDE_NAV_ITEMS = [
  * `KANHome` no vuelve a pedir esos datos, los recibe ya resueltos, para no
  * duplicar el fetch/estado que `DashboardClient` ya tiene.
  */
-export function KANHome({ panelExtras, greeting }: { panelExtras?: ReactNode; greeting?: string }) {
+export function KANHome({
+  panelExtras,
+  greeting,
+  homeContent,
+}: {
+  panelExtras?: ReactNode;
+  greeting?: string;
+  /** Contenido extra de "home" (sin mensajes todavía), debajo del avatar/hint — ej. `OnboardingWelcome`. */
+  homeContent?: ReactNode;
+}) {
   const conv = useConversation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasMessages = conv.messages.length > 0;
@@ -64,6 +73,7 @@ export function KANHome({ panelExtras, greeting }: { panelExtras?: ReactNode; gr
     <KANLayout
       phase={phase}
       activity={activity}
+      homeContent={homeContent}
       hint={
         <div className="fade-in flex flex-col items-center gap-1.5">
           {greeting && <p className="text-2xl font-semibold tracking-tight text-ink">{greeting}</p>}

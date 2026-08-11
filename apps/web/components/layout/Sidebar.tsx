@@ -75,10 +75,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 href={item.href}
                 onClick={onClose}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                   active
-                    ? "bg-gradient-accent glow-accent-sm text-white"
-                    : "text-ink-muted hover:translate-x-0.5 hover:bg-surface-3 hover:text-ink"
+                    ? "border-accent/30 bg-accent/10 text-accent"
+                    : "border-transparent text-ink-muted hover:translate-x-0.5 hover:bg-surface-3 hover:text-ink"
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
