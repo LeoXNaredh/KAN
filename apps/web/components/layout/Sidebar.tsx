@@ -3,16 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import {
-  MessageSquareText,
-  Home,
-  Cpu,
-  Workflow,
-  FolderKanban,
-  Settings,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
+import { MessageSquareText, Home, Cpu, Workflow, FolderKanban, Settings, type LucideIcon } from "lucide-react";
+import { KANMark } from "@/components/kan/KANMark";
 
 // Orden por frecuencia de uso (rediseño de interfaz): la conversación es el
 // modo primario de KAN, va primero. "Logs" sale del nivel superior — es
@@ -52,13 +44,13 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       <aside
         aria-modal={open ? true : undefined}
         role={open ? "dialog" : undefined}
-        className={`glass fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 border-r border-line/80 p-4 transition-transform duration-base md:static md:z-auto md:w-60 md:translate-x-0 ${
+        className={`glass kan-grid-bg fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 border-r border-line/80 p-4 transition-transform duration-base md:static md:z-auto md:w-60 md:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="mb-6 flex items-center gap-2.5 px-2">
           <span className="bg-gradient-accent glow-accent-sm animate-glow-pulse flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white">
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            <KANMark className="h-4 w-4" />
           </span>
           <div className="min-w-0 leading-tight">
             <p className="text-gradient text-base font-bold tracking-tight">KAN</p>

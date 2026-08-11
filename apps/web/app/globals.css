@@ -156,8 +156,9 @@ body::after {
     linear-gradient(color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px);
   background-size: 42px 42px;
-  opacity: 0.025;
-  mask-image: radial-gradient(85% 65% at 50% 0%, black, transparent 75%);
+  opacity: 0.045;
+  /* Sin mask: cubre toda la pantalla parejo, incluida la columna del Sidebar
+     (antes se desvanecía hacia los bordes y ahí quedaba invisible). */
 }
 
 @keyframes aurora-drift {
@@ -355,4 +356,19 @@ body::after {
 
 .kan-sheet {
   animation: kan-sheet-up var(--duration-slow) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/*
+ * Misma grilla que `body::after`, como clase aplicable (Sidebar.tsx) — el
+ * blur de `.glass` (20px) lava la grilla del fondo hasta hacerla invisible
+ * a través del panel, así que el Sidebar necesita su propia capa en vez de
+ * depender de que se transparente desde atrás. Longhand a propósito: debe
+ * ir DESPUÉS de `.glass` en este archivo para ganarle a su `background`
+ * shorthand en `background-image` sin tocar el resto de `.glass`.
+ */
+.kan-grid-bg {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px);
+  background-size: 42px 42px;
 }

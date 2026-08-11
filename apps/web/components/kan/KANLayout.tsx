@@ -63,7 +63,7 @@ export function KANLayout({
            * (`z-20`, por debajo de `TopBar`/nav).
            */}
           <div className="pointer-events-none fixed inset-y-0 right-0 left-0 z-20 md:left-60">
-            <div className="fade-in absolute right-6 bottom-28 origin-bottom-right scale-[0.42] sm:right-8 sm:bottom-32">
+            <div className="fade-in absolute right-6 bottom-28 origin-bottom-right scale-[0.38] sm:right-8 sm:bottom-32">
               <KANAvatar size="lg" activity={activity} />
             </div>
           </div>
@@ -86,10 +86,14 @@ export function KANLayout({
           </div>
         </>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 py-10 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 pt-10 pb-8 text-center">
           <KANAvatar size="lg" activity={activity} />
           {hint}
-          {homeContent && <div className="mt-4 w-full max-w-3xl">{homeContent}</div>}
+          {/* pb-6 extra acá (no solo en el contenedor de arriba): las cards de
+              onboarding quedaban tapadas por la barra `sticky` de abajo sin
+              este colchón — `sticky` no reserva espacio propio más allá de
+              su propia caja, así que el contenido anterior necesita el suyo. */}
+          {homeContent && <div className="mt-4 w-full max-w-3xl pb-6">{homeContent}</div>}
         </div>
       )}
 

@@ -77,7 +77,7 @@ export function KANHome({
       hint={
         <div className="fade-in flex flex-col items-center gap-1.5">
           {greeting && <p className="text-2xl font-semibold tracking-tight text-ink">{greeting}</p>}
-          <p className="text-sm tracking-wide text-ink-faint uppercase">
+          <p className="text-sm font-medium tracking-wide text-accent uppercase">
             {activity === "listening" ? "Escuchando…" : "Decí “KAN” o escribí abajo"}
           </p>
         </div>
