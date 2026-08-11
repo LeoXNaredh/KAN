@@ -10,6 +10,7 @@ import {
   JsonFileConfigStore,
   CoreWebSocketClient,
   NoopUpdater,
+  PluginInstaller,
   TarPluginPackageExtractor,
   PythonVenvManager,
   NodeProcessLauncher,
@@ -159,17 +160,27 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     configStore,
     coreConnection,
     updater: new NoopUpdater(),
-    // ADR-056 (Fase 5): venv puro, sin Docker como prerequisito (decisión
-    // de alcance) — mismos 4 adapters reales diseñados/probados en Fase 3,
-    // ahora conectados al Gateway real en vez de fakes de test.
-    pluginInstaller: {
-      pluginPackageFetcher: (pluginPackageFetcher = new GatewayPluginPackageFetcher(configStore, edgeAgentId)),
-      pluginPackageExtractor: new TarPluginPackageExtractor(),
+  });
+
+  // ADR-056 (Fase 5): venv puro, sin Docker como prerequisito (decisión de
+  // alcance) — mismos 4 adapters reales diseñados/probados en Fase 3, ahora
+  // conectados al Gateway real en vez de fakes de test. Construido y
+  // enganchado acá (no dentro de `EdgeAgent`, ver `EdgeAgent.getPluginManager()`)
+  // porque `PluginInstaller` arrastra `node:child_process` — solo un host
+  // Node como este puede importarlo sin romper el bundle del navegador.
+  agent.attachPluginInstaller(
+    new PluginInstaller({
+      pluginManager: agent.getPluginManager(),
+      bus,
+      logger,
+      configStore,
+      fetcher: (pluginPackageFetcher = new GatewayPluginPackageFetcher(configStore, edgeAgentId)),
+      extractor: new TarPluginPackageExtractor(),
       venvManager: new PythonVenvManager(),
       processLauncher: new NodeProcessLauncher(),
       pluginsDir: join(userDataDir, "sidecar-plugins"),
-    },
-  });
+    }),
+  );
 
   // Registrado ANTES de los try/catch de plugins de abajo a propósito (P3.7):
   // `EdgeAgentBus.emit()` no hace buffering (ver EdgeAgentBus.ts) — un

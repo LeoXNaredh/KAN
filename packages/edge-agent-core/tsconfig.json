@@ -2,7 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // DOM además de ES2022 (no solo el default del monorepo): este paquete
+    // incluye adaptadores de navegador (src/infra/browser/*, ./browser.ts)
+    // que usan `window`/`WebSocket`/`localStorage` — el resto del paquete
+    // sigue siendo Node normal, DOM solo agrega tipos ambientes.
+    "lib": ["ES2022", "DOM"]
   },
   "include": ["src"]
 }

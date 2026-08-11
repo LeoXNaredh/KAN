@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { requiresConfirmation, type ActionSeverity } from "@kan/plugin-contract";
 import type { PendingConfirmation } from "../domain/entities/PendingConfirmation";
 import type { LoggerPort } from "../domain/ports/LoggerPort";
@@ -32,7 +31,7 @@ export class PermissionManager {
     }
 
     const confirmation: PendingConfirmation = {
-      id: randomUUID(),
+      id: globalThis.crypto.randomUUID(),
       deviceId,
       capabilityName,
       input,

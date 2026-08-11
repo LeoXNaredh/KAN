@@ -10,6 +10,7 @@ import {
 } from "@kan/plugin-contract";
 import type { PairingPort } from "@kan/core";
 import type { AgentConnectionInfo, ConnectionManagerPort, Unsubscribe } from "../domain/ports/ConnectionManagerPort";
+import type { EdgeTicketPort } from "../domain/ports/EdgeTicketPort";
 
 const HELLO_TIMEOUT_MS = 10_000;
 const HEARTBEAT_TIMEOUT_MS = 45_000;
@@ -40,6 +41,12 @@ interface TrackedConnection {
   socket: WebSocket;
   edgeAgentId?: string;
   ownerId?: string;
+  /**
+   * Resuelto en `handleUpgrade()` para el camino de ticket (navegador) —
+   * ya prueba el dueño antes de que llegue el "hello", así que `onHello()`
+   * no pasa por `PairingPort` para esta conexión (docs/19 continuación).
+   */
+  preAuthenticatedOwnerId?: string;
   lastSeen: number;
   helloTimer?: ReturnType<typeof setTimeout>;
   /**
@@ -83,6 +90,8 @@ export class WsConnectionManager implements ConnectionManagerPort {
     private readonly authToken: string,
     private readonly maxConnections: number = DEFAULT_MAX_CONNECTIONS,
     private readonly pairingPort?: PairingPort,
+    private readonly edgeTicketPort?: EdgeTicketPort,
+    private readonly allowedOrigins: string[] = [],
     private readonly maxMessagesPerSecond: number = DEFAULT_MAX_MESSAGES_PER_SECOND,
   ) {}
 
@@ -97,19 +106,45 @@ export class WsConnectionManager implements ConnectionManagerPort {
 
   /** Se invoca desde el evento 'upgrade' del http.Server de apps/gateway. */
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const authHeader = request.headers["authorization"];
-    const receivedToken = typeof authHeader === "string" ? authHeader : undefined;
-    if (!safeCompareToken(receivedToken, `Bearer ${this.authToken}`)) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
+    const ticket = new URL(request.url ?? "/", "http://internal").searchParams.get("ticket");
+
+    let preAuthenticatedOwnerId: string | undefined;
+    if (ticket !== null) {
+      // Camino de ticket (navegador): el WebSocket nativo del browser no
+      // puede mandar el header Authorization, así que la prueba de dueño
+      // viaja acá — ver EdgeTicketPort. Nunca usa KAN_EDGE_TOKEN.
+      const claim = this.edgeTicketPort?.consume(ticket);
+      if (!claim) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      // Origin sí es confiable acá (a diferencia de un header custom, JS de
+      // browser no puede falsearlo) — por eso el chequeo es solo para este
+      // camino; el nativo (desktop/hardware) no manda un Origin significativo.
+      const origin = request.headers.origin;
+      if (!origin || !this.allowedOrigins.includes(origin)) {
+        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      preAuthenticatedOwnerId = claim.ownerId;
+    } else {
+      const authHeader = request.headers["authorization"];
+      const receivedToken = typeof authHeader === "string" ? authHeader : undefined;
+      if (!safeCompareToken(receivedToken, `Bearer ${this.authToken}`)) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
     }
+
     if (this.pending.size + this.byAgentId.size >= this.maxConnections) {
       socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
       socket.destroy();
       return;
     }
-    this.wss.handleUpgrade(request, socket, head, (ws) => this.onSocketConnected(ws));
+    this.wss.handleUpgrade(request, socket, head, (ws) => this.onSocketConnected(ws, preAuthenticatedOwnerId));
   }
 
   send(edgeAgentId: string, message: CoreToEdgeMessage): boolean {
@@ -139,8 +174,8 @@ export class WsConnectionManager implements ConnectionManagerPort {
     return conn && conn.socket.readyState === WebSocket.OPEN ? "connected" : "disconnected";
   }
 
-  private onSocketConnected(socket: WebSocket): void {
-    const conn: TrackedConnection = { socket, lastSeen: Date.now() };
+  private onSocketConnected(socket: WebSocket, preAuthenticatedOwnerId?: string): void {
+    const conn: TrackedConnection = { socket, lastSeen: Date.now(), preAuthenticatedOwnerId };
     this.pending.add(conn);
     conn.helloTimer = setTimeout(() => {
       if (this.pending.has(conn)) {
@@ -196,8 +231,11 @@ export class WsConnectionManager implements ConnectionManagerPort {
     // ownerId. Rechazar tumbaría un dispositivo físico por un problema de
     // identidad que todavía no bloquea nada (la autorización real es un
     // incremento posterior).
-    let ownerId: string | undefined;
-    if (hello.pairingToken && this.pairingPort) {
+    // Camino de ticket (navegador): el dueño ya se resolvió en
+    // handleUpgrade() antes de aceptar el socket — no hay pairingToken que
+    // resolver ni PairingPort que consultar para esta conexión.
+    let ownerId: string | undefined = conn.preAuthenticatedOwnerId;
+    if (!ownerId && hello.pairingToken && this.pairingPort) {
       try {
         ownerId = await this.pairingPort.resolveOwner(hello.pairingToken, hello.edgeAgentId);
       } catch {

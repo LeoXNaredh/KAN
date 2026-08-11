@@ -4,10 +4,15 @@ import { useState, type ReactNode } from "react";
 import type { UserIdentity } from "@kan/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
+import { useBrowserEdgeAgent } from "@/lib/edgeAgent/useBrowserEdgeAgent";
 import { SystemStatusProvider } from "@/lib/status/SystemStatusProvider";
 
 export function ShellChrome({ user, children }: { user: UserIdentity | undefined; children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Simulador corriendo en el propio tab (docs/19 continuación) — sobrevive
+  // a la navegación client-side dentro del shell porque ShellChrome no se
+  // desmonta al cambiar de ruta, solo `children`.
+  useBrowserEdgeAgent(Boolean(user));
 
   return (
     <SystemStatusProvider>

@@ -4,7 +4,9 @@ import { WebSocket } from "ws";
 import { PROTOCOL_VERSION } from "@kan/plugin-contract";
 import type { PairingPort } from "@kan/core";
 import { WsConnectionManager } from "./WsConnectionManager";
+import { InMemoryEdgeTicketStore } from "./InMemoryEdgeTicketStore";
 import type { AgentConnectionInfo } from "../domain/ports/ConnectionManagerPort";
+import type { EdgeTicketPort } from "../domain/ports/EdgeTicketPort";
 
 const TOKEN = "test-token";
 
@@ -360,7 +362,7 @@ describe("WsConnectionManager (integración WS real)", () => {
 
   describe("rate limiting por mensaje (fix de auditoría de backend #7)", () => {
     async function buildLimitedManager(maxMessagesPerSecond: number) {
-      const limitedManager = new WsConnectionManager(TOKEN, undefined, undefined, maxMessagesPerSecond);
+      const limitedManager = new WsConnectionManager(TOKEN, undefined, undefined, undefined, [], maxMessagesPerSecond);
       limitedManager.start();
       const limitedServer = createServer();
       limitedServer.on("upgrade", (request, socket, head) => {
@@ -454,6 +456,124 @@ describe("WsConnectionManager (integración WS real)", () => {
 
       expect(received).toHaveLength(10);
       ws.close();
+    });
+  });
+
+  describe("camino de ticket (navegador)", () => {
+    const ALLOWED_ORIGIN = "http://localhost:3000";
+
+    async function startTicketServer(edgeTicketPort: EdgeTicketPort, allowedOrigins = [ALLOWED_ORIGIN]) {
+      const ticketManager = new WsConnectionManager(TOKEN, undefined, undefined, edgeTicketPort, allowedOrigins);
+      ticketManager.start();
+      const ticketServer = createServer();
+      ticketServer.on("upgrade", (request, socket, head) => {
+        // Mismo fix que apps/gateway/src/server.ts: con query string, el
+        // pathname ya no es igual a request.url completo.
+        const pathname = new URL(request.url ?? "/", "http://internal").pathname;
+        if (pathname === "/edge") ticketManager.handleUpgrade(request, socket, head);
+        else socket.destroy();
+      });
+      await new Promise<void>((resolve) => ticketServer.listen(0, resolve));
+      const ticketPort = (ticketServer.address() as { port: number }).port;
+      return {
+        manager: ticketManager,
+        stop: async () => {
+          ticketManager.stop();
+          await new Promise<void>((resolve) => ticketServer.close(() => resolve()));
+        },
+        connectWithTicket: (ticket: string, origin = ALLOWED_ORIGIN) =>
+          new WebSocket(`ws://localhost:${ticketPort}/edge?ticket=${ticket}`, { headers: { origin } }),
+        connectNative: (token = TOKEN) =>
+          new WebSocket(`ws://localhost:${ticketPort}/edge`, { headers: { authorization: `Bearer ${token}` } }),
+      };
+    }
+
+    it("un ticket válido conecta con el ownerId ya resuelto, sin pasar por PairingPort", async () => {
+      const ticketStore = new InMemoryEdgeTicketStore();
+      const { manager: ticketManager, stop, connectWithTicket } = await startTicketServer(ticketStore);
+      try {
+        const { ticket } = ticketStore.mint("user-browser");
+        const ws = connectWithTicket(ticket);
+        await waitForOpen(ws);
+
+        const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => ticketManager.onAgentConnected(resolve));
+        ws.send(hello("agent-browser-sim"));
+
+        const info = await connectedPromise;
+        expect(info.ownerId).toBe("user-browser");
+        ws.close();
+      } finally {
+        await stop();
+      }
+    });
+
+    it("un ticket inexistente/inválido es rechazado (401, no upgrade)", async () => {
+      const ticketStore = new InMemoryEdgeTicketStore();
+      const { stop, connectWithTicket } = await startTicketServer(ticketStore);
+      try {
+        const ws = connectWithTicket("ticket-que-nunca-existio");
+        const closeOrError = await new Promise<string>((resolve) => {
+          ws.once("unexpected-response", (_req, res) => resolve(`status:${res.statusCode}`));
+          ws.once("error", () => resolve("error"));
+        });
+        expect(closeOrError).toContain("401");
+      } finally {
+        await stop();
+      }
+    });
+
+    it("un ticket ya usado no puede reusarse — el segundo intento es 401", async () => {
+      const ticketStore = new InMemoryEdgeTicketStore();
+      const { stop, connectWithTicket } = await startTicketServer(ticketStore);
+      try {
+        const { ticket } = ticketStore.mint("user-browser");
+        const first = connectWithTicket(ticket);
+        await waitForOpen(first);
+        first.close();
+
+        const second = connectWithTicket(ticket);
+        const closeOrError = await new Promise<string>((resolve) => {
+          second.once("unexpected-response", (_req, res) => resolve(`status:${res.statusCode}`));
+          second.once("error", () => resolve("error"));
+        });
+        expect(closeOrError).toContain("401");
+      } finally {
+        await stop();
+      }
+    });
+
+    it("un Origin no permitido en el camino de ticket es rechazado (403)", async () => {
+      const ticketStore = new InMemoryEdgeTicketStore();
+      const { stop, connectWithTicket } = await startTicketServer(ticketStore);
+      try {
+        const { ticket } = ticketStore.mint("user-browser");
+        const ws = connectWithTicket(ticket, "http://evil.example.com");
+        const closeOrError = await new Promise<string>((resolve) => {
+          ws.once("unexpected-response", (_req, res) => resolve(`status:${res.statusCode}`));
+          ws.once("error", () => resolve("error"));
+        });
+        expect(closeOrError).toContain("403");
+      } finally {
+        await stop();
+      }
+    });
+
+    it("el camino nativo (Authorization header) no se ve afectado cuando hay edgeTicketPort/allowedOrigins configurados", async () => {
+      const ticketStore = new InMemoryEdgeTicketStore();
+      const { manager: ticketManager, stop, connectNative } = await startTicketServer(ticketStore);
+      try {
+        const ws = connectNative();
+        await waitForOpen(ws);
+
+        const connectedPromise = waitFor<AgentConnectionInfo>((resolve) => ticketManager.onAgentConnected(resolve));
+        ws.send(hello("agent-native-unaffected"));
+
+        const info = await connectedPromise;
+        expect(info.ownerId).toBeUndefined();
+        ws.close();
+      } finally {
+        await stop();
+      }
     });
   });
 });

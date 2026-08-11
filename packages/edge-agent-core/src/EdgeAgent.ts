@@ -5,32 +5,14 @@ import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
 import type { LoggerPort } from "./domain/ports/LoggerPort";
 import type { CoreConnectionPort } from "./domain/ports/CoreConnectionPort";
 import type { UpdaterPort } from "./domain/ports/UpdaterPort";
-import type { PluginPackageExtractorPort } from "./domain/ports/PluginPackageExtractorPort";
-import type { PluginPackageFetcherPort } from "./domain/ports/PluginPackageFetcherPort";
-import type { ProcessLauncherPort } from "./domain/ports/ProcessLauncherPort";
-import type { VenvManagerPort } from "./domain/ports/VenvManagerPort";
 import type { SafetyPolicyEntry } from "./domain/entities/SafetyPolicyEntry";
 import type { EdgeAgentBus } from "./application/EdgeAgentBus";
 import { PluginManager } from "./application/PluginManager";
-import { PluginInstaller } from "./application/PluginInstaller";
+import type { PluginInstaller } from "./application/PluginInstaller";
 import { DeviceManager } from "./application/DeviceManager";
 import { PermissionManager } from "./application/PermissionManager";
 import { SafetyPolicyStore } from "./application/SafetyPolicyStore";
 import { CapabilityRegistry, type CapabilityListing, type InvokeOutcome, type ConfirmedOutcome } from "./application/CapabilityRegistry";
-
-/**
- * Dependencias del sistema de plugins bajo demanda (ADR-056, Fase 3) — las
- * cuatro juntas, opcionales: sin ellas, `EdgeAgent` funciona exactamente
- * como antes (sin `installPlugin`/`uninstallPlugin`), para no romper
- * ningún host existente. `apps/desktop` las provee recién en Fase 5.
- */
-export interface PluginInstallerConfig {
-  pluginPackageFetcher: PluginPackageFetcherPort;
-  pluginPackageExtractor: PluginPackageExtractorPort;
-  venvManager: VenvManagerPort;
-  processLauncher: ProcessLauncherPort;
-  pluginsDir: string;
-}
 
 export interface SafetyTargetListing extends TargetDescriptor {
   alias?: string;
@@ -48,8 +30,6 @@ export interface EdgeAgentDeps {
   configStore: ConfigStorePort;
   coreConnection: CoreConnectionPort;
   updater: UpdaterPort;
-  /** ADR-056 (Fase 3) — opcional a propósito, ver `PluginInstallerConfig`. */
-  pluginInstaller?: PluginInstallerConfig;
 }
 
 /**
@@ -65,25 +45,12 @@ export class EdgeAgent {
   private readonly permissionManager: PermissionManager;
   private readonly safetyPolicyStore: SafetyPolicyStore;
   private readonly capabilityRegistry: CapabilityRegistry;
-  private readonly pluginInstaller: PluginInstaller | undefined;
+  private pluginInstaller: PluginInstaller | undefined;
 
   constructor(private readonly deps: EdgeAgentDeps) {
     this.bus = deps.bus;
     this.pluginManager = new PluginManager(deps.bus, deps.logger, deps.configStore);
     this.deviceManager = new DeviceManager(deps.bus, deps.logger);
-    if (deps.pluginInstaller) {
-      this.pluginInstaller = new PluginInstaller({
-        pluginManager: this.pluginManager,
-        bus: deps.bus,
-        logger: deps.logger,
-        configStore: deps.configStore,
-        fetcher: deps.pluginInstaller.pluginPackageFetcher,
-        extractor: deps.pluginInstaller.pluginPackageExtractor,
-        venvManager: deps.pluginInstaller.venvManager,
-        processLauncher: deps.pluginInstaller.processLauncher,
-        pluginsDir: deps.pluginInstaller.pluginsDir,
-      });
-    }
     this.permissionManager = new PermissionManager(deps.bus, deps.logger);
     this.safetyPolicyStore = new SafetyPolicyStore(deps.configStore, deps.bus);
     this.capabilityRegistry = new CapabilityRegistry(
@@ -107,6 +74,25 @@ export class EdgeAgent {
         at: entry.updatedAt,
       });
     });
+  }
+
+  /**
+   * `PluginManager` en sí es browser-safe (solo depende de ports), pero
+   * `PluginInstaller` arrastra `SidecarProxyPlugin` → `PythonVenvManager`
+   * (`node:child_process`) — inconstruible para un host de navegador
+   * (`browser.ts`, el Simulador de docs/19), incluso con `import()`
+   * dinámico: Turbopack igual necesita resolver ese chunk. Por eso
+   * `EdgeAgent` nunca importa `PluginInstaller` como valor — quien lo
+   * necesite (hoy solo `apps/desktop`) lo construye con este
+   * `PluginManager` y lo engancha después de crear el `EdgeAgent`.
+   */
+  getPluginManager(): PluginManager {
+    return this.pluginManager;
+  }
+
+  /** Ver `getPluginManager()` — instancia ya construida por el host (`apps/desktop`), nunca por `EdgeAgent`. */
+  attachPluginInstaller(pluginInstaller: PluginInstaller): void {
+    this.pluginInstaller = pluginInstaller;
   }
 
   async registerPlugin(driver: KanDeviceDriverPlugin): Promise<void> {
@@ -153,7 +139,7 @@ export class EdgeAgent {
   /** Descarga, instala y registra un plugin sidecar. Dispara el mismo flujo de aprobación de permisos que cualquier plugin (`plugin.permission_pending`). */
   async installPlugin(pluginId: string): Promise<InstalledPlugin> {
     if (!this.pluginInstaller) {
-      throw new Error("Este Edge Agent no tiene configurado el instalador de plugins (falta pluginInstaller en EdgeAgentDeps).");
+      throw new Error("Este Edge Agent no tiene un instalador de plugins enganchado (ver attachPluginInstaller()).");
     }
     const installed = await this.pluginInstaller.install(pluginId);
     await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
@@ -162,7 +148,7 @@ export class EdgeAgent {
 
   async uninstallPlugin(pluginId: string): Promise<void> {
     if (!this.pluginInstaller) {
-      throw new Error("Este Edge Agent no tiene configurado el instalador de plugins (falta pluginInstaller en EdgeAgentDeps).");
+      throw new Error("Este Edge Agent no tiene un instalador de plugins enganchado (ver attachPluginInstaller()).");
     }
     await this.pluginInstaller.uninstall(pluginId);
   }

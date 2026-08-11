@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
-import type { Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
+import type { EdgeTicketPort, Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
 import { createUserAuthMiddleware } from "./userAuthMiddleware";
@@ -25,6 +25,7 @@ export function createRoutes(
   rateLimitOptions?: RateLimitOptions,
   authPort?: AuthPort,
   liveVoiceSessionStore?: LiveVoiceSessionStore,
+  edgeTicketStore?: EdgeTicketPort,
 ): Router {
   const router = Router();
 
@@ -154,6 +155,23 @@ export function createRoutes(
     }
     const { sessionId, expiresAt } = liveVoiceSessionStore.register({ model, systemPrompt, tools });
     res.status(201).json({ sessionId, expiresAt });
+  });
+
+  // Prueba de identidad de un solo uso para el camino de navegador del WS
+  // /edge (docs/19 continuación, ver EdgeTicketPort) — requiere sesión ya
+  // verificada por createUserAuthMiddleware() arriba; sin req.userId no hay
+  // a nombre de quién emitir el ticket.
+  router.post("/v1/edge-tickets", (req, res) => {
+    if (!edgeTicketStore) {
+      res.status(501).json({ error: "El Gateway no tiene configurado el camino de navegador para el Edge Agent." });
+      return;
+    }
+    if (!req.userId) {
+      res.status(401).json({ error: "Se requiere sesión activa para pedir un ticket de conexión." });
+      return;
+    }
+    const { ticket, expiresAt } = edgeTicketStore.mint(req.userId);
+    res.status(201).json({ ticket, expiresAt });
   });
 
   return router;

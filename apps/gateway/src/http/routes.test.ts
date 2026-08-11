@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
-import type { Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
+import type { EdgeTicketPort, Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { createRoutes, type RateLimitOptions } from "./routes";
 
@@ -27,11 +27,16 @@ function appWith(
   rateLimitOptions?: RateLimitOptions,
   authPort?: AuthPort,
   liveVoiceSessionStore?: LiveVoiceSessionStore,
+  edgeTicketStore?: EdgeTicketPort,
 ) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, liveVoiceSessionStore));
+  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, liveVoiceSessionStore, edgeTicketStore));
   return app;
+}
+
+function fakeEdgeTicketStore(mint: (ownerId: string) => { ticket: string; expiresAt: string }): EdgeTicketPort {
+  return { mint, consume: () => undefined } as unknown as EdgeTicketPort;
 }
 
 function fakeAuthPort(getCurrentUser: AuthPort["getCurrentUser"]): AuthPort {
@@ -531,6 +536,58 @@ describe("Gateway HTTP routes", () => {
         .send({ model: "gemini-3.1-flash-live-preview", systemPrompt: "sé breve" });
 
       expect(response.status).toBe(401);
+    });
+  });
+
+  describe("POST /v1/edge-tickets (docs/19 continuación — Simulador en el navegador)", () => {
+    it("sin edgeTicketStore configurado, responde 501", async () => {
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      const response = await request(app)
+        .post("/v1/edge-tickets")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(501);
+    });
+
+    it("sin sesión (sin X-User-Token), responde 401 aunque haya edgeTicketStore", async () => {
+      const store = fakeEdgeTicketStore(() => ({ ticket: "t1", expiresAt: "2026-01-01T00:01:00.000Z" }));
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        undefined,
+        store,
+      );
+
+      const response = await request(app).post("/v1/edge-tickets").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(401);
+    });
+
+    it("con sesión válida, mintea un ticket a nombre del usuario y lo devuelve", async () => {
+      let mintedFor: string | undefined;
+      const store = fakeEdgeTicketStore((ownerId) => {
+        mintedFor = ownerId;
+        return { ticket: "ticket-abc", expiresAt: "2026-01-01T00:01:00.000Z" };
+      });
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        undefined,
+        store,
+      );
+
+      const response = await request(app)
+        .post("/v1/edge-tickets")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual({ ticket: "ticket-abc", expiresAt: "2026-01-01T00:01:00.000Z" });
+      expect(mintedFor).toBe("user-1");
     });
   });
 });

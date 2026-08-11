@@ -12,7 +12,10 @@
   "dependencies": {
     "@kan/ai-abstraction": "workspace:*",
     "@kan/core": "workspace:*",
+    "@kan/edge-agent-core": "workspace:*",
     "@kan/plugin-contract": "workspace:*",
+    "@kan/plugin-device-simulator": "workspace:*",
+    "@kan/plugin-sdk-ts": "workspace:*",
     "@kan/supabase-adapter": "workspace:*",
     "@kan/voice-abstraction": "workspace:*",
     "@supabase/ssr": "^0.5.2",

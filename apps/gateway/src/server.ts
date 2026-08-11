@@ -26,6 +26,7 @@ import {
   GeminiDeviceResearchAdapter,
   DeviceEnrichmentService,
   InMemoryPluginPackageTicketStore,
+  InMemoryEdgeTicketStore,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
 import { createPairingRoutes } from "./http/pairingRoutes";
@@ -54,6 +55,13 @@ const RATE_LIMIT_MAX = Number(process.env.KAN_GATEWAY_RATE_LIMIT_MAX) || undefin
 const MAX_WS_CONNECTIONS = Number(process.env.KAN_GATEWAY_MAX_WS_CONNECTIONS) || undefined;
 // Fix de auditoría de backend #7: mismo criterio "undefined = default sensato".
 const MAX_WS_MESSAGES_PER_SECOND = Number(process.env.KAN_GATEWAY_MAX_WS_MESSAGES_PER_SECOND) || undefined;
+// Camino de ticket del WS /edge para el Simulador en el navegador (docs/19
+// continuación) — lista de origins separados por coma; sin esto, toda
+// conexión de navegador se rechaza con 403 (ver WsConnectionManager).
+const ALLOWED_WEB_ORIGINS = (process.env.KAN_WEB_ORIGIN ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter((origin) => origin.length > 0);
 // Voz en tiempo real (ADR-044, rediseño vía proxy): opcional a propósito —
 // sin esto, POST /v1/live-sessions responde 501 y el resto del Gateway
 // sigue andando igual. Nunca sale de este proceso: GeminiLiveProxy es el
@@ -79,16 +87,16 @@ const pairingPort = new SupabasePairingStore(supabaseClient);
 // InMemoryEdgeTicketStore): mint y consume ocurren en la misma request.
 const pluginRegistry = new SupabasePluginRegistry(supabaseClient);
 const pluginPackageTicketStore = new InMemoryPluginPackageTicketStore();
-// Los dos `undefined`/`[]` son edgeTicketPort/allowedOrigins (camino de
-// ticket para el Simulador en el navegador) — sin wiring todavía en este
-// archivo; maxMessagesPerSecond (fix de auditoría de backend #7) va
-// último a propósito para no pisar esos dos slots cuando se conecten.
+// Sin persistencia a propósito (ver EdgeTicketPort/InMemoryEdgeTicketStore):
+// un ticket vive segundos, el mismo proceso que lo emite es el que lo
+// consume en el handshake del WS.
+const edgeTicketStore = new InMemoryEdgeTicketStore();
 const connectionManager = new WsConnectionManager(
   EDGE_TOKEN,
   MAX_WS_CONNECTIONS,
   pairingPort,
-  undefined,
-  [],
+  edgeTicketStore,
+  ALLOWED_WEB_ORIGINS,
   MAX_WS_MESSAGES_PER_SECOND,
 );
 const scheduledJobStore = new JsonFileScheduledJobStore(
@@ -178,6 +186,7 @@ app.use(
     { windowMs: RATE_LIMIT_WINDOW_MS, max: RATE_LIMIT_MAX },
     authPort,
     liveVoiceSessionStore,
+    edgeTicketStore,
   ),
 );
 
