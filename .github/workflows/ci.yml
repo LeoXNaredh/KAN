@@ -82,6 +82,33 @@ jobs:
       # mas lento pero confiable -- un gate de CI flaky es peor que uno lento.
       - run: pnpm turbo run test --concurrency=1
 
+  # Fix de auditoría de backend #5: kan-plugin-sdk-py y los dos plugins
+  # sidecar (bluetooth-py, vision-py) tenían tests reales desde ADR-056/el
+  # incremento BLE, pero nada corría pytest en CI — un regression ahí
+  # pasaba desapercibido hasta que alguien lo notara a mano. No usa los
+  # requirements.txt de cada plugin (esos instalan kan-plugin-sdk-py desde
+  # un tag de git remoto, pensados para la instalación real de
+  # PluginInstaller, ADR-056 Fase 3) — acá se instala en editable desde el
+  # propio checkout, para probar el código que realmente está en este commit.
+  test-python:
+    name: Test (sidecars Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e packages/kan-plugin-sdk-py[dev]
+      # Mismas versiones que requirements.txt de cada plugin (bleak para
+      # bluetooth-py; opencv-python-headless/numpy para vision-py) — headless
+      # porque el runner de CI no tiene GPU/display, y los tests nunca abren
+      # una ventana (ADR-012: todo contra fakes, sin cámara/BLE real).
+      - run: pip install "bleak>=0.22,<1" "opencv-python-headless>=4.9,<5" "numpy>=1.26,<3"
+      - run: python -m pytest packages/kan-plugin-sdk-py
+      - run: python -m pytest plugins/plugin-bluetooth-py
+      - run: python -m pytest plugins/plugin-vision-py
+
   build:
     name: Build (web + desktop)
     runs-on: ubuntu-latest
