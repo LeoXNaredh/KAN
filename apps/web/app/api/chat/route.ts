@@ -6,6 +6,7 @@ import { buildSendMessageUseCase } from "@/lib/chat/composition";
 import { extractBearerToken } from "@/lib/auth/extractBearerToken";
 import { resolveUserToken } from "@/lib/auth/resolveUserToken";
 import { requireUser } from "@/lib/auth/requireUser";
+import { checkRateLimit } from "@/lib/rateLimit/simpleRateLimiter";
 
 /**
  * Composition root: único lugar donde se instancian implementaciones concretas
@@ -55,6 +56,16 @@ class MissingApiKeyError extends Error {
   }
 }
 
+// Fix de auditoría de backend #2: /api/chat habla directo con el proveedor
+// de IA (no pasa por el Gateway), así que el rate limit del Gateway
+// (express-rate-limit, apps/gateway/src/http/routes.ts) nunca lo alcanza —
+// era la única operación cara del producto sin ningún tope del lado del
+// servidor. Por userId (la sesión ya autenticada arriba), no por IP: varios
+// usuarios detrás del mismo NAT/proxy no deben compartir presupuesto, y un
+// usuario con varios dispositivos sí debe compartir el suyo.
+const CHAT_RATE_LIMIT_MAX = 30;
+const CHAT_RATE_LIMIT_WINDOW_MS = 60_000;
+
 // Visión Fase 1 (P3, ADR-018): límite aplicado en el borde, no en el
 // dominio — 4 MB decodificados, calculado sobre la longitud del base64.
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -102,6 +113,14 @@ function sseChunk(event: ChatSseEvent): string {
 export async function POST(request: Request) {
   const auth = await requireUser(request);
   if (!auth.ok) return auth.response;
+
+  const rateLimit = checkRateLimit(auth.user.userId, CHAT_RATE_LIMIT_MAX, CHAT_RATE_LIMIT_WINDOW_MS);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Estás mandando mensajes muy rápido. Esperá un momento antes de volver a intentar." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } },
+    );
+  }
 
   const body = await request.json().catch(() => null);
   const userMessage = typeof body?.message === "string" ? body.message.trim() : "";
