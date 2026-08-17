@@ -130,20 +130,70 @@ describe("Gateway HTTP routes", () => {
     expect(response.body).toEqual({ jobs: [{ id: "job-1" }] });
   });
 
+  describe("GET /v1/jobs — filtrado por owner (fix de auditoría de backend)", () => {
+    it("solo devuelve los jobs del usuario y los que no tienen createdBy (legacy)", async () => {
+      const gateway = fakeGateway({
+        scheduler: {
+          list: () => [
+            { id: "job-mio", createdBy: "user-1" },
+            { id: "job-ajeno", createdBy: "user-otro" },
+            { id: "job-legacy" },
+          ],
+        } as unknown as Gateway["scheduler"],
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      const response = await request(app)
+        .get("/v1/jobs")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(200);
+      expect(response.body.jobs.map((job: { id: string }) => job.id).sort()).toEqual(["job-legacy", "job-mio"]);
+    });
+
+    it("sin sesión resuelta, solo ve los jobs legacy sin createdBy (retrocompatible)", async () => {
+      const gateway = fakeGateway({
+        scheduler: {
+          list: () => [{ id: "job-de-alguien", createdBy: "user-1" }, { id: "job-legacy" }],
+        } as unknown as Gateway["scheduler"],
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app).get("/v1/jobs").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.body).toEqual({ jobs: [{ id: "job-legacy" }] });
+    });
+  });
+
+  describe("POST /v1/jobs — requiere sesión activa (fix de auditoría de backend)", () => {
+    it("rechaza con 401 si req.userId no está resuelto (sin X-User-Token)", async () => {
+      const app = appWith(fakeGateway());
+      const response = await request(app)
+        .post("/v1/jobs")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ steps: [{ capabilityRef: "x" }], cron: "0 8 * * *" });
+
+      expect(response.status).toBe(401);
+    });
+  });
+
   it("POST /v1/jobs rechaza sin steps", async () => {
-    const app = appWith(fakeGateway());
+    const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
     const response = await request(app)
       .post("/v1/jobs")
       .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", "jwt-valido")
       .send({ cron: "0 8 * * *" });
     expect(response.status).toBe(400);
   });
 
   it("POST /v1/jobs rechaza un step sin capabilityRef", async () => {
-    const app = appWith(fakeGateway());
+    const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
     const response = await request(app)
       .post("/v1/jobs")
       .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", "jwt-valido")
       .send({ steps: [{ input: {} }], cron: "0 8 * * *" });
     expect(response.status).toBe(400);
   });
@@ -160,11 +210,12 @@ describe("Gateway HTTP routes", () => {
         cancel: () => {},
       } as unknown as Gateway["scheduler"],
     });
-    const app = appWith(gateway);
+    const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
 
     const response = await request(app)
       .post("/v1/jobs")
       .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", "jwt-valido")
       .send({
         steps: [
           { capabilityRef: "riego.abrir_valvula", input: {} },
@@ -184,6 +235,7 @@ describe("Gateway HTTP routes", () => {
       notification: { title: "Riego listo", body: "Se regó el jardín." },
       cron: "0 8 * * *",
       runAt: undefined,
+      createdBy: "user-1",
     });
   });
 
@@ -197,11 +249,12 @@ describe("Gateway HTTP routes", () => {
         cancel: () => {},
       } as unknown as Gateway["scheduler"],
     });
-    const app = appWith(gateway);
+    const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
 
     const response = await request(app)
       .post("/v1/jobs")
       .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", "jwt-valido")
       .send({ steps: [{ capabilityRef: "x" }], cron: "nope" });
 
     expect(response.status).toBe(400);

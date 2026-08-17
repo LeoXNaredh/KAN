@@ -72,11 +72,30 @@ export function createRoutes(
     res.json({ entries: await gateway.auditService.list({ userId: req.userId }) });
   });
 
-  router.get("/v1/jobs", (_req, res) => {
-    res.json({ jobs: gateway.scheduler.list() });
+  router.get("/v1/jobs", (req, res) => {
+    // Fix de auditoría de backend: `scheduler.list()` no filtraba por
+    // usuario — cualquier sesión veía los recordatorios de todo el mundo
+    // (cron schedules, inputs de la capability, texto de la notificación).
+    // Mismo criterio que ya usaba DELETE /v1/jobs/:id (autorización por
+    // owner, ADR-033 reabierto puntualmente): un job sin `createdBy`
+    // (legacy, o creado sin sesión) sigue siendo visible para cualquiera,
+    // igual que antes; uno con `createdBy` solo lo ve su dueño.
+    const jobs = gateway.scheduler.list().filter((job) => job.createdBy === undefined || job.createdBy === req.userId);
+    res.json({ jobs });
   });
 
   router.post("/v1/jobs", (req, res) => {
+    // Fix de auditoría de backend: sin esto, un job creado sin sesión
+    // resuelta quedaba con `createdBy: undefined` — indistinguible de un
+    // job legacy, y por lo tanto abierto para que cualquiera lo cancele
+    // (ver el criterio de DELETE arriba). Programar un recordatorio ya
+    // requiere sesión activa en el producto real (apps/web siempre manda
+    // X-User-Token); esto solo lo hace explícito acá.
+    if (!req.userId) {
+      res.status(401).json({ error: "Se requiere sesión activa para programar un recordatorio." });
+      return;
+    }
+
     const rawSteps = Array.isArray(req.body?.steps) ? req.body.steps : [];
     const steps: Array<{ capabilityRef: string; input: unknown }> = [];
     for (const rawStep of rawSteps) {
