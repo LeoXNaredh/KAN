@@ -56,13 +56,16 @@ export function KANLayout({
           {/*
            * Banda de posicionamiento del avatar-esquina — `position: fixed`
            * calcula `right/bottom` contra el viewport completo, lo cual
-           * está bien para el borde derecho (el Sidebar solo ocupa la
-           * izquierda), pero igual se ancla dentro de una banda acotada al
-           * ancho de la columna de contenido (`md:left-60`, mismo ancho que
-           * `Sidebar`) por consistencia y para no invadir el Sidebar mobile
-           * (`z-20`, por debajo de `TopBar`/nav).
+           * está bien para el borde derecho, pero igual se ancla dentro de
+           * una banda acotada al ancho de la columna de contenido
+           * (`md:left-60`, mismo ancho que `Sidebar`; `xl:right-72`, mismo
+           * ancho que el InfoPanel del rediseño eDEX-UI — sin este borde
+           * derecho el avatar quedaría flotando debajo/detrás de esa
+           * columna en vez de en la esquina del panel central) por
+           * consistencia y para no invadir el Sidebar mobile (`z-20`, por
+           * debajo de `TopBar`/nav).
            */}
-          <div className="pointer-events-none fixed inset-y-0 right-0 left-0 z-20 md:left-60">
+          <div className="pointer-events-none fixed inset-y-0 right-0 left-0 z-20 md:left-60 xl:right-72">
             <div className="fade-in absolute right-6 bottom-28 origin-bottom-right scale-[0.38] sm:right-8 sm:bottom-32">
               <KANAvatar size="lg" activity={activity} />
             </div>

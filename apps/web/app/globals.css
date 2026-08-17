@@ -50,20 +50,32 @@
  * elegido tal cual, sin oscurecer (a diferencia de light arriba, donde el
  * fondo claro exige un tono más saturado para contraste AA).
  */
+/*
+ * eDEX-UI inspirado (rediseño completo) — negro puro real (no #0a0a0a), y
+ * el texto secundario/terciario deja de ser un gris fijo: pasa a derivar del
+ * propio acento (color de acento al 70%/40% de mezcla) para que cambiar de
+ * preset en /configuracion tiña TODA la jerarquía tipográfica, no solo los
+ * bordes/glows como antes — identidad HUD de terminal, no un dashboard gris
+ * con acentos de color encima.
+ */
 :root.dark {
-  --color-surface: #0a0a0a;
-  --color-surface-2: #111111;
-  --color-surface-3: #1a1a1a;
-  --color-line: #262626;
-  --color-line-strong: #3d3d3d;
-  --color-ink: #f2f2f0;
-  --color-ink-muted: #9c9c98;
-  --color-ink-faint: #63635f;
+  --color-surface: #000000;
+  --color-surface-2: #050505;
+  --color-surface-3: #0a0a0a;
+  --color-line: #1a1a1a;
+  --color-line-strong: #2e2e2e;
+  --color-ink: #ffffff;
+  /* Alpha, no mezcla con blanco: mezclar con blanco dejaría el preset
+     "white" (#ffffff) con ink-muted/ink-faint = blanco puro, indistinguible
+     del texto principal. Con alpha sobre `transparent`, el propio fondo
+     negro atenúa el color en todos los presets por igual. */
+  --color-ink-muted: color-mix(in srgb, var(--kan-accent) 70%, transparent);
+  --color-ink-faint: color-mix(in srgb, var(--kan-accent) 40%, transparent);
   --color-accent: var(--kan-accent);
   --color-accent-2: var(--color-accent);
   --color-success: #22d97a;
-  --color-warning: #f5a524;
-  --color-danger: #f5455c;
+  --color-warning: #ffaa00;
+  --color-danger: #ff3333;
 
   --gradient-accent: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 45%, black));
   --glow-accent: 0 16px 50px -14px color-mix(in srgb, var(--color-accent) 55%, transparent);
@@ -163,6 +175,29 @@ body::after {
   opacity: 0.045;
   /* Sin mask: cubre toda la pantalla parejo, incluida la columna del Sidebar
      (antes se desvanecía hacia los bordes y ahí quedaba invisible). */
+}
+
+/*
+ * Scanlines CRT (rediseño eDEX-UI) — líneas horizontales de 1px muy sutiles
+ * sobre TODA la pantalla, encima del contenido (z-index alto) pero
+ * `pointer-events: none` para no interceptar nada. Vive como elemento propio
+ * (`<div>` en ShellChrome), no como `body::after` más — se reutiliza igual
+ * dentro de `BootSequence` (mismo efecto, dos lugares).
+ */
+.kan-scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, white 6%, transparent) 0px,
+    color-mix(in srgb, white 6%, transparent) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.35;
+  mix-blend-mode: overlay;
 }
 
 @keyframes aurora-drift {
@@ -266,6 +301,35 @@ body::after {
   clip-path: polygon(
     8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px
   );
+}
+
+/*
+ * Brackets de esquina estilo `[ ]` (rediseño eDEX-UI) — deliberadamente NO
+ * en `.hud-panel` (que ya usan Card/Sidebar/etc en todos lados; ponerlo ahí
+ * empapelaría cada tarjeta chica de la app con más ornamento del que pidió
+ * "más elegante"). Se aplica a mano solo en los paneles HUD grandes
+ * (InfoPanel, terminal del boot) que quieren leerse como instrumentación,
+ * no como una tarjeta de contenido más.
+ */
+.hud-brackets {
+  position: relative;
+}
+
+.hud-brackets::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  pointer-events: none;
+  --kan-bracket-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  background:
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top left / 10px 1px no-repeat,
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top left / 1px 10px no-repeat,
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top right / 10px 1px no-repeat,
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top right / 1px 10px no-repeat,
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom left / 10px 1px no-repeat,
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom left / 1px 10px no-repeat,
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom right / 10px 1px no-repeat,
+    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom right / 1px 10px no-repeat;
 }
 
 .glow-accent {
@@ -395,6 +459,96 @@ body::after {
 
 .kan-ring-fast {
   animation-duration: 3s;
+}
+
+/*
+ * Reacciones del avatar por `activity` (rediseño eDEX-UI) — sin datos reales
+ * de amplitud de voz (ni `useVoiceInput` ni `useLiveSession` exponen un
+ * nivel de señal hoy), así que "pulsa al ritmo de la voz" se aproxima con un
+ * pulso rítmico constante en vez de uno reactivo al audio real — mismo
+ * criterio "no inventar datos que no existen" que el resto del proyecto,
+ * aplicado acá a "no fingir que hay una señal de amplitud que no hay".
+ */
+.kan-ring-speaking {
+  animation-duration: 5s;
+}
+
+@keyframes kan-rings-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.kan-rings-listening {
+  animation: kan-rings-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes kan-rings-thinking-blur {
+  0%,
+  100% {
+    filter: blur(0);
+  }
+  50% {
+    filter: blur(1.5px);
+  }
+}
+
+.kan-rings-thinking {
+  animation: kan-rings-thinking-blur 2.4s ease-in-out infinite;
+}
+
+@keyframes kan-avatar-glitch {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-1px, 0.5px);
+  }
+  40% {
+    transform: translate(1px, -0.5px);
+  }
+  60% {
+    transform: translate(-0.5px, 0.5px) skewX(0.5deg);
+  }
+  80% {
+    transform: translate(0.5px, -0.5px) skewX(-0.5deg);
+  }
+}
+
+.kan-avatar-glitch {
+  animation: kan-avatar-glitch 260ms steps(2, end) infinite;
+}
+
+/* Núcleo "plasma" — gradiente de acento en movimiento detrás de "KAN", capa extra sobre el vidrio translúcido existente (no lo reemplaza). */
+@keyframes kan-core-plasma {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.kan-core-plasma {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--color-accent) 55%, transparent),
+    color-mix(in srgb, var(--color-accent) 12%, transparent) 35%,
+    color-mix(in srgb, var(--color-accent) 65%, transparent) 60%,
+    color-mix(in srgb, var(--color-accent) 15%, transparent) 85%
+  );
+  background-size: 220% 220%;
+  animation: kan-core-plasma 6s ease-in-out infinite;
 }
 
 .hud-scanline {
@@ -534,53 +688,58 @@ body::after {
 }
 
 /*
- * Boot sequence (BootSequence.tsx, ShellChrome.tsx) — secuencia de arranque
- * cinematográfica, una sola vez por sesión de browser (sessionStorage).
- * Todo el timing vive en CSS (`animation-delay`), no en JS: el componente
- * solo dispara dos callbacks (paneles/fin) con `setTimeout`, coordinados con
- * estos mismos delays a mano — ver comentario en BootSequence.tsx.
+ * Boot sequence (BootSequence.tsx, ShellChrome.tsx) — terminal de arranque
+ * estilo eDEX-UI: pantalla negra → líneas de log tipeadas una por una →
+ * fade del texto → avatar materializándose → paneles reales por debajo. Una
+ * sola vez por sesión de browser (sessionStorage). Todo el timing vive en
+ * CSS (`animation-delay`), no en JS: el componente solo dispara dos
+ * callbacks (paneles/fin) con `setTimeout`, coordinados a mano con estos
+ * mismos delays — ver comentario en BootSequence.tsx.
  */
-@keyframes kan-boot-letter {
-  0% {
-    opacity: 0;
-    transform: translateX(-4px) skewX(-8deg);
-    filter: blur(4px);
-    text-shadow: none;
-  }
-  15% {
-    opacity: 1;
-    transform: translateX(2px) skewX(4deg);
-    filter: blur(1px);
-    text-shadow:
-      2px 0 var(--color-accent),
-      -2px 0 var(--color-danger);
-  }
-  30% {
-    opacity: 0.35;
-    transform: translateX(-2px) skewX(-2deg);
-  }
-  45% {
-    opacity: 1;
-    transform: translateX(1px) skewX(1deg);
-    text-shadow:
-      -1px 0 var(--color-accent),
-      1px 0 var(--color-danger);
-  }
-  60% {
-    opacity: 0.7;
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-    filter: none;
-    text-shadow: 0 0 22px color-mix(in srgb, var(--color-accent) 65%, transparent);
+@keyframes kan-boot-line-type {
+  to {
+    width: var(--kan-boot-line-width);
   }
 }
 
-.kan-boot-letter {
+.kan-boot-line {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 0;
+  animation: kan-boot-line-type 220ms steps(28, end) both;
+}
+
+@keyframes kan-boot-cursor-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.kan-boot-cursor {
   display: inline-block;
-  opacity: 0;
-  animation: kan-boot-letter 340ms steps(6, end) both;
+  animation: kan-boot-cursor-blink 800ms step-end infinite;
+}
+
+@keyframes kan-boot-lines-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.kan-boot-lines {
+  animation: kan-boot-lines-out 300ms ease-in both;
+  animation-delay: 1500ms;
 }
 
 @keyframes kan-boot-avatar-in {
@@ -603,6 +762,7 @@ body::after {
 
 .kan-boot-avatar {
   animation: kan-boot-avatar-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 1550ms;
 }
 
 @keyframes kan-boot-overlay-out {
@@ -615,8 +775,8 @@ body::after {
 }
 
 .kan-boot-overlay {
-  animation: kan-boot-overlay-out 900ms ease-in both;
-  animation-delay: 1300ms;
+  animation: kan-boot-overlay-out 700ms ease-in both;
+  animation-delay: 2200ms;
 }
 
 /*

@@ -34,14 +34,25 @@ function playTone(ctx: AudioContext, { frequency, delaySec, duration = 0.12, typ
 }
 
 /**
- * Crea el AudioContext y agenda la secuencia completa del boot — nunca
- * lanza: los navegadores bloquean audio sin gesto previo del usuario en la
- * primera carga (autoplay policy), y eso es exactamente el caso de un boot
- * sequence; sin sonido, la secuencia visual sigue igual (sonido opcional,
- * degradación silenciosa, mismo criterio que useSpeechSynthesis.ts).
- * Devuelve `undefined` si Web Audio no está disponible o falla al crearse.
+ * Crea el AudioContext y agenda la secuencia completa del boot terminal
+ * (rediseño eDEX-UI): un beep corto por cada línea de log tipeada, un tono
+ * grave sostenido cuando el avatar materializa, y un arpegio ascendente
+ * cuando los paneles reales se despliegan por debajo — nunca lanza: los
+ * navegadores bloquean audio sin gesto previo del usuario en la primera
+ * carga (autoplay policy), y eso es exactamente el caso de un boot sequence;
+ * sin sonido, la secuencia visual sigue igual (sonido opcional, degradación
+ * silenciosa, mismo criterio que useSpeechSynthesis.ts). Devuelve
+ * `undefined` si Web Audio no está disponible o falla al crearse.
+ *
+ * Los delays en ms deben coincidir con los mismos momentos que ya maneja el
+ * CSS/JS de BootSequence.tsx (líneas de terminal, avatar, revelado de
+ * paneles) — se reciben como parámetro en vez de duplicar esas constantes acá.
  */
-export function scheduleBootSounds(): AudioContext | undefined {
+export function scheduleBootSounds(timeline: {
+  lineDelaysMs: number[];
+  avatarDelayMs: number;
+  panelsRevealDelayMs: number;
+}): AudioContext | undefined {
   if (typeof window === "undefined") return undefined;
 
   const AudioContextClass =
@@ -53,18 +64,19 @@ export function scheduleBootSounds(): AudioContext | undefined {
     const ctx = new AudioContextClass();
     void ctx.resume().catch(() => {});
 
-    // Letras "K", "A", "N" — blips cortos y agudos, en step con kan-boot-letter.
-    playTone(ctx, { frequency: 1180, delaySec: 0.08, duration: 0.05, type: "square", gain: 0.025 });
-    playTone(ctx, { frequency: 1320, delaySec: 0.22, duration: 0.05, type: "square", gain: 0.025 });
-    playTone(ctx, { frequency: 1480, delaySec: 0.36, duration: 0.05, type: "square", gain: 0.025 });
+    // Un blip corto y agudo por línea de terminal, en step con kan-boot-line-type.
+    for (const delayMs of timeline.lineDelaysMs) {
+      playTone(ctx, { frequency: 1180, delaySec: delayMs / 1000, duration: 0.04, type: "square", gain: 0.02 });
+    }
 
-    // Avatar materializando — un tono grave, sostenido, en kan-boot-avatar-in.
-    playTone(ctx, { frequency: 96, delaySec: 0.6, duration: 0.55, type: "sine", gain: 0.05 });
+    // Avatar materializando — un tono grave, sostenido.
+    playTone(ctx, { frequency: 96, delaySec: timeline.avatarDelayMs / 1000, duration: 0.55, type: "sine", gain: 0.05 });
 
-    // Paneles desplegándose — arpegio ascendente (A4, C#5, E5).
-    playTone(ctx, { frequency: 440, delaySec: 1.15, duration: 0.14, type: "triangle", gain: 0.035 });
-    playTone(ctx, { frequency: 554.37, delaySec: 1.27, duration: 0.14, type: "triangle", gain: 0.035 });
-    playTone(ctx, { frequency: 659.25, delaySec: 1.4, duration: 0.2, type: "triangle", gain: 0.035 });
+    // Paneles reales desplegándose — arpegio ascendente (A4, C#5, E5).
+    const panelsSec = timeline.panelsRevealDelayMs / 1000;
+    playTone(ctx, { frequency: 440, delaySec: panelsSec, duration: 0.14, type: "triangle", gain: 0.035 });
+    playTone(ctx, { frequency: 554.37, delaySec: panelsSec + 0.12, duration: 0.14, type: "triangle", gain: 0.035 });
+    playTone(ctx, { frequency: 659.25, delaySec: panelsSec + 0.25, duration: 0.22, type: "triangle", gain: 0.035 });
 
     return ctx;
   } catch {
