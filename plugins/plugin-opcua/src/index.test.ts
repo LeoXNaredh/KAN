@@ -40,13 +40,14 @@ describe("OpcuaDevicePlugin", () => {
     expect(device.name).not.toContain("admin");
   });
 
-  it("expone 3 capabilities con la severidad correcta", () => {
+  it("expone 4 capabilities con la severidad correcta; discover_io_map no tiene targetParam (opera sobre todo el address space)", () => {
     const plugin = new OpcuaDevicePlugin(new FakeOpcuaTransport());
     const capabilities = plugin.getCapabilities("any");
 
-    expect(capabilities.map((c) => c.name)).toEqual(["read_node", "write_node", "browse_node"]);
-    expect(capabilities.map((c) => c.severity)).toEqual(["read-only", "irreversible-material", "read-only"]);
-    expect(capabilities.every((c) => c.targetParam === "nodeId")).toBe(true);
+    expect(capabilities.map((c) => c.name)).toEqual(["read_node", "write_node", "browse_node", "discover_io_map"]);
+    expect(capabilities.map((c) => c.severity)).toEqual(["read-only", "irreversible-material", "read-only", "read-only"]);
+    expect(capabilities.filter((c) => c.name !== "discover_io_map").every((c) => c.targetParam === "nodeId")).toBe(true);
+    expect(capabilities.find((c) => c.name === "discover_io_map")?.targetParam).toBeUndefined();
   });
 
   it("invoke() sobre un dispositivo nunca descubierto da error claro", async () => {
@@ -135,6 +136,74 @@ describe("OpcuaDevicePlugin", () => {
         plugin.invoke(deviceId, "write_node", { nodeId: "ns=1;s=Temperatura", value: 1, dataType: "Double" }),
       ]);
       results.forEach((result) => expect(result).toEqual({ success: false, error: "Dispositivo no conectado" }));
+    });
+  });
+
+  describe("discover_io_map", () => {
+    async function connectedPlugin(): Promise<{ plugin: OpcuaDevicePlugin; deviceId: string }> {
+      process.env.KAN_OPCUA_TARGETS = `plc1|${ENDPOINT_URL}`;
+      const transport = new FakeOpcuaTransport({
+        [ENDPOINT_URL]: {
+          nodes: {
+            "ns=1;s=Temperatura": { value: 21.5, dataType: "Double" },
+            "ns=1;s=Presion": { value: 1013, dataType: "Double" },
+          },
+          browseChildren: {
+            ObjectsFolder: [
+              { nodeId: "ns=1;s=Sensores", browseName: "Sensores", nodeClass: "Object" },
+              { nodeId: "ns=1;s=Presion", browseName: "Presion", nodeClass: "Variable" },
+            ],
+            "ns=1;s=Sensores": [{ nodeId: "ns=1;s=Temperatura", browseName: "Temperatura", nodeClass: "Variable" }],
+          },
+        },
+      });
+      const plugin = new OpcuaDevicePlugin(transport);
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+      return { plugin, deviceId: device.id };
+    }
+
+    it("recorre recursivamente desde ObjectsFolder por defecto y devuelve solo las Variables encontradas", async () => {
+      const { plugin, deviceId } = await connectedPlugin();
+
+      const result = await plugin.invoke(deviceId, "discover_io_map", {});
+      expect(result.success).toBe(true);
+      const entries = (result.data as { entries: Array<{ target: string; type: string; mode: string; value: unknown; label?: string }> }).entries;
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          { target: "ns=1;s=Presion", type: "node", mode: "unknown", value: 1013, label: "Presion" },
+          { target: "ns=1;s=Temperatura", type: "node", mode: "unknown", value: 21.5, label: "Temperatura" },
+        ]),
+      );
+      expect(entries).toHaveLength(2);
+    });
+
+    it("respeta maxDepth: no baja a hijos de un nivel más profundo que el permitido", async () => {
+      const { plugin, deviceId } = await connectedPlugin();
+
+      const result = await plugin.invoke(deviceId, "discover_io_map", { maxDepth: 0 });
+      expect(result.success).toBe(true);
+      const entries = (result.data as { entries: Array<{ target: string }> }).entries;
+      // Con maxDepth 0 solo se listan las Variables del propio ObjectsFolder — "Sensores" es un Object, se descarta sin bajar a sus hijos.
+      expect(entries).toEqual([{ target: "ns=1;s=Presion", type: "node", mode: "unknown", value: 1013, label: "Presion" }]);
+    });
+
+    it("respeta maxNodes: corta antes de agotar el árbol si se supera el presupuesto", async () => {
+      const { plugin, deviceId } = await connectedPlugin();
+
+      const result = await plugin.invoke(deviceId, "discover_io_map", { maxNodes: 1 });
+      expect(result.success).toBe(true);
+      const entries = (result.data as { entries: Array<{ target: string }> }).entries;
+      expect(entries.length).toBeLessThanOrEqual(1);
+    });
+
+    it("acepta un rootNodeId explícito distinto del default", async () => {
+      const { plugin, deviceId } = await connectedPlugin();
+
+      const result = await plugin.invoke(deviceId, "discover_io_map", { rootNodeId: "ns=1;s=Sensores" });
+      expect(result.success).toBe(true);
+      const entries = (result.data as { entries: Array<{ target: string }> }).entries;
+      expect(entries).toEqual([{ target: "ns=1;s=Temperatura", type: "node", mode: "unknown", value: 21.5, label: "Temperatura" }]);
     });
   });
 });

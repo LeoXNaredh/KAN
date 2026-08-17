@@ -8,7 +8,7 @@ import type {
   PluginInstance,
   InstalledPlugin,
 } from "@kan/edge-agent-core";
-import type { ActionSeverity, PluginPermissions } from "@kan/plugin-contract";
+import type { ActionSeverity, IoMapEntry, PluginPermissions } from "@kan/plugin-contract";
 import type { BusEvent, PluginCatalogEntryDTO } from "../../preload/index";
 
 const SEVERITY_OPTIONS: ActionSeverity[] = ["read-only", "reversible", "irreversible-material", "safety-critical"];
@@ -63,6 +63,7 @@ export default function App() {
   const [pluginWarnings, setPluginWarnings] = useState<LogEntry[]>([]);
   const [coreStatus, setCoreStatus] = useState<CoreConnectionStatus>("disconnected");
   const [safetyTargets, setSafetyTargets] = useState<Record<string, SafetyTargetListing[]>>({});
+  const [ioMaps, setIoMaps] = useState<Record<string, IoMapEntry[]>>({});
   const [paired, setPaired] = useState<boolean | null>(null);
   const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogEntryDTO[]>([]);
   const [installedPlugins, setInstalledPlugins] = useState<InstalledPlugin[]>([]);
@@ -79,13 +80,37 @@ export default function App() {
     });
   }
 
+  /**
+   * `discover_io_map` es `read-only` — nunca pasa por confirmación, así que
+   * es seguro dispararla sola apenas el dispositivo conecta (ADR-058), mismo
+   * punto de enganche que `loadSafetyTargets`. También queda disponible como
+   * botón manual en `IoMapPanel` para volver a pedirla bajo demanda.
+   */
+  function refreshIoMap(deviceId: string) {
+    window.kan
+      .invokeCapability(deviceId, "discover_io_map", {})
+      .then((outcome) => {
+        if (outcome.status === "executed" && outcome.result.success) {
+          const entries = (outcome.result.data as { entries?: IoMapEntry[] } | undefined)?.entries ?? [];
+          setIoMaps((prev) => ({ ...prev, [deviceId]: entries }));
+        }
+      })
+      .catch(() => undefined);
+  }
+
   useEffect(() => {
     (async () => {
       const loadedDevices: Device[] = await window.kan.listDevices();
       setDevices(loadedDevices);
-      setCapabilities(await window.kan.listCapabilities());
+      const loadedCapabilities: CapabilityListing[] = await window.kan.listCapabilities();
+      setCapabilities(loadedCapabilities);
       setCoreStatus(await window.kan.getCoreStatus());
-      loadedDevices.forEach((device) => loadSafetyTargets(device.id));
+      loadedDevices.forEach((device) => {
+        loadSafetyTargets(device.id);
+        if (loadedCapabilities.some((c) => c.deviceId === device.id && c.capability.name === "discover_io_map")) {
+          refreshIoMap(device.id);
+        }
+      });
       setPaired((await window.kan.getPairingStatus()).paired);
       const pendingInstances: PluginInstance[] = await window.kan.listPendingPluginPermissions();
       setPendingPlugins(pendingInstances.map(toPendingPluginPermission));
@@ -111,6 +136,9 @@ export default function App() {
             })),
           ]);
           loadSafetyTargets(event.payload.device.id);
+          if (event.payload.device.capabilities.some((c) => c.name === "discover_io_map")) {
+            refreshIoMap(event.payload.device.id);
+          }
           break;
         case "safety_policy.changed":
           loadSafetyTargets(event.payload.entry.deviceId);
@@ -269,6 +297,9 @@ export default function App() {
               {safetyTargets[device.id] && safetyTargets[device.id].length > 0 && (
                 <SafetyPolicyPanel deviceId={device.id} targets={safetyTargets[device.id]} />
               )}
+              {capabilities.some((c) => c.deviceId === device.id && c.capability.name === "discover_io_map") && (
+                <IoMapPanel entries={ioMaps[device.id] ?? []} onRefresh={() => refreshIoMap(device.id)} />
+              )}
             </div>
           ))}
         </section>
@@ -381,6 +412,49 @@ function SafetyPolicyPanel({ deviceId, targets }: { deviceId: string; targets: S
           );
         })}
       </div>
+    </div>
+  );
+}
+
+const IO_MODE_LABEL: Record<string, string> = {
+  input: "entrada",
+  output: "salida",
+  unknown: "desconocido",
+};
+
+/**
+ * Mapa de IO de `discover_io_map` (ADR-058) — tabla simple, no un diagrama
+ * gráfico del dispositivo (eso queda fuera de alcance de este incremento).
+ * Se auto-completa apenas el dispositivo conecta (ver `refreshIoMap` en
+ * `App`); el botón "Actualizar" solo permite volver a pedirlo a mano.
+ */
+function IoMapPanel({ entries, onRefresh }: { entries: IoMapEntry[]; onRefresh: () => void }) {
+  return (
+    <div className="mt-3 border-t border-zinc-800 pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-medium text-zinc-400">Mapa de IO — estado conocido del dispositivo</h3>
+        <button className="btn" onClick={onRefresh}>
+          Actualizar
+        </button>
+      </div>
+      {entries.length === 0 ? (
+        <p className="text-xs text-zinc-500">Sin datos todavía.</p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {entries.map((entry) => (
+            <div
+              key={entry.target}
+              className="flex items-center gap-2 rounded border border-zinc-800 px-2 py-1 text-xs"
+            >
+              <span className="w-20 shrink-0 font-mono text-zinc-400">{entry.target}</span>
+              <span className="w-16 shrink-0 text-zinc-500">{entry.type}</span>
+              <span className="w-20 shrink-0 text-zinc-500">{IO_MODE_LABEL[entry.mode] ?? entry.mode}</span>
+              <span className="flex-1 font-mono">{entry.value === null ? "—" : String(entry.value)}</span>
+              {entry.label && <span className="shrink-0 text-zinc-500">{entry.label}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

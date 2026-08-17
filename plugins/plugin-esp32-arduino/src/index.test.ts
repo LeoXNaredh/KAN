@@ -20,6 +20,17 @@ function createEsp32Device(path: string): FakeDevice {
           return { ok: true };
         case "write_analog":
           return { ok: true };
+        case "read_all": {
+          const digital: Record<string, number> = {};
+          for (const pin of (command.digitalPins as number[]) ?? []) {
+            digital[String(pin)] = digitalState.get(pin) ? 1 : 0;
+          }
+          const analog: Record<string, number> = {};
+          for (const pin of (command.analogPins as number[]) ?? []) {
+            analog[String(pin)] = 1234;
+          }
+          return { ok: true, digital, analog };
+        }
         default:
           return { ok: false, error: "comando desconocido" };
       }
@@ -92,7 +103,7 @@ describe("Esp32ArduinoPlugin", () => {
     expect(devices[0].name).toContain("COM3");
   });
 
-  it("expone 4 capabilities direccionables por pin, con la severidad correcta cada una", () => {
+  it("expone 5 capabilities, 4 direccionables por pin y discover_io_map a nivel de dispositivo", () => {
     const plugin = new Esp32ArduinoPlugin(new FakeSerialTransport([]));
     const capabilities = plugin.getCapabilities("whatever");
 
@@ -101,13 +112,16 @@ describe("Esp32ArduinoPlugin", () => {
       "read_analog_pin",
       "write_digital_pin",
       "write_analog_pin",
+      "discover_io_map",
     ]);
-    expect(capabilities.every((c) => c.targetParam === "pin")).toBe(true);
+    expect(capabilities.filter((c) => c.name !== "discover_io_map").every((c) => c.targetParam === "pin")).toBe(true);
+    expect(capabilities.find((c) => c.name === "discover_io_map")?.targetParam).toBeUndefined();
     expect(capabilities.map((c) => c.severity)).toEqual([
       "read-only",
       "read-only",
       "irreversible-material",
       "irreversible-material",
+      "read-only",
     ]);
   });
 
@@ -186,6 +200,21 @@ describe("Esp32ArduinoPlugin", () => {
       const result = await plugin.invoke(deviceId, "no_existe", { pin: 5 });
       expect(result.success).toBe(false);
       expect(result.error).toMatch(/desconocida/);
+    });
+
+    it("discover_io_map devuelve una entrada por pin conocido, con type/mode/value coherentes", async () => {
+      await plugin.invoke(deviceId, "write_digital_pin", { pin: 5, value: true });
+      const result = await plugin.invoke(deviceId, "discover_io_map", {});
+
+      expect(result.success).toBe(true);
+      const entries = (result.data as { entries: Array<{ target: string; type: string; mode: string; value: unknown }> }).entries;
+      expect(entries.length).toBe(23);
+
+      const pin5 = entries.find((e) => e.target === "5");
+      expect(pin5).toEqual({ target: "5", type: "digital", mode: "unknown", value: true });
+
+      const pin34 = entries.find((e) => e.target === "34");
+      expect(pin34).toEqual({ target: "34", type: "analog", mode: "input", value: 1234 });
     });
 
     it("disconnect() cierra la conexión; invoke posterior falla con dispositivo no conectado", async () => {

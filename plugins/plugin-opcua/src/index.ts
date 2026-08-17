@@ -1,10 +1,21 @@
-import type { CapabilityResult, DeviceDescriptor, PluginManifest } from "@kan/plugin-contract";
+import type { CapabilityResult, DeviceDescriptor, IoMapEntry, PluginManifest } from "@kan/plugin-contract";
 import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import type { OpcuaConnection, OpcuaCredentials, OpcuaTarget, OpcuaTransportPort, OpcuaValueType } from "./OpcuaTransportPort";
 import { NodeOpcuaTransport } from "./infra/NodeOpcuaTransport";
 
 const DISCOVER_TIMEOUT_MS = 5000;
 const VALUE_TYPES: OpcuaValueType[] = ["Double", "Float", "Int32", "UInt32", "Boolean", "String"];
+
+// `discover_io_map`: a diferencia de Modbus (caja negra, nunca escanea sin
+// rango explícito), browsear el address space de OPC-UA es justo para lo
+// que existe el protocolo — se puede recorrer sin parámetros, con límites
+// de profundidad/cantidad de nodos como única protección (servidores
+// industriales reales pueden tener address spaces enormes).
+const DEFAULT_ROOT_NODE_ID = "ObjectsFolder"; // no "RootFolder": evita recorrer Types/Views, que no son IO real.
+const DEFAULT_MAX_DEPTH = 5;
+const DEFAULT_MAX_NODES = 200;
+const HARD_MAX_DEPTH = 10;
+const HARD_MAX_NODES = 2000;
 
 interface EndpointConfig {
   name: string;
@@ -54,6 +65,70 @@ function validateNodeId(input: unknown): ValidationResult<string> {
   const nodeId = (input as { nodeId?: unknown } | null)?.nodeId;
   if (typeof nodeId !== "string" || !nodeId.trim()) return fail("'nodeId' debe ser un string no vacío (ej. 'ns=1;s=MyVariable')");
   return ok(nodeId);
+}
+
+function parseDiscoverOptions(input: unknown): { rootNodeId: string; maxDepth: number; maxNodes: number } {
+  const raw = input as { rootNodeId?: unknown; maxDepth?: unknown; maxNodes?: unknown } | null;
+  const rootNodeId = typeof raw?.rootNodeId === "string" && raw.rootNodeId.trim() ? raw.rootNodeId : DEFAULT_ROOT_NODE_ID;
+  const maxDepth =
+    typeof raw?.maxDepth === "number" && Number.isInteger(raw.maxDepth) && raw.maxDepth >= 0
+      ? Math.min(raw.maxDepth, HARD_MAX_DEPTH)
+      : DEFAULT_MAX_DEPTH;
+  const maxNodes =
+    typeof raw?.maxNodes === "number" && Number.isInteger(raw.maxNodes) && raw.maxNodes > 0
+      ? Math.min(raw.maxNodes, HARD_MAX_NODES)
+      : DEFAULT_MAX_NODES;
+  return { rootNodeId, maxDepth, maxNodes };
+}
+
+/**
+ * BFS acotado por profundidad y cantidad total de nodos visitados. Solo los
+ * nodos `nodeClass === "Variable"` se leen y se reportan — el resto
+ * (Object/Method/etc) son estructura, no IO. `mode` queda "unknown": el
+ * AccessLevel (lectura/escritura) del nodo no está expuesto por
+ * `OpcuaConnection` hoy — no se inventa, se declara desconocido.
+ */
+async function discoverOpcuaIoMap(
+  connection: OpcuaConnection,
+  rootNodeId: string,
+  maxDepth: number,
+  maxNodes: number,
+): Promise<IoMapEntry[]> {
+  const entries: IoMapEntry[] = [];
+  let visited = 0;
+  const queue: Array<{ nodeId: string; depth: number }> = [{ nodeId: rootNodeId, depth: 0 }];
+
+  while (queue.length > 0 && visited < maxNodes) {
+    const current = queue.shift();
+    if (!current) break;
+
+    let children: Awaited<ReturnType<OpcuaConnection["browseNode"]>>;
+    try {
+      children = await connection.browseNode(current.nodeId);
+    } catch {
+      continue;
+    }
+
+    for (const child of children) {
+      if (visited >= maxNodes) break;
+      visited++;
+
+      if (child.nodeClass === "Variable") {
+        let value: IoMapEntry["value"] = null;
+        try {
+          const read = await connection.readNode(child.nodeId);
+          value = typeof read.value === "number" || typeof read.value === "boolean" ? read.value : null;
+        } catch {
+          value = null;
+        }
+        entries.push({ target: child.nodeId, type: "node", mode: "unknown", value, label: child.browseName });
+      } else if (current.depth < maxDepth) {
+        queue.push({ nodeId: child.nodeId, depth: current.depth + 1 });
+      }
+    }
+  }
+
+  return entries;
 }
 
 function validateDataType(input: unknown): ValidationResult<OpcuaValueType> {
@@ -159,6 +234,21 @@ export class OpcuaDevicePlugin extends KanDeviceDriverPlugin {
         inputSchema: { type: "object", properties: { nodeId: { type: "string" } } },
         targetParam: "nodeId",
       }),
+      defineCapability({
+        name: "discover_io_map",
+        description:
+          "Recorre el address space OPC-UA (por defecto desde ObjectsFolder) y devuelve todas las variables encontradas con su valor actual — para reconocer de un vistazo qué expone el servidor.",
+        severity: "read-only",
+        supportsDryRun: false,
+        inputSchema: {
+          type: "object",
+          properties: {
+            rootNodeId: { type: "string" },
+            maxDepth: { type: "number" },
+            maxNodes: { type: "number" },
+          },
+        },
+      }),
     ];
   }
 
@@ -201,6 +291,17 @@ export class OpcuaDevicePlugin extends KanDeviceDriverPlugin {
         if (!connection) return { success: false, error: "Dispositivo no conectado" };
         try {
           const entries = await connection.browseNode(target);
+          return { success: true, data: { entries } };
+        } catch (error) {
+          return { success: false, error: toMessage(error) };
+        }
+      }
+
+      case "discover_io_map": {
+        if (!connection) return { success: false, error: "Dispositivo no conectado" };
+        const options = parseDiscoverOptions(input);
+        try {
+          const entries = await discoverOpcuaIoMap(connection, options.rootNodeId, options.maxDepth, options.maxNodes);
           return { success: true, data: { entries } };
         } catch (error) {
           return { success: false, error: toMessage(error) };

@@ -1,5 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
 import { Gpio } from "onoff";
 import type { GpioDirection, GpioLine, GpioPort } from "../GpioPort";
+
+const SYSFS_GPIO_ROOT = "/sys/class/gpio";
 
 /**
  * Transporte real sobre `onoff` (ADR-038) — lee y escribe directo bajo
@@ -26,5 +29,18 @@ export class OnoffGpioPort implements GpioPort {
         gpio.unexport();
       },
     };
+  }
+
+  /** `onoff` no expone lectura de un pin ya exportado sin reclamarlo — se lee `/sys/class/gpio` directo, que sí lo soporta (ver `GpioPort.peek`). */
+  peek(pin: number): { direction: GpioDirection; value: boolean } | undefined {
+    const base = `${SYSFS_GPIO_ROOT}/gpio${pin}`;
+    if (!existsSync(base)) return undefined;
+    try {
+      const direction = readFileSync(`${base}/direction`, "utf8").trim();
+      const value = readFileSync(`${base}/value`, "utf8").trim();
+      return { direction: direction === "out" ? "out" : "in", value: value === "1" };
+    } catch {
+      return undefined;
+    }
   }
 }

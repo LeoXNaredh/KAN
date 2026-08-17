@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { EdgeAgentEvents, InstalledPlugin } from "@kan/edge-agent-core";
+import type { EdgeAgentEvents, InstalledPlugin, InvokeOutcome } from "@kan/edge-agent-core";
 import type { ActionSeverity, PluginManifest } from "@kan/plugin-contract";
 
 export interface PluginCatalogEntryDTO {
@@ -14,7 +14,7 @@ export type BusEvent = {
 const kanApi = {
   listDevices: () => ipcRenderer.invoke("kan:listDevices"),
   listCapabilities: () => ipcRenderer.invoke("kan:listCapabilities"),
-  invokeCapability: (deviceId: string, capabilityName: string, input: unknown) =>
+  invokeCapability: (deviceId: string, capabilityName: string, input: unknown): Promise<InvokeOutcome> =>
     ipcRenderer.invoke("kan:invokeCapability", deviceId, capabilityName, input),
   resolveConfirmation: (confirmationId: string, approved: boolean) =>
     ipcRenderer.invoke("kan:resolveConfirmation", confirmationId, approved),

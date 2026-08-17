@@ -4,6 +4,7 @@ export * from "./capability";
 export * from "./deviceDriverPort";
 export * from "./manifest";
 export * from "./targetDescriptor";
+export * from "./ioMap";
 export * from "./protocol";
 export * from "./sidecarProtocol";
 export * from "./tool";

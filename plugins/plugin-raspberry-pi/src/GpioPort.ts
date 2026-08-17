@@ -17,4 +17,13 @@ export interface GpioPort {
   /** `false` si el GPIO no es accesible en este proceso (no es una Pi, sin permisos, sysfs no disponible). */
   isAccessible(): boolean;
   open(pin: number, direction: GpioDirection): GpioLine;
+  /**
+   * Lectura no intrusiva para `discover_io_map` (ADR-058): si el pin YA está
+   * exportado (por KAN o por otro proceso), devuelve su dirección/valor
+   * actuales sin reclamarlo. Si no está exportado, devuelve `undefined` —
+   * nunca lo exporta para averiguarlo, porque exportarlo con una dirección
+   * fija podría pisar el estado de algo que ya lo esté usando (mismo riesgo
+   * que el bug de `read_digital` corregido en `plugin-esp32-arduino`).
+   */
+  peek(pin: number): { direction: GpioDirection; value: boolean } | undefined;
 }

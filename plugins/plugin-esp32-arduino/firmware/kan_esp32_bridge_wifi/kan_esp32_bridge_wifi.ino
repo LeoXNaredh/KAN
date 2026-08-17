@@ -25,7 +25,8 @@
 const char *WIFI_SSID = "TU_RED_WIFI";
 const char *WIFI_PASSWORD = "TU_CONTRASENA";
 const uint16_t TCP_PORT = 8266;
-const size_t LINE_BUFFER_SIZE = 128;
+const size_t LINE_BUFFER_SIZE = 220;
+const size_t MAX_SCAN_PINS = 24;
 
 WiFiServer server(TCP_PORT);
 WiFiClient client;
@@ -81,6 +82,11 @@ void handleLine(const char *line) {
     return;
   }
 
+  if (strcmp(cmd, "read_all") == 0) {
+    handleReadAll(line);
+    return;
+  }
+
   long pin;
   if (!extractInt(line, "pin", &pin)) {
     sendLine("{\"ok\":false,\"error\":\"falta 'pin'\"}");
@@ -89,7 +95,9 @@ void handleLine(const char *line) {
 
   char response[64];
   if (strcmp(cmd, "read_digital") == 0) {
-    pinMode((uint8_t)pin, INPUT);
+    // No pinMode() acá: leer nunca debe reconfigurar el pin — un pin en
+    // OUTPUT sosteniendo un relé/motor real no debe volverse INPUT solo
+    // porque alguien lo leyó (ver ADR-058).
     int value = digitalRead((uint8_t)pin);
     snprintf(response, sizeof(response), "{\"ok\":true,\"value\":%d}", value);
     sendLine(response);
@@ -118,6 +126,35 @@ void handleLine(const char *line) {
   } else {
     sendLine("{\"ok\":false,\"error\":\"comando desconocido\"}");
   }
+}
+
+/*
+ * `read_all` — mismo criterio que la variante Serial: lee de una pasada los
+ * pines que Node pida, nunca llama pinMode() (ADR-058).
+ */
+void handleReadAll(const char *line) {
+  long digitalPins[MAX_SCAN_PINS];
+  size_t digitalCount = extractIntArray(line, "digitalPins", digitalPins, MAX_SCAN_PINS);
+  long analogPins[MAX_SCAN_PINS];
+  size_t analogCount = extractIntArray(line, "analogPins", analogPins, MAX_SCAN_PINS);
+
+  client.print("{\"ok\":true,\"digital\":{");
+  for (size_t i = 0; i < digitalCount; i++) {
+    if (i > 0) client.print(",");
+    client.print("\"");
+    client.print(digitalPins[i]);
+    client.print("\":");
+    client.print(digitalRead((uint8_t)digitalPins[i]));
+  }
+  client.print("},\"analog\":{");
+  for (size_t i = 0; i < analogCount; i++) {
+    if (i > 0) client.print(",");
+    client.print("\"");
+    client.print(analogPins[i]);
+    client.print("\":");
+    client.print(analogRead((uint8_t)analogPins[i]));
+  }
+  client.println("}}");
 }
 
 /* --- Mismo parser manual que la variante Serial (kan_esp32_bridge.ino) --- */
@@ -167,4 +204,24 @@ bool extractBool(const char *json, const char *key, bool *out) {
     return true;
   }
   return false;
+}
+
+/** Parsea `"key":[1,2,3]` — hasta `maxCount` enteros, silenciosamente trunca el resto (protocolo confía en Node para no mandar de más). */
+size_t extractIntArray(const char *json, const char *key, long *out, size_t maxCount) {
+  const char *value = findKey(json, key);
+  if (value == NULL) return 0;
+  while (*value == ' ') value++;
+  if (*value != '[') return 0;
+  value++;
+  size_t count = 0;
+  while (*value != ']' && *value != '\0' && count < maxCount) {
+    while (*value == ' ' || *value == ',') value++;
+    if (*value == ']' || *value == '\0') break;
+    char *end;
+    long parsed = strtol(value, &end, 10);
+    if (end == value) break;
+    out[count++] = parsed;
+    value = end;
+  }
+  return count;
 }

@@ -46,13 +46,26 @@ describe("ModbusDevicePlugin", () => {
     expect(device.name).toContain("COM3@9600");
   });
 
-  it("expone 4 capabilities con la severidad correcta, todas con targetParam 'register'", () => {
+  it("expone 5 capabilities con la severidad correcta; discover_io_map no tiene targetParam (opera sobre rangos, no un target puntual)", () => {
     const plugin = new ModbusDevicePlugin(new FakeModbusTransport());
     const capabilities = plugin.getCapabilities("any");
 
-    expect(capabilities.map((c) => c.name)).toEqual(["read_registers", "read_coils", "write_register", "write_coil"]);
-    expect(capabilities.map((c) => c.severity)).toEqual(["read-only", "read-only", "irreversible-material", "irreversible-material"]);
-    expect(capabilities.every((c) => c.targetParam === "register")).toBe(true);
+    expect(capabilities.map((c) => c.name)).toEqual([
+      "read_registers",
+      "read_coils",
+      "write_register",
+      "write_coil",
+      "discover_io_map",
+    ]);
+    expect(capabilities.map((c) => c.severity)).toEqual([
+      "read-only",
+      "read-only",
+      "irreversible-material",
+      "irreversible-material",
+      "read-only",
+    ]);
+    expect(capabilities.filter((c) => c.name !== "discover_io_map").every((c) => c.targetParam === "register")).toBe(true);
+    expect(capabilities.find((c) => c.name === "discover_io_map")?.targetParam).toBeUndefined();
   });
 
   it("invoke() sobre un dispositivo nunca descubierto da error claro", async () => {
@@ -117,6 +130,66 @@ describe("ModbusDevicePlugin", () => {
 
       const readResult = await plugin.invoke(deviceId, "read_coils", { register: "coil:10" });
       expect(readResult).toEqual({ success: true, data: { values: [true] } });
+    });
+
+    it("discover_io_map lee varios rangos explícitos y arma targets 'kind:address' consistentes con read_registers", async () => {
+      const result = await plugin.invoke(deviceId, "discover_io_map", {
+        ranges: [
+          { kind: "holding", start: 100, count: 2 },
+          { kind: "coil", start: 5, count: 1 },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+      const entries = (result.data as { entries: Array<{ target: string; type: string; mode: string; value: unknown }> }).entries;
+      expect(entries).toEqual([
+        { target: "holding:100", type: "register", mode: "output", value: 42 },
+        { target: "holding:101", type: "register", mode: "output", value: 43 },
+        { target: "coil:5", type: "register", mode: "output", value: true },
+      ]);
+    });
+
+    it("discover_io_map reporta un rango como sin respuesta si el dispositivo lo rechaza, sin abortar los demás rangos", async () => {
+      const transport = new FakeModbusTransport({
+        "tcp:192.168.1.50:502": {
+          unitRegisters: {
+            1: {
+              holding: { 100: 42 },
+              unreachableAddresses: { holding: [150] },
+            },
+          },
+        },
+      });
+      const scopedPlugin = new ModbusDevicePlugin(transport);
+      process.env.KAN_MODBUS_TARGETS = "plc1|tcp|192.168.1.50:502";
+      const [device] = await scopedPlugin.discover();
+      await scopedPlugin.connect(device.id);
+
+      const result = await scopedPlugin.invoke(device.id, "discover_io_map", {
+        ranges: [
+          { kind: "holding", start: 100, count: 1 },
+          { kind: "holding", start: 150, count: 1 },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+      const entries = (result.data as { entries: Array<{ target: string; mode: string; value: unknown; label?: string }> }).entries;
+      expect(entries[0]).toEqual({ target: "holding:100", type: "register", mode: "output", value: 42 });
+      expect(entries[1].target).toBe("holding:150-150");
+      expect(entries[1].mode).toBe("unknown");
+      expect(entries[1].value).toBeNull();
+      expect(entries[1].label).toMatch(/sin respuesta/);
+    });
+
+    it("discover_io_map rechaza 'ranges' vacío o mal formado sin tocar el transporte", async () => {
+      const empty = await plugin.invoke(deviceId, "discover_io_map", { ranges: [] });
+      expect(empty.success).toBe(false);
+
+      const badKind = await plugin.invoke(deviceId, "discover_io_map", { ranges: [{ kind: "bogus", start: 0, count: 1 }] });
+      expect(badKind.success).toBe(false);
+
+      const badCount = await plugin.invoke(deviceId, "discover_io_map", { ranges: [{ kind: "holding", start: 0, count: 0 }] });
+      expect(badCount.success).toBe(false);
     });
 
     it("read_registers rechaza un 'register' de tipo coil/discrete (espacio equivocado)", async () => {

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
+import type { CapabilityResult, DeviceDescriptor, IoMapEntry, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
 import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import { RASPBERRY_PI_PIN_MAP, defaultSeverityFor, findPin } from "./pinMap";
 import type { GpioDirection, GpioLine, GpioPort } from "./GpioPort";
@@ -124,6 +124,14 @@ export class RaspberryPiGpioPlugin extends KanDeviceDriverPlugin {
         },
         targetParam: "pin",
       }),
+      defineCapability({
+        name: "discover_io_map",
+        description:
+          "Lee sin reclamar los pines GPIO ya exportados (por KAN o por otro proceso) y lista el resto como disponibles — nunca exporta un pin nuevo solo para 'ver qué tiene'.",
+        severity: "read-only",
+        supportsDryRun: false,
+        inputSchema: { type: "object", properties: {} },
+      }),
     ];
   }
 
@@ -156,6 +164,22 @@ export class RaspberryPiGpioPlugin extends KanDeviceDriverPlugin {
         const line = await this.getOrOpenLine(pin.value.pin, "out");
         await line.write(value.value);
         return { success: true, data: { pin: pin.value.pin, value: value.value } };
+      }
+
+      case "discover_io_map": {
+        const entries: IoMapEntry[] = RASPBERRY_PI_PIN_MAP.map((pin) => {
+          const peeked = this.gpioPort.peek(pin.pin);
+          if (!peeked) {
+            return { target: String(pin.pin), type: "digital", mode: "unknown", value: null, label: "no exportado — libre" };
+          }
+          return {
+            target: String(pin.pin),
+            type: "digital",
+            mode: peeked.direction === "out" ? "output" : "input",
+            value: peeked.value,
+          };
+        });
+        return { success: true, data: { entries } };
       }
 
       default:

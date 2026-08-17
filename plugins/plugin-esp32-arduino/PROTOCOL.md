@@ -12,8 +12,9 @@ El protocolo es el mismo sin importar el transporte:
 | Comando | Payload | Descripción |
 |---|---|---|
 | `ping` | `{"cmd":"ping"}` | Handshake de descubrimiento. |
-| `read_digital` | `{"cmd":"read_digital","pin":<int>}` | Lee `digitalRead(pin)`. |
+| `read_digital` | `{"cmd":"read_digital","pin":<int>}` | Lee `digitalRead(pin)`. **Nunca llama `pinMode()`** (ver nota abajo — ADR-058). |
 | `read_analog` | `{"cmd":"read_analog","pin":<int>}` | Lee `analogRead(pin)`. |
+| `read_all` | `{"cmd":"read_all","digitalPins":[<int>,...],"analogPins":[<int>,...]}` | Lee varios pines en una sola ida y vuelta (usado por `discover_io_map`, ADR-058). La lista de pines la decide Node (`ESP32_PIN_MAP`) — el firmware sigue sin mapa propio. Nunca llama `pinMode()`, igual que `read_digital`. |
 | `write_digital` | `{"cmd":"write_digital","pin":<int>,"value":<bool>}` | `digitalWrite(pin, value ? HIGH : LOW)`. |
 | `write_analog` | `{"cmd":"write_analog","pin":<int>,"value":<0-255>}` | `analogWrite(pin, value)` / `ledcWrite` según el pin. |
 
@@ -24,9 +25,14 @@ El protocolo es el mismo sin importar el transporte:
 - `ping` → `{"ok":true,"device":"kan-esp32"}`
 - `read_digital` → `{"ok":true,"value":0}` o `{"ok":true,"value":1}`
 - `read_analog` → `{"ok":true,"value":2731}`
+- `read_all` → `{"ok":true,"digital":{"2":0,"4":1},"analog":{"34":2731}}` — claves son los números de pin como string.
 - `write_digital` / `write_analog` → `{"ok":true}`
 
 Error: `{"ok":false,"error":"<mensaje>"}`.
+
+## `read_digital`/`read_all` nunca reconfiguran el pin (ADR-058)
+
+Versiones anteriores de este firmware llamaban `pinMode(pin, INPUT)` antes de cada `digitalRead` — leer un pin que hoy está en `OUTPUT` sosteniendo un relé/motor/láser real lo apagaba/soltaba como efecto secundario de "solo mirar". Se corrigió: leer nunca cambia el modo del pin. Si el sketch nunca configuró ese pin (ni con `pinMode` propio del usuario ni con `write_digital`/`write_analog` de KAN), `digitalRead`/`read_all` devuelven el estado por defecto del pin en el silicio (normalmente flotante/indefinido) — comportamiento estándar de Arduino, no algo que este protocolo intente normalizar.
 
 ## Qué NO valida el firmware
 

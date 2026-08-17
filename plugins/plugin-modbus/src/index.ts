@@ -1,4 +1,4 @@
-import type { CapabilityResult, DeviceDescriptor, PluginManifest } from "@kan/plugin-contract";
+import type { CapabilityResult, DeviceDescriptor, IoEntryMode, IoMapEntry, PluginManifest } from "@kan/plugin-contract";
 import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import type { ModbusConnection, ModbusTarget, ModbusTransportPort } from "./ModbusTransportPort";
 import { NodeModbusTransport } from "./infra/NodeModbusTransport";
@@ -103,6 +103,52 @@ function parseUnitId(input: unknown): number {
 function parseLength(input: unknown): number {
   const length = (input as { length?: unknown } | null)?.length;
   return typeof length === "number" && Number.isInteger(length) && length > 0 ? length : 1;
+}
+
+const IO_RANGE_KINDS = ["holding", "input", "coil", "discrete"] as const;
+type IoRangeKind = (typeof IO_RANGE_KINDS)[number];
+const MAX_IO_RANGE_COUNT = 200;
+
+interface IoRange {
+  kind: IoRangeKind;
+  start: number;
+  count: number;
+}
+
+/**
+ * A diferencia de ESP32/Pi (universo de pines conocido de antemano), un PLC
+ * Modbus es una caja negra de direcciones — barrer un rango sin que el
+ * usuario lo pida es justo lo que este plugin ya evita (ver parseTargets
+ * arriba: "nunca escanea"). `discover_io_map` exige rangos explícitos, sin
+ * default amplio.
+ */
+function validateIoRanges(input: unknown): ValidationResult<IoRange[]> {
+  const ranges = (input as { ranges?: unknown } | null)?.ranges;
+  if (!Array.isArray(ranges) || ranges.length === 0) {
+    return fail("'ranges' debe ser un array no vacío de {kind, start, count}");
+  }
+
+  const parsed: IoRange[] = [];
+  for (const entry of ranges) {
+    const kind = (entry as { kind?: unknown } | null)?.kind;
+    const start = (entry as { start?: unknown } | null)?.start;
+    const count = (entry as { count?: unknown } | null)?.count;
+    if (typeof kind !== "string" || !IO_RANGE_KINDS.includes(kind as IoRangeKind)) {
+      return fail(`'kind' de un range inválido — usá: ${IO_RANGE_KINDS.join(", ")}`);
+    }
+    if (typeof start !== "number" || !Number.isInteger(start) || start < 0) {
+      return fail("'start' de un range debe ser un entero >= 0");
+    }
+    if (typeof count !== "number" || !Number.isInteger(count) || count <= 0 || count > MAX_IO_RANGE_COUNT) {
+      return fail(`'count' de un range debe ser un entero entre 1 y ${MAX_IO_RANGE_COUNT}`);
+    }
+    parsed.push({ kind: kind as IoRangeKind, start, count });
+  }
+  return ok(parsed);
+}
+
+function modeForKind(kind: IoRangeKind): IoEntryMode {
+  return kind === "holding" || kind === "coil" ? "output" : "input";
 }
 
 /**
@@ -234,6 +280,32 @@ export class ModbusDevicePlugin extends KanDeviceDriverPlugin {
         },
         targetParam: "register",
       }),
+      defineCapability({
+        name: "discover_io_map",
+        description:
+          "Lee uno o más rangos de registros/coils explícitos y devuelve el mapa de IO resultante — nunca barre direcciones sin que se le indique el rango (formato de 'ranges': [{kind:'holding',start:0,count:20}]).",
+        severity: "read-only",
+        supportsDryRun: false,
+        inputSchema: {
+          type: "object",
+          properties: {
+            ranges: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  kind: { type: "string", enum: ["holding", "input", "coil", "discrete"] },
+                  start: { type: "number" },
+                  count: { type: "number" },
+                },
+                required: ["kind", "start", "count"],
+              },
+            },
+            unitId: { type: "number" },
+          },
+          required: ["ranges"],
+        },
+      }),
     ];
   }
 
@@ -306,6 +378,46 @@ export class ModbusDevicePlugin extends KanDeviceDriverPlugin {
         } catch (error) {
           return { success: false, error: toMessage(error) };
         }
+      }
+
+      case "discover_io_map": {
+        const ranges = validateIoRanges(input);
+        if (!ranges.ok) return { success: false, error: ranges.error };
+        if (!connection) return { success: false, error: "Dispositivo no conectado" };
+        const unitId = parseUnitId(input);
+
+        const entries: IoMapEntry[] = [];
+        for (const range of ranges.value) {
+          try {
+            const values: Array<number | boolean> = await (range.kind === "holding"
+              ? connection.readHoldingRegisters(unitId, range.start, range.count)
+              : range.kind === "input"
+                ? connection.readInputRegisters(unitId, range.start, range.count)
+                : range.kind === "coil"
+                  ? connection.readCoils(unitId, range.start, range.count)
+                  : connection.readDiscreteInputs(unitId, range.start, range.count));
+            values.forEach((value, i) => {
+              entries.push({
+                target: `${range.kind}:${range.start + i}`,
+                type: "register",
+                mode: modeForKind(range.kind),
+                value,
+              });
+            });
+          } catch (error) {
+            // Un read Modbus es todo-o-nada (una sola PDU) — si el rango entero
+            // es rechazado no hay forma de saber qué dirección puntual falló sin
+            // leerlas una por una, lo que anularía el beneficio del rango bulk.
+            entries.push({
+              target: `${range.kind}:${range.start}-${range.start + range.count - 1}`,
+              type: "register",
+              mode: "unknown",
+              value: null,
+              label: `sin respuesta: ${toMessage(error)}`,
+            });
+          }
+        }
+        return { success: true, data: { entries } };
       }
 
       default:

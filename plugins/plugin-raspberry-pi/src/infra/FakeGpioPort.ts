@@ -10,6 +10,7 @@ export class FakeGpioPort implements GpioPort {
   readonly openedPins: number[] = [];
   readonly closedPins: number[] = [];
   private readonly values = new Map<number, boolean>();
+  private readonly exported = new Map<number, GpioDirection>();
 
   constructor(private readonly accessible: boolean = true) {}
 
@@ -17,9 +18,10 @@ export class FakeGpioPort implements GpioPort {
     return this.accessible;
   }
 
-  open(pin: number, _direction: GpioDirection): GpioLine {
+  open(pin: number, direction: GpioDirection): GpioLine {
     this.openedPins.push(pin);
     if (!this.values.has(pin)) this.values.set(pin, false);
+    this.exported.set(pin, direction);
 
     return {
       read: async () => this.values.get(pin) ?? false,
@@ -28,8 +30,21 @@ export class FakeGpioPort implements GpioPort {
       },
       close: async () => {
         this.closedPins.push(pin);
+        this.exported.delete(pin);
       },
     };
+  }
+
+  peek(pin: number): { direction: GpioDirection; value: boolean } | undefined {
+    const direction = this.exported.get(pin);
+    if (direction === undefined) return undefined;
+    return { direction, value: this.values.get(pin) ?? false };
+  }
+
+  /** Simula un pin ya exportado por otro proceso ANTES de que KAN lo toque (ej. un script previo) — para tests de `discover_io_map` no intrusivo. */
+  simulateExternallyExported(pin: number, direction: GpioDirection, value: boolean): void {
+    this.exported.set(pin, direction);
+    this.values.set(pin, value);
   }
 
   /** Simula un cambio de estado externo del pin (ej. un sensor conectado), para tests de lectura. */

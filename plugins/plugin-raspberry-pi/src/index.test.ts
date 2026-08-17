@@ -97,6 +97,31 @@ describe("RaspberryPiGpioPlugin.invoke()", () => {
   });
 });
 
+describe("RaspberryPiGpioPlugin.invoke() discover_io_map", () => {
+  it("reporta modo/valor real de un pin ya exportado por otro proceso, sin reclamarlo", async () => {
+    const { plugin: p, gpioPort } = plugin();
+    gpioPort.simulateExternallyExported(17, "out", true);
+
+    const result = await p.invoke(DEVICE_ID, "discover_io_map", {});
+
+    expect(result.success).toBe(true);
+    const entries = (result.data as { entries: Array<{ target: string; mode: string; value: unknown }> }).entries;
+    expect(entries.find((e) => e.target === "17")).toEqual({ target: "17", type: "digital", mode: "output", value: true });
+    // Nunca lo abre/reclama para leerlo — sigue sin aparecer en openedPins.
+    expect(gpioPort.openedPins).not.toContain(17);
+  });
+
+  it("reporta 'unknown'/libre para pines no exportados, sin exportarlos para averiguarlo", async () => {
+    const { plugin: p, gpioPort } = plugin();
+
+    const result = await p.invoke(DEVICE_ID, "discover_io_map", {});
+
+    const entries = (result.data as { entries: Array<{ target: string; mode: string; value: unknown }> }).entries;
+    expect(entries.every((e) => e.mode === "unknown" && e.value === null)).toBe(true);
+    expect(gpioPort.openedPins).toEqual([]);
+  });
+});
+
 describe("RaspberryPiGpioPlugin.disconnect()", () => {
   it("cierra todas las líneas abiertas", async () => {
     const { plugin: p, gpioPort } = plugin();
@@ -110,12 +135,12 @@ describe("RaspberryPiGpioPlugin.disconnect()", () => {
 });
 
 describe("RaspberryPiGpioPlugin.getCapabilities()/listTargets()", () => {
-  it("declara read_digital_pin y write_digital_pin, sin analog/PWM", () => {
+  it("declara read_digital_pin, write_digital_pin y discover_io_map, sin analog/PWM", () => {
     const { plugin: p } = plugin();
 
     const names = p.getCapabilities(DEVICE_ID).map((c) => c.name);
 
-    expect(names).toEqual(["read_digital_pin", "write_digital_pin"]);
+    expect(names).toEqual(["read_digital_pin", "write_digital_pin", "discover_io_map"]);
   });
 
   it("lista todos los pines de propósito general con severidad irreversible-material por defecto", () => {

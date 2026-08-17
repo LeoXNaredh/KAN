@@ -26,7 +26,8 @@
  */
 
 const long BAUD_RATE = 115200;
-const size_t LINE_BUFFER_SIZE = 128;
+const size_t LINE_BUFFER_SIZE = 220;
+const size_t MAX_SCAN_PINS = 24;
 
 char lineBuffer[LINE_BUFFER_SIZE];
 size_t lineLength = 0;
@@ -60,6 +61,11 @@ void handleLine(const char *line) {
     return;
   }
 
+  if (strcmp(cmd, "read_all") == 0) {
+    handleReadAll(line);
+    return;
+  }
+
   long pin;
   if (!extractInt(line, "pin", &pin)) {
     Serial.println("{\"ok\":false,\"error\":\"falta 'pin'\"}");
@@ -67,7 +73,9 @@ void handleLine(const char *line) {
   }
 
   if (strcmp(cmd, "read_digital") == 0) {
-    pinMode((uint8_t)pin, INPUT);
+    // No pinMode() acá: leer nunca debe reconfigurar el pin — un pin en
+    // OUTPUT sosteniendo un relé/motor real no debe volverse INPUT solo
+    // porque alguien lo leyó (ver ADR-058).
     int value = digitalRead((uint8_t)pin);
     Serial.print("{\"ok\":true,\"value\":");
     Serial.print(value);
@@ -98,6 +106,37 @@ void handleLine(const char *line) {
   } else {
     Serial.println("{\"ok\":false,\"error\":\"comando desconocido\"}");
   }
+}
+
+/*
+ * `read_all` — lee de una sola pasada todos los pines que Node le pida
+ * (Node ya sabe cuáles existen vía ESP32_PIN_MAP; el firmware sigue sin
+ * mapa propio, ver PROTOCOL.md). Nunca llama pinMode(): es puramente de
+ * lectura, no reconfigura nada (ADR-058).
+ */
+void handleReadAll(const char *line) {
+  long digitalPins[MAX_SCAN_PINS];
+  size_t digitalCount = extractIntArray(line, "digitalPins", digitalPins, MAX_SCAN_PINS);
+  long analogPins[MAX_SCAN_PINS];
+  size_t analogCount = extractIntArray(line, "analogPins", analogPins, MAX_SCAN_PINS);
+
+  Serial.print("{\"ok\":true,\"digital\":{");
+  for (size_t i = 0; i < digitalCount; i++) {
+    if (i > 0) Serial.print(",");
+    Serial.print("\"");
+    Serial.print(digitalPins[i]);
+    Serial.print("\":");
+    Serial.print(digitalRead((uint8_t)digitalPins[i]));
+  }
+  Serial.print("},\"analog\":{");
+  for (size_t i = 0; i < analogCount; i++) {
+    if (i > 0) Serial.print(",");
+    Serial.print("\"");
+    Serial.print(analogPins[i]);
+    Serial.print("\":");
+    Serial.print(analogRead((uint8_t)analogPins[i]));
+  }
+  Serial.println("}}");
 }
 
 /* --- Parser manual minimalista para el subconjunto plano de JSON que usa el protocolo --- */
@@ -147,4 +186,24 @@ bool extractBool(const char *json, const char *key, bool *out) {
     return true;
   }
   return false;
+}
+
+/** Parsea `"key":[1,2,3]` — hasta `maxCount` enteros, silenciosamente trunca el resto (protocolo confía en Node para no mandar de más). */
+size_t extractIntArray(const char *json, const char *key, long *out, size_t maxCount) {
+  const char *value = findKey(json, key);
+  if (value == NULL) return 0;
+  while (*value == ' ') value++;
+  if (*value != '[') return 0;
+  value++;
+  size_t count = 0;
+  while (*value != ']' && *value != '\0' && count < maxCount) {
+    while (*value == ' ' || *value == ',') value++;
+    if (*value == ']' || *value == '\0') break;
+    char *end;
+    long parsed = strtol(value, &end, 10);
+    if (end == value) break;
+    out[count++] = parsed;
+    value = end;
+  }
+  return count;
 }

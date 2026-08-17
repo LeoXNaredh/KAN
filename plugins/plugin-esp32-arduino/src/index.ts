@@ -1,4 +1,4 @@
-import type { CapabilityResult, DeviceDescriptor, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
+import type { CapabilityResult, DeviceDescriptor, IoMapEntry, PluginManifest, TargetDescriptor } from "@kan/plugin-contract";
 import { KanDeviceDriverPlugin, defineCapability, definePermissions } from "@kan/plugin-sdk-ts";
 import { ESP32_PIN_MAP, defaultSeverityFor, findPin, type PinInfo } from "./pinMap";
 import {
@@ -209,6 +209,14 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
         },
         targetParam: "pin",
       }),
+      defineCapability({
+        name: "discover_io_map",
+        description:
+          "Lee de una sola vez el estado de todos los pines conocidos del dispositivo (digital y analógico) — para reconocer de un vistazo un proyecto ya armado.",
+        severity: "read-only",
+        supportsDryRun: false,
+        inputSchema: { type: "object", properties: {} },
+      }),
     ];
   }
 
@@ -252,6 +260,37 @@ export class Esp32ArduinoPlugin extends KanDeviceDriverPlugin {
         const value = validateAnalogValue(input);
         if (!value.ok) return { success: false, error: value.error };
         return this.exchange(connection, { cmd: "write_analog", pin: pin.value.pin, value: value.value });
+      }
+
+      case "discover_io_map": {
+        // Los pines input-only (34/35/36/39) son los únicos ADC reales del
+        // mapa (ver comentario de INPUT_ONLY_PINS en pinMap.ts) — se reportan
+        // como "analog". El resto se lee como "digital"; nunca se puede saber
+        // si HOY están configurados como entrada o salida sin firmware nuevo
+        // (ADR-058), así que su `mode` queda "unknown" a propósito.
+        const digitalPins = ESP32_PIN_MAP.filter((p) => p.canWrite).map((p) => p.pin);
+        const analogPins = ESP32_PIN_MAP.filter((p) => !p.canWrite).map((p) => p.pin);
+        const result = await this.exchange(connection, { cmd: "read_all", digitalPins, analogPins });
+        if (!result.success) return result;
+
+        const data = result.data as { digital?: Record<string, number>; analog?: Record<string, number> };
+        const entries: IoMapEntry[] = ESP32_PIN_MAP.map((pin) => {
+          if (!pin.canWrite) {
+            return {
+              target: String(pin.pin),
+              type: "analog",
+              mode: "input",
+              value: data.analog?.[String(pin.pin)] ?? null,
+            };
+          }
+          return {
+            target: String(pin.pin),
+            type: "digital",
+            mode: "unknown",
+            value: data.digital?.[String(pin.pin)] === 1,
+          };
+        });
+        return { success: true, data: { entries } };
       }
 
       default:
