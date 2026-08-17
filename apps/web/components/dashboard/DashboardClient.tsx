@@ -15,9 +15,12 @@ import { PluginCard } from "@/components/dashboard/PluginCard";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { KANHome } from "@/components/kan/KANHome";
 import { Card } from "@/components/ui/Card";
+import { Reveal } from "@/components/ui/Reveal";
+import { useDeviceDisplayNames } from "@/lib/devices/useDeviceDisplayNames";
 
 export function DashboardClient({ summary }: { summary: DashboardSummary | undefined }) {
   const { status, loading } = useSystemStatusContext();
+  const resolveDeviceName = useDeviceDisplayNames();
 
   // Se calcula recién después de hidratar (useIsClient) — evita un mismatch
   // entre la hora del servidor (Vercel, UTC) y la del navegador del
@@ -62,24 +65,30 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <SummaryCard
-                icon={Brain}
-                title="Memoria"
-                value={summary ? String(summary.memoriesCount) : "—"}
-                hint={summary && summary.memoriesCount === 0 ? "Vacía — KAN empezará a recordar según la uses" : "Recuerdos guardados"}
-              />
-              <SummaryCard
-                icon={FolderKanban}
-                title="Proyectos"
-                value={summary ? String(summary.projectsCount) : "—"}
-                hint={summary && summary.projectsCount === 0 ? "Sin proyectos todavía" : "Proyectos activos"}
-              />
-              <SummaryCard
-                icon={Workflow}
-                title="Recordatorios"
-                value={status ? String(status.jobsCount) : "—"}
-                hint={status && status.jobsCount === 0 ? "Sin nada programado" : "Programados"}
-              />
+              <Reveal delay={0}>
+                <SummaryCard
+                  icon={Brain}
+                  title="Memoria"
+                  value={summary ? String(summary.memoriesCount) : "—"}
+                  hint={summary && summary.memoriesCount === 0 ? "Vacía — KAN empezará a recordar según la uses" : "Recuerdos guardados"}
+                />
+              </Reveal>
+              <Reveal delay={60}>
+                <SummaryCard
+                  icon={FolderKanban}
+                  title="Proyectos"
+                  value={summary ? String(summary.projectsCount) : "—"}
+                  hint={summary && summary.projectsCount === 0 ? "Sin proyectos todavía" : "Proyectos activos"}
+                />
+              </Reveal>
+              <Reveal delay={120}>
+                <SummaryCard
+                  icon={Workflow}
+                  title="Recordatorios"
+                  value={status ? String(status.jobsCount) : "—"}
+                  hint={status && status.jobsCount === 0 ? "Sin nada programado" : "Programados"}
+                />
+              </Reveal>
             </div>
 
             <div>
@@ -92,8 +101,10 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
                 </Card>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                  {allDevices.map((device) => (
-                    <DeviceCard key={device.id} icon={Cpu} label={device.name} connected={device.agentOnline} />
+                  {allDevices.map((device, index) => (
+                    <Reveal key={device.id} delay={index * 40}>
+                      <DeviceCard icon={Cpu} label={resolveDeviceName(device.name)} connected={device.agentOnline} />
+                    </Reveal>
                   ))}
                 </div>
               )}

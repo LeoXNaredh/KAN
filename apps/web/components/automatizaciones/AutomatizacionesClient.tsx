@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Bell, Clock, Loader2, Plus, Repeat, Trash2, TriangleAlert, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Reveal } from "@/components/ui/Reveal";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import type { ScheduledJobView } from "@/lib/jobs/types";
 
@@ -222,7 +223,7 @@ export function AutomatizacionesClient() {
                       type="button"
                       aria-label={`Quitar paso ${index + 1}`}
                       onClick={() => removeStep(index)}
-                      className="shrink-0 rounded-md p-1.5 text-ink-faint hover:bg-danger/10 hover:text-danger"
+                      className="press shrink-0 rounded-md p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
                     >
                       <X className="h-4 w-4" aria-hidden="true" />
                     </button>
@@ -239,7 +240,7 @@ export function AutomatizacionesClient() {
             <button
               type="button"
               onClick={addStep}
-              className="flex items-center gap-1.5 self-start rounded-lg border border-dashed border-line px-3 py-1.5 text-xs text-ink-muted hover:border-accent hover:text-accent"
+              className="press flex items-center gap-1.5 self-start rounded-lg border border-dashed border-line px-3 py-1.5 text-xs text-ink-muted transition-colors hover:border-accent hover:text-accent"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
               Agregar paso
@@ -271,7 +272,7 @@ export function AutomatizacionesClient() {
                     key={preset.value}
                     type="button"
                     onClick={() => setCron(preset.value)}
-                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                    className={`press rounded-full border px-2.5 py-1 text-xs transition-colors ${
                       cron === preset.value ? "border-accent bg-accent/10 text-accent" : "border-line text-ink-faint hover:text-ink"
                     }`}
                   >
@@ -336,10 +337,12 @@ export function AutomatizacionesClient() {
           <p className="text-sm text-ink-faint">No hay automatizaciones programadas todavía.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {jobs.map((job) => (
-              <li
+            {jobs.map((job, index) => (
+              <Reveal
                 key={job.id}
-                className="flex items-center justify-between gap-3 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-colors hover:bg-surface-3"
+                as="li"
+                delay={index * 40}
+                className="flex items-center justify-between gap-3 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-all duration-fast hover:translate-x-0.5 hover:bg-surface-3"
               >
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-ink">
@@ -363,11 +366,11 @@ export function AutomatizacionesClient() {
                   aria-label="Cancelar job"
                   title="Cancelar job"
                   onClick={() => handleCancel(job.id)}
-                  className="shrink-0 rounded-md p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
+                  className="press shrink-0 rounded-md p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                 </button>
-              </li>
+              </Reveal>
             ))}
           </ul>
         )}

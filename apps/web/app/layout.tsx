@@ -29,7 +29,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: KAN_ACCENT_INLINE_SCRIPT }} />
       </head>
-      <body className="min-h-full flex flex-col bg-surface text-ink">{children}</body>
+      <body className="min-h-full flex flex-col bg-surface text-ink">
+        {children}
+      </body>
     </html>
   );
 }

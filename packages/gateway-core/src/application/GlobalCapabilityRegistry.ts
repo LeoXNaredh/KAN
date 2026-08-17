@@ -37,7 +37,13 @@ export class GlobalCapabilityRegistry {
 
   sync(edgeAgentId: string, capabilities: Array<{ deviceId: string; capability: CapabilityDescriptor }>): void {
     const entries = capabilities.map(({ deviceId, capability }) => ({
-      ref: `${sanitize(edgeAgentId.slice(0, 8))}_${sanitize(deviceId)}_${sanitize(capability.name)}`,
+      // Prefijo fijo `c_`: `edgeAgentId.slice(0, 8)` es un pedazo de UUID —
+      // sin esto, cualquier agente cuyo id empezara con un dígito (ej.
+      // "73348d00...") producía un ref que arranca con número, y Gemini
+      // rechaza esos nombres de función ("must start with a letter or an
+      // underscore"). `sanitize()` limpia caracteres inválidos en el medio
+      // pero no garantiza el primer carácter.
+      ref: `c_${sanitize(edgeAgentId.slice(0, 8))}_${sanitize(deviceId)}_${sanitize(capability.name)}`,
       edgeAgentId,
       deviceId,
       capability,

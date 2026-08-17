@@ -22,9 +22,9 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export function Card({ children, padding = "md", interactive = false, className = "", ...rest }: CardProps) {
   return (
     <div
-      className={`glass rounded-2xl border border-line/80 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.55)] ${PADDING[padding]} ${
+      className={`glass hud-panel shadow-[0_20px_50px_-24px_rgba(0,0,0,0.55)] ${PADDING[padding]} ${
         interactive
-          ? "transition-all duration-base hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-[0_24px_60px_-20px_rgba(139,92,246,0.35)]"
+          ? "transition-all duration-base hover:-translate-y-0.5 hover:shadow-[0_24px_60px_-20px_color-mix(in srgb,var(--color-accent) 35%,transparent)]"
           : ""
       } ${className}`}
       {...rest}

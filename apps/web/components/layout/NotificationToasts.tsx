@@ -46,7 +46,7 @@ function Toast({ toast, onDismiss }: { toast: JobNotificationToast; onDismiss: (
         type="button"
         aria-label="Cerrar notificación"
         onClick={() => onDismiss(toast.id)}
-        className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface-3 hover:text-ink"
+        className="press shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface-3 hover:text-ink"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />
       </button>

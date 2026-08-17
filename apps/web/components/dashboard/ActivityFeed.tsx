@@ -1,5 +1,6 @@
 import { Activity } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Reveal } from "@/components/ui/Reveal";
 import type { ActivityEntry } from "@/lib/status/types";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 
@@ -20,14 +21,16 @@ export function ActivityFeed({ activity }: { activity: ActivityEntry[] }) {
         <p className="text-sm text-ink-faint">Sin actividad todavía.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {activity.map((entry) => (
-            <li
+          {activity.map((entry, index) => (
+            <Reveal
               key={entry.id}
-              className="flex items-center justify-between gap-2 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-colors hover:bg-surface-3"
+              as="li"
+              delay={index * 40}
+              className="flex items-center justify-between gap-2 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-all duration-fast hover:translate-x-0.5 hover:bg-surface-3"
             >
               <span className="text-ink">{entry.label}</span>
               <span className="shrink-0 text-xs text-ink-faint">{formatRelativeTime(entry.at)}</span>
-            </li>
+            </Reveal>
           ))}
         </ul>
       )}

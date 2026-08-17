@@ -1,5 +1,6 @@
 import { Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Reveal } from "@/components/ui/Reveal";
 
 export function PluginCard({ plugins }: { plugins: Array<{ id: string; displayName: string }> }) {
   return (
@@ -12,13 +13,15 @@ export function PluginCard({ plugins }: { plugins: Array<{ id: string; displayNa
         <p className="text-sm text-ink-faint">Todavía nada — conectá un dispositivo para desbloquear capacidades.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {plugins.map((plugin) => (
-            <li
+          {plugins.map((plugin, index) => (
+            <Reveal
               key={plugin.id}
-              className="rounded-xl bg-surface-3/70 px-3 py-2 text-sm text-ink transition-colors hover:bg-surface-3"
+              as="li"
+              delay={index * 40}
+              className="rounded-xl bg-surface-3/70 px-3 py-2 text-sm text-ink transition-all duration-fast hover:translate-x-0.5 hover:bg-surface-3"
             >
               {plugin.displayName}
-            </li>
+            </Reveal>
           ))}
         </ul>
       )}

@@ -62,7 +62,7 @@ export function ThemeAccentPicker() {
             aria-checked={isActive}
             title={preset.label}
             onClick={() => select(preset.id)}
-            className={`flex h-11 w-11 items-center justify-center rounded-full border-2 transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+            className={`flex h-11 w-11 items-center justify-center rounded-full border-2 transition-all duration-fast active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
               isActive ? "scale-110 border-ink" : "border-transparent hover:scale-105"
             }`}
             style={{ backgroundColor: preset.hex, boxShadow: isActive ? `0 0 16px 2px ${preset.hex}99` : undefined }}

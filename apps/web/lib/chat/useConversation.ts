@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { translateToolCall, translateToolResult, type ChatStreamEvent, type Conversation } from "@kan/core";
 import { useVoiceInput } from "@/lib/voice/useVoiceInput";
 import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
 import { useLiveSession } from "@/lib/voice/useLiveSession";
 import { readSseStream } from "@/lib/chat/parseSseStream";
 import { toHumanMessage } from "@/lib/errors/toHumanMessage";
+import { emitConversationUpdated } from "@/lib/conversations/events";
 
 export type ChatRole = "user" | "assistant" | "tool";
 
@@ -54,7 +55,7 @@ function fileToBase64(file: File): Promise<string> {
  * compacto del Dashboard); este hook no cambia ningún comportamiento
  * respecto de antes de la extracción.
  */
-export function useConversation() {
+export function useConversation(initialConversationId?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [input, setInput] = useState("");
@@ -63,6 +64,59 @@ export function useConversation() {
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { speak, isSpeaking } = useSpeechSynthesis();
+  // Evita re-hidratar en cada render y distingue "todavía no cargó este id"
+  // de "ya está cargado" — sin esto, cada cambio de referencia del prop
+  // (mismo valor, nueva pasada de render del padre) dispararía un fetch de
+  // nuevo.
+  const loadedConversationIdRef = useRef<string | undefined>(undefined);
+
+  // Chats guardados (sidebar): hidrata desde GET /api/conversations/[id]
+  // cuando `initialConversationId` cambia — `undefined` (ej. "Nueva
+  // conversación") resetea al estado en blanco de siempre, sin pedir nada.
+  useEffect(() => {
+    if (initialConversationId === loadedConversationIdRef.current) return;
+    loadedConversationIdRef.current = initialConversationId;
+
+    // Todo el trabajo (incluido el reset a blanco) va dentro del callback
+    // async, nunca directo en el cuerpo del efecto — mismo criterio que
+    // useSystemStatus.ts/TopBar.tsx (react-hooks/set-state-in-effect): un
+    // efecto "suscribe y llama setState en un callback", no llama setState
+    // de forma síncrona en su cuerpo.
+    let cancelled = false;
+    (async () => {
+      if (!initialConversationId) {
+        if (!cancelled) {
+          setMessages([]);
+          setConversationId(undefined);
+          setError(null);
+        }
+        return;
+      }
+
+      if (!cancelled) setError(null);
+      try {
+        const response = await fetch(`/api/conversations/${encodeURIComponent(initialConversationId)}`);
+        if (!response.ok) throw new Error("No se pudo cargar la conversación.");
+        const data = (await response.json()) as { conversation?: Conversation };
+        if (cancelled || !data.conversation) return;
+        setMessages(
+          data.conversation.messages.map((m) => ({
+            role: m.role as ChatRole,
+            content: m.content,
+            toolCall: m.toolCall,
+            image: m.image,
+          })),
+        );
+        setConversationId(data.conversation.id);
+      } catch (err) {
+        if (!cancelled) setError(toHumanMessage(err instanceof Error ? err.message : undefined));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialConversationId]);
 
   const sendMessage = useCallback(
     async (userMessage: string, options?: { viaVoice?: boolean }) => {
@@ -114,6 +168,10 @@ export function useConversation() {
         if (!finalConversation) throw new Error("El servidor cerró la conexión sin una respuesta final.");
 
         setConversationId(finalConversation.id);
+        // El sidebar deriva el título de este primer mensaje (ver
+        // `deriveConversationTitle`) — sin este aviso, "Conversación sin
+        // título" quedaría ahí hasta el próximo poll de 15s.
+        emitConversationUpdated();
 
         const newMessages: ChatMessage[] = finalConversation.messages
           .slice(preSubmitCount + 1)

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Reveal } from "@/components/ui/Reveal";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import { setPluginConfigAction } from "@/lib/pluginConfig/actions";
 import { PLUGIN_CONFIG_SCHEMA, type PluginConfigField } from "@/lib/pluginConfig/schema";
@@ -91,9 +92,11 @@ function ListField({ field, value }: { field: PluginConfigField; value: string }
       ) : (
         <ul className="flex flex-col gap-1.5">
           {entries.map((entry, index) => (
-            <li
+            <Reveal
               key={index}
-              className="flex items-center justify-between gap-2 rounded-lg bg-surface-3/70 px-3 py-1.5 text-sm transition-colors hover:bg-surface-3"
+              as="li"
+              delay={index * 40}
+              className="flex items-center justify-between gap-2 rounded-lg bg-surface-3/70 px-3 py-1.5 text-sm transition-all duration-fast hover:translate-x-0.5 hover:bg-surface-3"
             >
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">{entry}</span>
               <div className="flex shrink-0 items-center gap-1">
@@ -104,7 +107,7 @@ function ListField({ field, value }: { field: PluginConfigField; value: string }
                     setDraft(entry);
                   }}
                   aria-label={`Editar ${entry}`}
-                  className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
+                  className="press rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
                 >
                   <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -114,13 +117,13 @@ function ListField({ field, value }: { field: PluginConfigField; value: string }
                   <button
                     type="submit"
                     aria-label={`Eliminar ${entry}`}
-                    className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
+                    className="press rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </form>
               </div>
-            </li>
+            </Reveal>
           ))}
         </ul>
       )}

@@ -33,7 +33,7 @@ export function LiveVoiceButton({ status, onClick }: { status: LiveSessionStatus
       disabled={status === "connecting"}
       aria-label={LABEL[status]}
       title={LABEL[status]}
-      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 ${
+      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all duration-fast active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 disabled:active:scale-100 ${
         status === "active"
           ? "bg-danger/15 text-danger shadow-[0_0_16px_-4px_var(--color-danger)]"
           : status === "error"

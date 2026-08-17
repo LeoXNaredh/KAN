@@ -13,7 +13,7 @@ export function SummaryCard({
   hint: string;
 }) {
   return (
-    <Card interactive className="fade-in flex items-start gap-3">
+    <Card interactive className="flex items-start gap-3">
       <div className="bg-gradient-accent-soft flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
         <Icon className="h-5 w-5 text-accent" aria-hidden="true" />
       </div>

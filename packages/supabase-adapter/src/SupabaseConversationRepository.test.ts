@@ -187,4 +187,48 @@ describe("SupabaseConversationRepository", () => {
       repo.save({ id: "c1", createdAt: "x", updatedAt: "x", messages: [] }),
     ).rejects.toThrow("fila inválida");
   });
+
+  it("listRecent() devuelve [] sin consultar mensajes si el usuario no tiene conversaciones", async () => {
+    const client = createFakeFromClient({
+      conversations: { data: [], error: null },
+    });
+    const repo = new SupabaseConversationRepository(client, "u1");
+
+    expect(await repo.listRecent(5)).toEqual([]);
+  });
+
+  it("listRecent() deriva el título de la primera línea del primer mensaje user de cada conversación", async () => {
+    const client = createFakeFromClient({
+      conversations: {
+        data: [
+          { id: "c1", updated_at: "2026-01-02T00:00:00.000Z" },
+          { id: "c2", updated_at: "2026-01-01T00:00:00.000Z" },
+        ],
+        error: null,
+      },
+      messages: {
+        data: [
+          { conversation_id: "c1", content: "¿cómo prendo la impresora?\nsegunda línea", created_at: "2026-01-01T00:01:00.000Z" },
+          { conversation_id: "c2", content: "hola", created_at: "2026-01-01T00:00:30.000Z" },
+        ],
+        error: null,
+      },
+    });
+    const repo = new SupabaseConversationRepository(client, "u1");
+
+    expect(await repo.listRecent(5)).toEqual([
+      { id: "c1", title: "¿cómo prendo la impresora?", updatedAt: "2026-01-02T00:00:00.000Z" },
+      { id: "c2", title: "hola", updatedAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+  });
+
+  it("listRecent() usa el título por defecto si una conversación no tiene mensajes user todavía", async () => {
+    const client = createFakeFromClient({
+      conversations: { data: [{ id: "c1", updated_at: "2026-01-01T00:00:00.000Z" }], error: null },
+      messages: { data: [], error: null },
+    });
+    const repo = new SupabaseConversationRepository(client, "u1");
+
+    expect(await repo.listRecent(5)).toEqual([{ id: "c1", title: "Conversación sin título", updatedAt: "2026-01-01T00:00:00.000Z" }]);
+  });
 });

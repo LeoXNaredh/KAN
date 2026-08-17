@@ -47,7 +47,7 @@ function useClock(): Date | null {
 
 function overallConnection(status: SystemStatusResponse | null): { level: StatusLevel; label: string } {
   if (!status) return { level: "offline", label: "Verificando…" };
-  if (status.gateway === "offline") return { level: "offline", label: "Fuera de línea" };
+  if (status.gateway === "offline") return { level: "offline", label: "KAN fuera de línea" };
   const anyAgentOnline = status.edgeAgents.some((agent) => agent.status === "online");
   if (!anyAgentOnline) return { level: "warning", label: "Sin dispositivos" };
   return { level: "online", label: "Todo en línea" };
@@ -67,7 +67,7 @@ export function TopBar({ onOpenMenu, user }: { onOpenMenu: () => void; user: Use
           type="button"
           onClick={onOpenMenu}
           aria-label="Abrir navegación"
-          className="rounded-lg p-2 text-ink-muted hover:bg-surface-3 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:hidden"
+          className="press rounded-lg p-2 text-ink-muted transition-colors hover:bg-surface-3 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:hidden"
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
@@ -89,12 +89,14 @@ export function TopBar({ onOpenMenu, user }: { onOpenMenu: () => void; user: Use
         <StatusDot level={connection.level} label={connection.label} />
         {user && (
           <div className="flex items-center gap-2 border-l border-line pl-4">
-            <span className="hidden text-sm text-ink-muted sm:inline">{user.email}</span>
+            <span className="hidden max-w-[160px] truncate text-sm text-ink-muted sm:inline" title={user.email}>
+              {user.email}
+            </span>
             <form action={signOutAction}>
               <button
                 type="submit"
                 aria-label="Cerrar sesión"
-                className="rounded-lg p-2 text-ink-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                className="press rounded-lg p-2 text-ink-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <LogOut className="h-4 w-4" aria-hidden="true" />
               </button>

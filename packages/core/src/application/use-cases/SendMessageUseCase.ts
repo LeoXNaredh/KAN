@@ -8,6 +8,7 @@ import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
 import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
 import type { SessionContextPort } from "../../domain/ports/SessionContextPort";
 import { MEMORY_TOOL_DESCRIPTORS, isMemoryToolName, executeMemoryTool } from "../memoryTools";
+import { deviceDisplayNameMemoryKey } from "../deviceNaming";
 import { SESSION_CONTEXT_TOOL_DESCRIPTORS, isSessionContextToolName, executeSessionContextTool } from "../sessionContextTools";
 import { translateToolResult } from "../translateToolCall";
 
@@ -34,7 +35,14 @@ const SYSTEM_PROMPT =
   "la acción, decíselo con naturalidad (\"esto necesita que lo confirmes antes de hacerlo\"), sin " +
   "mencionar de qué sistema viene esa confirmación. Si algo falla o no podés hacerlo, explicá el " +
   "motivo en términos simples — nunca un error técnico crudo — y si podés, sugerí una alternativa. " +
-  "Cuando te falte información para actuar con confianza, preguntá antes de asumir.";
+  "Cuando te falte información para actuar con confianza, preguntá antes de asumir.\n\n" +
+  "Cuando en la conversación aparezca el nombre técnico de un dispositivo (ej. \"HC-02\", \"COM3\", " +
+  "\"ttyUSB0\", una dirección MAC, un ID de serie) y no tengas ya guardado un nombre personalizado " +
+  `para él (revisá las memorias de categoría "dispositivos" con clave "${deviceDisplayNameMemoryKey("<nombre técnico exacto>")}"), ` +
+  "preguntale al usuario cómo prefiere llamarlo antes de seguir usando ese nombre técnico. Guardá su " +
+  `respuesta con kan_set_memory (categoría "dispositivos", clave "${deviceDisplayNameMemoryKey("")}" + el nombre técnico ` +
+  "EXACTO tal como aparece — sin normalizarlo ni traducirlo —, valor el nombre elegido) y a partir de " +
+  "ahí referite siempre a ese dispositivo por su nombre personalizado, nunca por el técnico.";
 
 const MAX_TOOL_ROUNDS = 4;
 // Límite superior de duración total del intercambio de tools (no de cada

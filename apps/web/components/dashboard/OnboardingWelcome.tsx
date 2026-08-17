@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MessageSquareText, Cpu, Mic } from "lucide-react";
 import { Card } from "@/components/ui/Card";
+import { Reveal } from "@/components/ui/Reveal";
 
 const STEPS = [
   {
@@ -47,9 +48,10 @@ export function OnboardingWelcome({ displayName }: { displayName: string | undef
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {STEPS.map((step, index) => (
-          <div
+          <Reveal
             key={step.title}
-            className="flex flex-col gap-2 rounded-xl border border-line/60 bg-surface-3/60 p-3 transition-colors hover:border-accent/40 hover:bg-surface-3"
+            delay={index * 60}
+            className="flex flex-col gap-2 rounded-xl border border-line/60 bg-surface-3/60 p-3 transition-all duration-fast hover:-translate-y-0.5 hover:border-accent/40 hover:bg-surface-3"
           >
             <div className="flex items-center gap-2">
               <span className="bg-gradient-accent flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white">
@@ -59,10 +61,10 @@ export function OnboardingWelcome({ displayName }: { displayName: string | undef
             </div>
             <p className="text-sm font-medium text-ink">{step.title}</p>
             <p className="flex-1 text-xs text-ink-faint">{step.body}</p>
-            <Link href={step.href} className="text-xs font-medium text-accent hover:underline">
+            <Link href={step.href} className="press text-xs font-medium text-accent hover:underline">
               {step.cta} →
             </Link>
-          </div>
+          </Reveal>
         ))}
       </div>
     </Card>

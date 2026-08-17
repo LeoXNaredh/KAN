@@ -26,7 +26,7 @@ export function VoiceButton({ status, onClick }: { status: VoiceInputStatus; onC
       disabled={status === "transcribing"}
       aria-label={LABEL[status]}
       title={LABEL[status]}
-      className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+      className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full transition-transform duration-fast active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 disabled:active:scale-100"
     >
       {status === "recording" && (
         <>

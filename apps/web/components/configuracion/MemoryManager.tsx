@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { MEMORY_CATEGORIES, type MemoryEntry } from "@kan/core";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
+import { Reveal } from "@/components/ui/Reveal";
 import { addMemoryAction, removeMemoryAction } from "@/lib/memory/actions";
 
 interface EditingState {
@@ -33,10 +34,12 @@ export function MemoryManager({ memories }: { memories: MemoryEntry[] }) {
         <p className="text-sm text-ink-faint">Sin memorias guardadas todavía.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {memories.map((memory) => (
-            <li
+          {memories.map((memory, index) => (
+            <Reveal
               key={`${memory.category}:${memory.key}`}
-              className="flex items-center justify-between gap-3 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-colors hover:bg-surface-3"
+              as="li"
+              delay={index * 40}
+              className="flex items-center justify-between gap-3 rounded-xl bg-surface-3/70 px-3 py-2 text-sm transition-all duration-fast hover:translate-x-0.5 hover:bg-surface-3"
             >
               <div className="min-w-0">
                 <span className="mr-2 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-accent uppercase">
@@ -50,7 +53,7 @@ export function MemoryManager({ memories }: { memories: MemoryEntry[] }) {
                   type="button"
                   onClick={() => setEditing({ category: memory.category, key: memory.key, value: String(memory.value) })}
                   aria-label={`Editar memoria ${memory.key}`}
-                  className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
+                  className="press rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
                 >
                   <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
@@ -60,13 +63,13 @@ export function MemoryManager({ memories }: { memories: MemoryEntry[] }) {
                   <button
                     type="submit"
                     aria-label={`Eliminar memoria ${memory.key}`}
-                    className="rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
+                    className="press rounded-lg p-1.5 text-ink-faint transition-colors hover:bg-danger/10 hover:text-danger"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </form>
               </div>
-            </li>
+            </Reveal>
           ))}
         </ul>
       )}

@@ -39,6 +39,15 @@ export function KANAvatar({
       aria-label={`KAN — ${ACTIVITY_LABEL[activity]}`}
       className={`relative flex shrink-0 items-center justify-center ${SIZE_CLASSES[size]} ${className}`}
     >
+      {/* Nebulosa — capa exterior extra, mucho más ancha y suave que el halo de abajo, para que el glow se disuelva gradualmente en vez de cortar en un borde de blur visible. */}
+      <span
+        aria-hidden="true"
+        className="absolute -inset-16 rounded-full blur-[80px] transition-opacity duration-base sm:-inset-24"
+        style={{
+          background: "radial-gradient(circle, var(--color-accent), transparent 85%)",
+          opacity: activity === "idle" ? 0.14 : activity === "thinking" ? 0.18 : 0.24,
+        }}
+      />
       {/* Halo — glow ambiental intenso y difuso, se extiende MÁS ALLÁ del propio borde del avatar (inset negativo), no contenido adentro. Más intenso en listening/speaking. */}
       <span
         aria-hidden="true"
@@ -48,16 +57,23 @@ export function KANAvatar({
           opacity: activity === "idle" ? 0.35 : activity === "thinking" ? 0.45 : 0.6,
         }}
       />
-      {/* Anillo de base — circunferencia continua, tenue, sobre la que "se asientan" los segmentos brillantes de abajo: sin esto, los segmentos leen como puntos sueltos en vez de un anillo real con gaps. */}
+      {/* Segundo anillo, exterior al de base — más tenue, más grande, gira mucho más lento (kan-ring-outer, 70s) para dar profundidad. */}
+      <span aria-hidden="true" className="kan-ring-outer absolute -inset-3 rounded-full opacity-70" />
+      {/* Anillo de base — circunferencia continua */}
       <span
         aria-hidden="true"
         className="absolute inset-0 rounded-full"
-        style={{ border: "1.5px solid color-mix(in srgb, var(--color-accent) 30%, transparent)" }}
+        style={{ border: "1.5px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}
       />
-      {/* Anillo angular exterior — segmentos brillantes con gaps amplios (referencia JARVIS), girando sobre el anillo de base. Más rápido mientras escucha. */}
+      {/* Anillo angular exterior */}
       <span
         aria-hidden="true"
         className={`kan-ring absolute inset-0 rounded-full ${activity === "listening" ? "kan-ring-fast" : ""}`}
+      />
+      {/* Anillo interior invertido (HUD) */}
+      <span
+        aria-hidden="true"
+        className="kan-ring-inner absolute inset-2 rounded-full opacity-60"
       />
       {/* Grilla HUD tipo mira — círculo concéntrico + cruz, muy sutil, puramente decorativo. */}
       <span
@@ -75,18 +91,20 @@ export function KANAvatar({
           `,
         }}
       />
-      {/* Núcleo — vidrio translúcido, no un disco sólido: fill semi-transparente + blur + borde fino, la parte que respira. "KAN" legible en el centro. */}
+      {/* Núcleo — vidrio translúcido */}
       <span
         aria-hidden="true"
-        className={`relative flex items-center justify-center rounded-full backdrop-blur-md ${size === "lg" ? "h-[58%] w-[58%]" : "h-[54%] w-[54%]"} ${CORE_ANIMATION[activity]}`}
+        className={`relative overflow-hidden flex items-center justify-center rounded-full backdrop-blur-md ${size === "lg" ? "h-[58%] w-[58%]" : "h-[54%] w-[54%]"} ${CORE_ANIMATION[activity]}`}
         style={{
-          background: "color-mix(in srgb, var(--color-accent) 38%, transparent)",
-          border: "1px solid color-mix(in srgb, var(--color-accent) 70%, transparent)",
+          background: "color-mix(in srgb, var(--color-accent) 20%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--color-accent) 60%, transparent)",
           boxShadow: "var(--glow-accent)",
         }}
       >
+        <span className="hud-scanline" />
         <span
-          className={`font-mono font-bold tracking-[0.2em] text-ink ${size === "lg" ? "text-lg sm:text-xl" : "text-[10px]"}`}
+          className={`font-mono font-bold tracking-[0.2em] text-ink z-10 ${size === "lg" ? "text-lg sm:text-xl" : "text-[10px]"}`}
+          style={{ textShadow: "0 0 10px var(--color-accent)" }}
         >
           KAN
         </span>

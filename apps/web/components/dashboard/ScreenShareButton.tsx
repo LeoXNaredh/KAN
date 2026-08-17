@@ -19,7 +19,7 @@ export function ScreenShareButton({ sharing, onClick }: { sharing: boolean; onCl
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all duration-fast active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
         sharing
           ? "bg-accent/15 text-accent shadow-[0_0_16px_-4px_var(--color-accent)] hover:bg-accent/25"
           : "text-ink-faint hover:bg-surface-3/80 hover:text-ink-muted"

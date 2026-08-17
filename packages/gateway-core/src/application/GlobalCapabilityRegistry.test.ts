@@ -33,6 +33,14 @@ describe("GlobalCapabilityRegistry", () => {
     expect(entry.ref).toMatch(/^[a-zA-Z0-9_-]+$/);
   });
 
+  it("el ref nunca empieza con un dígito, aunque el edgeAgentId (UUID) empiece con uno — Gemini rechaza nombres de función así", () => {
+    const registry = new GlobalCapabilityRegistry(new GatewayBus());
+    registry.sync("73348d00-1cbb-41d8-bf1c-5365bfe6d960", [{ deviceId: "simulator-1", capability: CAP }]);
+
+    const [entry] = registry.list();
+    expect(entry.ref).toMatch(/^[a-zA-Z_]/);
+  });
+
   it("dos agentes distintos con la misma capability no colisionan (refs distintos)", () => {
     const registry = new GlobalCapabilityRegistry(new GatewayBus());
     registry.sync("agent-aaaaaaaa", [{ deviceId: "simulator-1", capability: CAP }]);

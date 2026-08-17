@@ -114,6 +114,10 @@
   --duration-slow: 500ms;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   position: relative;
   min-height: 100dvh;
@@ -230,9 +234,38 @@ body::after {
 }
 
 .glass {
-  background: color-mix(in srgb, var(--color-surface-2) 72%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: color-mix(in srgb, var(--color-surface-2) 40%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+/* 
+ * HUD Geometry (JARVIS style)
+ * Esquinas cortadas (chamfered) para paneles y tarjetas 
+ */
+.hud-panel {
+  clip-path: polygon(
+    16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px
+  );
+  position: relative;
+}
+
+.hud-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  clip-path: polygon(
+    16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px
+  );
+}
+
+.hud-button {
+  clip-path: polygon(
+    8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px
+  );
 }
 
 .glow-accent {
@@ -307,26 +340,71 @@ body::after {
 /* Anillo angular (geometría maya, sin librería SVG): repeating-conic-gradient
    recortado a un anillo delgado con mask — segmentos, no un borde continuo. */
 @keyframes kan-ring-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes kan-ring-spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes hud-scan {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 0.5; }
+  90% { opacity: 0.5; }
+  100% { transform: translateY(100%); opacity: 0; }
 }
 
 .kan-ring {
   background: repeating-conic-gradient(
-    var(--color-accent) 0deg 3deg,
-    transparent 3deg 21deg
+    var(--color-accent) 0deg 2deg,
+    transparent 2deg 18deg
   );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), black calc(100% - 5px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), black calc(100% - 5px));
-  animation: kan-ring-spin 18s linear infinite;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 3px));
+  animation: kan-ring-spin 40s linear infinite;
+}
+
+.kan-ring-inner {
+  background: repeating-conic-gradient(
+    color-mix(in srgb, var(--color-accent) 70%, transparent) 0deg 4deg,
+    transparent 4deg 30deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), black calc(100% - 6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 6px), black calc(100% - 6px));
+  animation: kan-ring-spin-reverse 26s linear infinite;
+}
+
+/*
+ * Segundo anillo, exterior al anillo de base (inset negativo respecto del
+ * borde del avatar) — mismo mecanismo que `.kan-ring` pero más grande, más
+ * tenue y aún más lento, para dar sensación de profundidad (dos capas
+ * girando a ritmos distintos) sin competir visualmente con el anillo
+ * principal.
+ */
+.kan-ring-outer {
+  background: repeating-conic-gradient(
+    color-mix(in srgb, var(--color-accent) 55%, transparent) 0deg 1.5deg,
+    transparent 1.5deg 26deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
+  animation: kan-ring-spin 70s linear infinite;
 }
 
 .kan-ring-fast {
-  animation-duration: 4s;
+  animation-duration: 3s;
+}
+
+.hud-scanline {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent, var(--color-accent), transparent);
+  height: 20%;
+  width: 100%;
+  opacity: 0;
+  animation: hud-scan 2s linear infinite;
 }
 
 .kan-core-idle {
@@ -371,4 +449,196 @@ body::after {
     linear-gradient(color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px);
   background-size: 42px 42px;
+}
+
+/*
+ * Scrollbar delgada del color del acento (Sidebar/paneles de chat) — el
+ * scrollbar del navegador por defecto (blanco, ancho) desentona con el resto
+ * del HUD. Transparente en reposo, visible recién al pasar el mouse por
+ * encima del contenedor: el contenido scrolleable no necesita gritar "acá
+ * hay más" todo el tiempo, solo cuando el usuario ya está interactuando.
+ */
+.kan-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.kan-scroll:hover {
+  scrollbar-color: color-mix(in srgb, var(--color-accent) 45%, transparent) transparent;
+}
+
+.kan-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.kan-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kan-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.kan-scroll:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+.kan-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-accent) 70%, transparent);
+}
+
+/*
+ * Scroll-reveal (componente `Reveal`, components/ui/Reveal.tsx) — el
+ * elemento arranca invisible/desplazado y un IntersectionObserver agrega
+ * `.reveal-visible` la primera vez que entra al viewport (una sola vez, no
+ * se repite en cada scroll — evita distraer en listas largas como logs o
+ * jobs). `delay` (prop del componente, en ms) escalona filas consecutivas
+ * vía `animation-delay` inline.
+ */
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+.reveal-visible {
+  animation: reveal-up var(--duration-base) cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * Feedback de presión para botones solo-ícono (Trash2/Pencil/X/Menu/etc.) —
+ * ya existe en los botones primarios vía PRIMARY_BUTTON_CLASSES
+ * (active:scale-[0.98]), esto extiende el mismo criterio táctil a los
+ * secundarios que antes solo cambiaban de color al hover, sin nada al click.
+ */
+.press {
+  transition:
+    transform var(--duration-fast) cubic-bezier(0.16, 1, 0.3, 1),
+    background-color var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.press:active {
+  transform: scale(0.95);
+}
+
+/*
+ * Boot sequence (BootSequence.tsx, ShellChrome.tsx) — secuencia de arranque
+ * cinematográfica, una sola vez por sesión de browser (sessionStorage).
+ * Todo el timing vive en CSS (`animation-delay`), no en JS: el componente
+ * solo dispara dos callbacks (paneles/fin) con `setTimeout`, coordinados con
+ * estos mismos delays a mano — ver comentario en BootSequence.tsx.
+ */
+@keyframes kan-boot-letter {
+  0% {
+    opacity: 0;
+    transform: translateX(-4px) skewX(-8deg);
+    filter: blur(4px);
+    text-shadow: none;
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(2px) skewX(4deg);
+    filter: blur(1px);
+    text-shadow:
+      2px 0 var(--color-accent),
+      -2px 0 var(--color-danger);
+  }
+  30% {
+    opacity: 0.35;
+    transform: translateX(-2px) skewX(-2deg);
+  }
+  45% {
+    opacity: 1;
+    transform: translateX(1px) skewX(1deg);
+    text-shadow:
+      -1px 0 var(--color-accent),
+      1px 0 var(--color-danger);
+  }
+  60% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    text-shadow: 0 0 22px color-mix(in srgb, var(--color-accent) 65%, transparent);
+  }
+}
+
+.kan-boot-letter {
+  display: inline-block;
+  opacity: 0;
+  animation: kan-boot-letter 340ms steps(6, end) both;
+}
+
+@keyframes kan-boot-avatar-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+    filter: blur(12px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.kan-boot-avatar {
+  animation: kan-boot-avatar-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes kan-boot-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.kan-boot-overlay {
+  animation: kan-boot-overlay-out 900ms ease-in both;
+  animation-delay: 1300ms;
+}
+
+/*
+ * Respeta `prefers-reduced-motion` a nivel global — las animaciones de
+ * arriba (aurora, glow, avatar, reveal, press, etc.) son deliberadamente
+ * marcadas/perceptibles (pedido explícito del rediseño), así que quien pide
+ * menos movimiento al sistema operativo las recibe casi instantáneas en vez
+ * de desactivarlas a mitad de camino de forma inconsistente.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
 }

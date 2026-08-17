@@ -90,7 +90,7 @@ export function KANHome({
               href={item.href}
               title={item.label}
               aria-label={item.label}
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-ink-faint transition-colors duration-fast hover:bg-surface-3 hover:text-accent"
+              className="press flex h-9 w-9 items-center justify-center rounded-xl text-ink-faint transition-colors duration-fast hover:bg-surface-3 hover:text-accent"
             >
               <item.icon className="h-4 w-4" aria-hidden="true" />
             </Link>
@@ -99,7 +99,7 @@ export function KANHome({
       }
       panel={
         <div className="flex h-full flex-col gap-4">
-          <div className="glass fade-in flex min-h-[20rem] flex-1 flex-col gap-4 overflow-y-auto rounded-2xl border border-line/80 p-4">
+          <div className="kan-scroll glass fade-in flex min-h-[20rem] flex-1 flex-col gap-4 overflow-y-auto rounded-2xl border border-line/80 p-4">
             {conv.messages.map((message, index) => (
               <MessageBubble key={index} message={message} />
             ))}
@@ -156,7 +156,7 @@ export function KANHome({
               title="Adjuntar imagen"
               onClick={() => fileInputRef.current?.click()}
               disabled={conv.isSending}
-              className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-ink-faint transition-colors duration-fast hover:bg-surface-3 hover:text-ink-muted disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="flex h-8 shrink-0 items-center gap-1.5 px-4 hud-button border border-transparent text-xs font-medium text-ink-faint transition-all duration-fast hover:border-accent/40 hover:bg-accent/10 hover:text-accent active:scale-95 disabled:opacity-50 disabled:active:scale-100"
             >
               <ImagePlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span>Imagen</span>
@@ -172,7 +172,7 @@ export function KANHome({
                   type="button"
                   aria-label="Quitar imagen"
                   onClick={() => conv.setPendingImage(null)}
-                  className="rounded p-0.5 text-ink-faint hover:text-ink"
+                  className="press rounded p-0.5 text-ink-faint transition-colors hover:text-ink"
                 >
                   <X className="h-3 w-3" aria-hidden="true" />
                 </button>
@@ -185,8 +185,8 @@ export function KANHome({
               onClick={conv.voice.status === "recording" ? conv.voice.stop : conv.voice.start}
             />
             <input
-              className="glass h-14 flex-1 rounded-full border border-line/80 px-5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-accent/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              placeholder="Habla o escribe con KAN…"
+              className="glass hud-panel h-14 flex-1 px-5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-accent/70"
+              placeholder="Iniciando enlace de datos. Habla o escribe con KAN…"
               value={conv.input}
               onChange={(event) => conv.setInput(event.target.value)}
               disabled={conv.isSending}
@@ -194,7 +194,7 @@ export function KANHome({
             <button
               type="submit"
               aria-label="Enviar mensaje"
-              className="bg-gradient-accent glow-accent-sm flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white transition-all duration-fast hover:scale-105 hover:brightness-110 disabled:opacity-50 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="bg-gradient-accent glow-accent-sm flex h-14 w-16 shrink-0 items-center justify-center hud-button text-white transition-all duration-fast hover:scale-105 hover:brightness-110 disabled:opacity-50 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               disabled={conv.isSending || !conv.input.trim()}
             >
               <Send className="h-5 w-5" aria-hidden="true" />

@@ -16,7 +16,16 @@ import { useConversation, type ChatMessage } from "@/lib/chat/useConversation";
  * `useConversation` (compartida con `KANHome`, el nuevo layout de 3
  * estados) — este componente es puramente presentación sobre ese hook.
  */
-export function ConversationPanel({ compact = false, framed = true }: { compact?: boolean; framed?: boolean }) {
+export function ConversationPanel({
+  compact = false,
+  framed = true,
+  initialConversationId,
+}: {
+  compact?: boolean;
+  framed?: boolean;
+  /** Chat guardado a reabrir (sidebar) — ver useConversation(). */
+  initialConversationId?: string;
+}) {
   const {
     messages,
     input,
@@ -31,7 +40,7 @@ export function ConversationPanel({ compact = false, framed = true }: { compact?
     live,
     sendMessage,
     selectImage,
-  } = useConversation();
+  } = useConversation(initialConversationId);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleImageSelect(event: ChangeEvent<HTMLInputElement>) {
@@ -54,7 +63,7 @@ export function ConversationPanel({ compact = false, framed = true }: { compact?
   return (
     <Wrapper className={wrapperClassName}>
       <div
-        className={`flex flex-1 flex-col gap-4 overflow-y-auto ${compact ? "min-h-[16rem]" : "min-h-[24rem]"}`}
+        className={`kan-scroll flex flex-1 flex-col gap-4 overflow-y-auto ${compact ? "min-h-[16rem]" : "min-h-[24rem]"}`}
       >
         {messages.length === 0 && (
           <p className="text-sm text-ink-faint">Escribí un mensaje o tocá el micrófono para empezar.</p>
@@ -105,7 +114,7 @@ export function ConversationPanel({ compact = false, framed = true }: { compact?
             type="button"
             aria-label="Quitar imagen"
             onClick={() => setPendingImage(null)}
-            className="rounded p-1 text-ink-faint hover:bg-surface-2 hover:text-ink"
+            className="press rounded p-1 text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -134,7 +143,7 @@ export function ConversationPanel({ compact = false, framed = true }: { compact?
             title="Adjuntar imagen"
             onClick={() => fileInputRef.current?.click()}
             disabled={isSending}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-ink-faint transition-colors duration-fast hover:bg-surface-3 hover:text-ink-muted disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-ink-faint transition-all duration-fast hover:bg-surface-3 hover:text-ink-muted active:scale-95 disabled:opacity-50 disabled:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             <ImagePlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span>Imagen</span>

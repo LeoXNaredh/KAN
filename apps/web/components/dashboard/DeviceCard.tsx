@@ -16,7 +16,7 @@ export function DeviceCard({
     <Card
       padding="sm"
       interactive
-      className={`fade-in flex items-center gap-3 ${connected ? "border-success/40 bg-success/5" : ""}`}
+      className={`flex items-center gap-3 ${connected ? "border-success/40 bg-success/5" : ""}`}
       style={connected ? { boxShadow: "0 0 24px -12px var(--color-success)" } : undefined}
     >
       <Icon className={`h-6 w-6 shrink-0 ${connected ? "text-success" : "text-ink-faint"}`} aria-hidden="true" />

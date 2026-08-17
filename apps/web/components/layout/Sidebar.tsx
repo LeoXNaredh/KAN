@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect } from "react";
-import { MessageSquareText, Home, Cpu, Workflow, FolderKanban, Settings, type LucideIcon } from "lucide-react";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { Fragment, Suspense, useEffect, useState } from "react";
+import { MessageSquareText, Home, Cpu, Workflow, FolderKanban, Settings, Plus, Trash2, Edit2, Check, X, type LucideIcon } from "lucide-react";
 import { KANMark } from "@/components/kan/KANMark";
+import { useRecentConversations } from "@/lib/conversations/useRecentConversations";
+import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 
 // Orden por frecuencia de uso (rediseño de interfaz): la conversación es el
 // modo primario de KAN, va primero. "Logs" sale del nivel superior — es
@@ -19,7 +21,18 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: "/configuracion", label: "Configuración", icon: Settings },
 ];
 
-export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+const RECENT_CONVERSATIONS_LIMIT = 5;
+
+export function Sidebar({
+  open,
+  onClose,
+  entering = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Boot sequence (BootSequence.tsx): mientras es true, el sidebar se mantiene oculto en cualquier viewport, sin importar `open`. */
+  entering?: boolean;
+}) {
   const pathname = usePathname();
 
   useEffect(() => {
@@ -30,6 +43,15 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
+
+  // Oculto durante el boot en cualquier breakpoint; fuera de eso, el
+  // comportamiento de siempre (drawer en mobile via `open`, siempre visible
+  // en desktop).
+  const transformClasses = entering
+    ? "-translate-x-full md:-translate-x-full"
+    : open
+      ? "translate-x-0 md:translate-x-0"
+      : "-translate-x-full md:translate-x-0";
 
   return (
     <>
@@ -44,12 +66,10 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       <aside
         aria-modal={open ? true : undefined}
         role={open ? "dialog" : undefined}
-        className={`glass kan-grid-bg fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 border-r border-line/80 p-4 transition-transform duration-base md:static md:z-auto md:w-60 md:translate-x-0 ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`glass hud-panel fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 p-4 transition-transform duration-base md:static md:z-auto md:w-60 md:m-4 md:h-[calc(100vh-32px)] ${transformClasses}`}
       >
         <div className="mb-6 flex items-center gap-2.5 px-2">
-          <span className="bg-gradient-accent glow-accent-sm animate-glow-pulse flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white">
+          <span className="bg-gradient-accent glow-accent-sm animate-glow-pulse hud-button flex h-9 w-9 shrink-0 items-center justify-center text-white">
             <KANMark className="h-4 w-4" />
           </span>
           <div className="min-w-0 leading-tight">
@@ -57,29 +77,191 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             <p className="text-[10px] tracking-wide text-ink-faint uppercase">Asistente</p>
           </div>
         </div>
-        <nav aria-label="Principal" className="flex flex-1 flex-col gap-1">
+        <nav aria-label="Principal" className="kan-scroll flex flex-1 flex-col gap-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-2.5 rounded-xl border px-3 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                  active
-                    ? "border-accent/30 bg-accent/10 text-accent"
-                    : "border-transparent text-ink-muted hover:translate-x-0.5 hover:bg-surface-3 hover:text-ink"
-                }`}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {item.label}
-              </Link>
+              <Fragment key={item.href}>
+                <Link
+                  href={item.href}
+                  onClick={onClose}
+                  aria-current={active ? "page" : undefined}
+                  className={`press hud-button flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                    active
+                      ? "bg-accent/20 text-accent border border-accent/50"
+                      : "border border-transparent text-ink-muted hover:translate-x-0.5 hover:bg-accent/10 hover:border-accent/30 hover:text-accent"
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {item.label}
+                </Link>
+                {item.href === "/conversacion" && (
+                  <Suspense fallback={null}>
+                    <RecentConversations onNavigate={onClose} />
+                  </Suspense>
+                )}
+              </Fragment>
             );
           })}
         </nav>
       </aside>
     </>
+  );
+}
+
+/**
+ * Chats guardados (debajo de "Conversación", mismo criterio que
+ * Claude/ChatGPT) — últimas `RECENT_CONVERSATIONS_LIMIT`, con "Nueva
+ * conversación" siempre arriba de la lista. Sin sesión o sin chats
+ * todavía, `conversations` llega vacío y esto no renderiza nada extra.
+ */
+function RecentConversations({ onNavigate }: { onNavigate: () => void }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const activeId = pathname === "/conversacion" ? (searchParams.get("c") ?? undefined) : undefined;
+  const { conversations, refresh } = useRecentConversations(RECENT_CONVERSATIONS_LIMIT);
+
+  return (
+    <div className="mb-1 flex flex-col gap-0.5 pl-4">
+      <Link
+        href="/conversacion"
+        onClick={onNavigate}
+        className={`press hud-button flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-all duration-fast border hover:translate-x-0.5 hover:bg-accent/10 hover:border-accent/30 hover:text-accent ${
+          activeId ? "border-transparent text-ink-faint" : "border-accent/50 bg-accent/20 text-accent"
+        }`}
+      >
+        <Plus className="h-3 w-3 shrink-0" aria-hidden="true" />
+        Nueva conversación
+      </Link>
+      {conversations.map((conversation) => (
+        <ConversationItem
+          key={conversation.id}
+          conversation={conversation}
+          active={conversation.id === activeId}
+          onNavigate={onNavigate}
+          onRefresh={() => {
+            refresh();
+            if (conversation.id === activeId) router.refresh();
+          }}
+          onDelete={() => {
+            refresh();
+            if (conversation.id === activeId) router.push("/conversacion");
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ConversationItem({
+  conversation,
+  active,
+  onNavigate,
+  onRefresh,
+  onDelete,
+}: {
+  conversation: { id: string; title: string; updatedAt: string };
+  active: boolean;
+  onNavigate: () => void;
+  onRefresh: () => void;
+  onDelete: () => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(conversation.title);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!editTitle.trim() || editTitle === conversation.title) {
+      setIsEditing(false);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editTitle }),
+      });
+      if (res.ok) {
+        onRefresh();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSaving(false);
+      setIsEditing(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("¿Seguro que deseas eliminar esta conversación?")) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" });
+      if (res.ok) {
+        onDelete();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-1 px-3 py-1.5 text-xs border border-accent/40 bg-accent/10 hud-button">
+        <input
+          type="text"
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          autoFocus
+          disabled={isSaving}
+          className="flex-1 min-w-0 bg-transparent outline-none text-accent placeholder-accent/50"
+        />
+        <button onClick={handleSave} disabled={isSaving} className="text-success hover:text-success/80">
+          <Check className="h-3 w-3" />
+        </button>
+        <button onClick={() => setIsEditing(false)} disabled={isSaving} className="text-danger hover:text-danger/80">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`group flex items-center justify-between px-3 py-1.5 text-xs transition-all duration-fast border hud-button ${active ? "border-accent/50 bg-accent/20 text-accent" : "border-transparent hover:border-accent/30 hover:bg-accent/10 hover:text-accent text-ink-faint"}`}>
+      <Link
+        href={`/conversacion?c=${encodeURIComponent(conversation.id)}`}
+        onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
+        title={conversation.title}
+        className="flex-1 min-w-0 flex flex-col gap-0.5 press hover:translate-x-0.5 transition-transform"
+      >
+        <span className="truncate">{conversation.title}</span>
+        <span className="text-[10px] opacity-70">{formatRelativeTime(conversation.updatedAt)}</span>
+      </Link>
+      <div className="hidden group-hover:flex items-center gap-1.5 ml-2">
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsEditing(true); }}
+          className="text-ink-faint hover:text-accent transition-colors"
+          title="Renombrar"
+        >
+          <Edit2 className="h-3 w-3" />
+        </button>
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(); }}
+          disabled={isDeleting}
+          className="text-ink-faint hover:text-danger transition-colors"
+          title="Eliminar"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
   );
 }
