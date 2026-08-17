@@ -273,6 +273,31 @@ describe("Gateway HTTP routes", () => {
     expect(third.status).toBe(429);
   });
 
+  it("el rate limit es por usuario (X-User-Token), no compartido por IP (fix de auditoría de backend #4)", async () => {
+    const app = appWith(fakeGateway(), { windowMs: 60_000, max: 2 });
+    const jwtFor = (userId: string) =>
+      `${Buffer.from(JSON.stringify({ alg: "HS256" })).toString("base64url")}.${Buffer.from(
+        JSON.stringify({ sub: userId }),
+      ).toString("base64url")}.firma`;
+
+    // Usuario A gasta su presupuesto de 2 (mismo origen/IP que usuario B, vía supertest).
+    await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", jwtFor("user-a"));
+    await request(app).get("/v1/tools").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", jwtFor("user-a"));
+    const userAThirdRequest = await request(app)
+      .get("/v1/tools")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", jwtFor("user-a"));
+
+    // Usuario B, mismo origen, todavía tiene su propio presupuesto intacto.
+    const userBFirstRequest = await request(app)
+      .get("/v1/tools")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .set("X-User-Token", jwtFor("user-b"));
+
+    expect(userAThirdRequest.status).toBe(429);
+    expect(userBFirstRequest.status).toBe(200);
+  });
+
   it("DELETE /v1/jobs/:id delega en scheduler.cancel()", async () => {
     let cancelledId: string | undefined;
     const gateway = fakeGateway({

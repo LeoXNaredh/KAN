@@ -4,6 +4,7 @@ import type { EdgeTicketPort, Gateway, LiveVoiceSessionStore } from "@kan/gatewa
 import type { AuthPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
 import { createUserAuthMiddleware } from "./userAuthMiddleware";
+import { rateLimitKey } from "./rateLimitKey";
 
 export interface RateLimitOptions {
   windowMs?: number;
@@ -30,13 +31,21 @@ export function createRoutes(
   const router = Router();
 
   // Antes del chequeo de token: también acota intentos de fuerza bruta
-  // contra el token interno, no solo tráfico ya autenticado.
+  // contra el token interno, no solo tráfico ya autenticado. Por eso
+  // `rateLimitKey` decodifica el userId del JWT ella misma (en vez de
+  // esperar a `createUserAuthMiddleware`, que corre después) — sin eso,
+  // todo el tráfico de apps/web (un único origen server-to-server) comparte
+  // la misma IP y por lo tanto el mismo presupuesto de 120 req/min entre
+  // toda la base de usuarios (fix de auditoría de backend #4). Con
+  // X-User-Token, cada usuario tiene su propio balde; sin token, cae a la
+  // IP como antes.
   router.use(
     rateLimit({
       windowMs: rateLimitOptions?.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
       limit: rateLimitOptions?.max ?? DEFAULT_RATE_LIMIT_MAX,
       standardHeaders: true,
       legacyHeaders: false,
+      keyGenerator: rateLimitKey,
       message: { error: "Demasiadas solicitudes, intenta de nuevo en un momento." },
     }),
   );
