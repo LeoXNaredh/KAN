@@ -22,7 +22,7 @@
  * localStorage — decisión visual pura, sin tabla nueva en Supabase).
  */
 :root {
-  --kan-accent: #00ff9d; /* verde esmeralda maya — default */
+  --kan-accent: #8b5cf6; /* violeta suave — default (rediseño inspirado en Gemini) */
 
   --color-surface: #f6f5fb;
   --color-surface-2: #ffffff;
@@ -41,46 +41,35 @@
   --gradient-accent: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 55%, black));
   --glow-accent: 0 12px 40px -14px color-mix(in srgb, var(--color-accent) 45%, transparent);
   --glow-accent-sm: 0 4px 18px -6px color-mix(in srgb, var(--color-accent) 50%, transparent);
-  --aurora-opacity: 0.14;
 }
 
 /*
- * Negro profundo real (no un violeta oscurecido) — el estado por defecto de
- * la app (dark forzado en app/layout.tsx). `--color-accent` es el acento
- * elegido tal cual, sin oscurecer (a diferencia de light arriba, donde el
- * fondo claro exige un tono más saturado para contraste AA).
- */
-/*
- * eDEX-UI inspirado (rediseño completo) — negro puro real (no #0a0a0a), y
- * el texto secundario/terciario deja de ser un gris fijo: pasa a derivar del
- * propio acento (color de acento al 70%/40% de mezcla) para que cambiar de
- * preset en /configuracion tiña TODA la jerarquía tipográfica, no solo los
- * bordes/glows como antes — identidad HUD de terminal, no un dashboard gris
- * con acentos de color encima.
+ * Rediseño inspirado en Gemini — gris muy oscuro (#0f0f15), no negro puro:
+ * un fondo con un pelo de tinte violeta se siente "producto real" en vez de
+ * "terminal apagada". Texto secundario vuelve a ser un gris fijo (no
+ * derivado del acento como en el rediseño eDEX-UI anterior) — la tabla de
+ * colores de este pedido lo pide explícito ("gris claro, no amarillo/
+ * dorado"): que cambiar de preset tiña el texto secundario era demasiado,
+ * se sentía agresivo en vez de sutil.
  */
 :root.dark {
-  --color-surface: #000000;
-  --color-surface-2: #050505;
-  --color-surface-3: #0a0a0a;
-  --color-line: #1a1a1a;
-  --color-line-strong: #2e2e2e;
-  --color-ink: #ffffff;
-  /* Alpha, no mezcla con blanco: mezclar con blanco dejaría el preset
-     "white" (#ffffff) con ink-muted/ink-faint = blanco puro, indistinguible
-     del texto principal. Con alpha sobre `transparent`, el propio fondo
-     negro atenúa el color en todos los presets por igual. */
-  --color-ink-muted: color-mix(in srgb, var(--kan-accent) 70%, transparent);
-  --color-ink-faint: color-mix(in srgb, var(--kan-accent) 40%, transparent);
+  --color-surface: #0f0f15;
+  --color-surface-2: #151520;
+  --color-surface-3: #1a1a25;
+  --color-line: #26262f;
+  --color-line-strong: #34343f;
+  --color-ink: #e8e8f0;
+  --color-ink-muted: #a8a8b8;
+  --color-ink-faint: #888899;
   --color-accent: var(--kan-accent);
   --color-accent-2: var(--color-accent);
-  --color-success: #22d97a;
-  --color-warning: #ffaa00;
-  --color-danger: #ff3333;
+  --color-success: #22c97a;
+  --color-warning: #e0a020;
+  --color-danger: #e5484d;
 
   --gradient-accent: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 45%, black));
-  --glow-accent: 0 16px 50px -14px color-mix(in srgb, var(--color-accent) 55%, transparent);
-  --glow-accent-sm: 0 6px 22px -6px color-mix(in srgb, var(--color-accent) 60%, transparent);
-  --aurora-opacity: 0.16;
+  --glow-accent: 0 16px 50px -14px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  --glow-accent-sm: 0 6px 22px -6px color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
 /*
@@ -139,80 +128,11 @@ body {
 }
 
 /*
- * Glow ambiental "Kukulkán" — dos manchas radiales del acento elegido, fijas
- * al viewport y a la deriva muy lenta (24s). z-index -1 y pointer-events:
- * none para que nunca interfiera con contenido ni clicks; opacidad baja
- * (token --aurora-opacity) para que siga siendo "elegante, sin exagerar"
- * sobre superficies de texto largo (chat, logs). Monocromático a propósito
- * (antes eran dos manchas de colores distintos, violeta/cian) — el acento
- * es uno solo, elegido por el usuario.
+ * Rediseño inspirado en Gemini: sin glow ambiental, sin grilla HUD, sin
+ * scanlines — todo eso quedaba como "ruido visual" sobre un fondo que
+ * ahora se quiere limpio y respirado. `body` es el fondo entero, sin
+ * pseudo-elementos ni overlays encima.
  */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: var(--aurora-opacity);
-  background:
-    radial-gradient(48% 38% at 15% -8%, var(--color-accent), transparent 65%),
-    radial-gradient(42% 36% at 100% 106%, var(--color-accent), transparent 65%);
-  animation: aurora-drift 24s ease-in-out infinite alternate;
-}
-
-/*
- * Grilla técnica (HUD) — reemplaza la grilla de puntos de "Aurora" por
- * líneas finas, más angular/schematic (geometría, no textura decorativa).
- */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  /* Color sólido (no `color-mix(... 8%, transparent)`) — diluir el color de
-     la línea Y bajar `opacity` del pseudo-elemento al mismo tiempo componía
-     las dos atenuaciones (8% × 4.5% ≈ menos del 0.4% real), dejando la
-     grilla prácticamente invisible en fondo negro puro. Con color sólido,
-     `opacity: 0.03` de acá abajo es la única atenuación — 3% real, no ~0.4%. */
-  background-image:
-    linear-gradient(var(--color-ink) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-ink) 1px, transparent 1px);
-  background-size: 42px 42px;
-  opacity: 0.03;
-  /* Sin mask: cubre toda la pantalla parejo, incluida la columna del Sidebar
-     (antes se desvanecía hacia los bordes y ahí quedaba invisible). */
-}
-
-/*
- * Scanlines CRT (rediseño eDEX-UI) — líneas horizontales de 1px muy sutiles
- * sobre TODA la pantalla, encima del contenido (z-index alto) pero
- * `pointer-events: none` para no interceptar nada. Vive como elemento propio
- * (`<div>` en ShellChrome), no como `body::after` más — se reutiliza igual
- * dentro de `BootSequence` (mismo efecto, dos lugares).
- */
-.kan-scanlines {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to bottom,
-    color-mix(in srgb, white 6%, transparent) 0px,
-    color-mix(in srgb, white 6%, transparent) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-  opacity: 0.35;
-  mix-blend-mode: overlay;
-}
-
-@keyframes aurora-drift {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  100% {
-    transform: translate3d(-3%, 3%, 0) scale(1.08);
-  }
-}
 
 @keyframes fade-in {
   from {
@@ -274,20 +194,24 @@ body::after {
 }
 
 .glass {
-  background: color-mix(in srgb, var(--color-surface-2) 40%, transparent);
+  background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border: 1px solid var(--color-line);
 }
 
-/* 
- * HUD Geometry (JARVIS style)
- * Esquinas cortadas (chamfered) para paneles y tarjetas 
+/*
+ * Rediseño inspirado en Gemini — esquinas redondas simples en vez de las
+ * geométricas "chamfered" (JARVIS/HUD) de rediseños anteriores. Quedan como
+ * los mismos dos nombres de clase (`.hud-panel`/`.hud-button`, ya usados en
+ * Card/Sidebar/InfoPanel/botones por toda la app) para no tener que tocar
+ * cada consumidor uno por uno — solo cambia CÓMO se ven, no dónde se usan.
+ * El borde de `.hud-panel::before` pasa a ser neutral (`--color-line`), no
+ * siempre teñido de acento — "colores de acento sutiles, no agresivos" pide
+ * dejar de pintar cada panel de la app con el borde del acento.
  */
 .hud-panel {
-  clip-path: polygon(
-    16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px
-  );
+  border-radius: 16px;
   position: relative;
 }
 
@@ -295,46 +219,13 @@ body::after {
   content: "";
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   pointer-events: none;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  clip-path: polygon(
-    16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px
-  );
+  border: 1px solid var(--color-line);
 }
 
 .hud-button {
-  clip-path: polygon(
-    8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px
-  );
-}
-
-/*
- * Brackets de esquina estilo `[ ]` (rediseño eDEX-UI) — deliberadamente NO
- * en `.hud-panel` (que ya usan Card/Sidebar/etc en todos lados; ponerlo ahí
- * empapelaría cada tarjeta chica de la app con más ornamento del que pidió
- * "más elegante"). Se aplica a mano solo en los paneles HUD grandes
- * (InfoPanel, terminal del boot) que quieren leerse como instrumentación,
- * no como una tarjeta de contenido más.
- */
-.hud-brackets {
-  position: relative;
-}
-
-.hud-brackets::after {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  pointer-events: none;
-  --kan-bracket-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
-  background:
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top left / 10px 1px no-repeat,
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top left / 1px 10px no-repeat,
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top right / 10px 1px no-repeat,
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) top right / 1px 10px no-repeat,
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom left / 10px 1px no-repeat,
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom left / 1px 10px no-repeat,
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom right / 10px 1px no-repeat,
-    linear-gradient(var(--kan-bracket-color), var(--kan-bracket-color)) bottom right / 1px 10px no-repeat;
+  border-radius: 9999px;
 }
 
 .glow-accent {
@@ -406,157 +297,6 @@ body::after {
   }
 }
 
-/* Anillo angular (geometría maya, sin librería SVG): repeating-conic-gradient
-   recortado a un anillo delgado con mask — segmentos, no un borde continuo. */
-@keyframes kan-ring-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes kan-ring-spin-reverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
-}
-
-@keyframes hud-scan {
-  0% { transform: translateY(-100%); opacity: 0; }
-  10% { opacity: 0.5; }
-  90% { opacity: 0.5; }
-  100% { transform: translateY(100%); opacity: 0; }
-}
-
-/*
- * `.kan-ring`/`.kan-ring-inner`/`.kan-ring-outer` solo manejan la rotación
- * acá — la forma del arco (grosor, largo de segmento, puntas redondeadas)
- * vive en el `<circle stroke-dasharray>` de KANAvatar.tsx (SVG), no en
- * `background`/`mask` como antes: un `repeating-conic-gradient` recortado
- * con un `mask` radial daba segmentos casi tan anchos como el grosor del
- * propio anillo — se leían como cuadrados/rombos sueltos flotando, no como
- * arcos de un círculo continuo.
- */
-.kan-ring {
-  animation: kan-ring-spin 40s linear infinite;
-}
-
-.kan-ring-inner {
-  animation: kan-ring-spin-reverse 26s linear infinite;
-}
-
-/*
- * Segundo anillo, exterior al anillo de base (inset negativo respecto del
- * borde del avatar) — mismo mecanismo que `.kan-ring` pero más grande, más
- * tenue y aún más lento, para dar sensación de profundidad (dos capas
- * girando a ritmos distintos) sin competir visualmente con el anillo
- * principal.
- */
-.kan-ring-outer {
-  animation: kan-ring-spin 70s linear infinite;
-}
-
-.kan-ring-fast {
-  animation-duration: 3s;
-}
-
-/*
- * Reacciones del avatar por `activity` (rediseño eDEX-UI) — sin datos reales
- * de amplitud de voz (ni `useVoiceInput` ni `useLiveSession` exponen un
- * nivel de señal hoy), así que "pulsa al ritmo de la voz" se aproxima con un
- * pulso rítmico constante en vez de uno reactivo al audio real — mismo
- * criterio "no inventar datos que no existen" que el resto del proyecto,
- * aplicado acá a "no fingir que hay una señal de amplitud que no hay".
- */
-.kan-ring-speaking {
-  animation-duration: 5s;
-}
-
-@keyframes kan-rings-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-}
-
-.kan-rings-listening {
-  animation: kan-rings-pulse 0.9s ease-in-out infinite;
-}
-
-@keyframes kan-rings-thinking-blur {
-  0%,
-  100% {
-    filter: blur(0);
-  }
-  50% {
-    filter: blur(1.5px);
-  }
-}
-
-.kan-rings-thinking {
-  animation: kan-rings-thinking-blur 2.4s ease-in-out infinite;
-}
-
-@keyframes kan-avatar-glitch {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  20% {
-    transform: translate(-1px, 0.5px);
-  }
-  40% {
-    transform: translate(1px, -0.5px);
-  }
-  60% {
-    transform: translate(-0.5px, 0.5px) skewX(0.5deg);
-  }
-  80% {
-    transform: translate(0.5px, -0.5px) skewX(-0.5deg);
-  }
-}
-
-.kan-avatar-glitch {
-  animation: kan-avatar-glitch 260ms steps(2, end) infinite;
-}
-
-/* Núcleo "plasma" — gradiente de acento en movimiento detrás de "KAN", capa extra sobre el vidrio translúcido existente (no lo reemplaza). */
-@keyframes kan-core-plasma {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-
-.kan-core-plasma {
-  position: absolute;
-  inset: 0;
-  background-image: linear-gradient(
-    120deg,
-    color-mix(in srgb, var(--color-accent) 55%, transparent),
-    color-mix(in srgb, var(--color-accent) 12%, transparent) 35%,
-    color-mix(in srgb, var(--color-accent) 65%, transparent) 60%,
-    color-mix(in srgb, var(--color-accent) 15%, transparent) 85%
-  );
-  background-size: 220% 220%;
-  animation: kan-core-plasma 6s ease-in-out infinite;
-}
-
-.hud-scanline {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom, transparent, var(--color-accent), transparent);
-  height: 20%;
-  width: 100%;
-  opacity: 0;
-  animation: hud-scan 2s linear infinite;
-}
-
 .kan-core-idle {
   animation: kan-core-idle 3.2s ease-in-out infinite;
 }
@@ -584,21 +324,6 @@ body::after {
 
 .kan-sheet {
   animation: kan-sheet-up var(--duration-slow) cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-/*
- * Misma grilla que `body::after`, como clase aplicable (Sidebar.tsx) — el
- * blur de `.glass` (20px) lava la grilla del fondo hasta hacerla invisible
- * a través del panel, así que el Sidebar necesita su propia capa en vez de
- * depender de que se transparente desde atrás. Longhand a propósito: debe
- * ir DESPUÉS de `.glass` en este archivo para ganarle a su `background`
- * shorthand en `background-image` sin tocar el resto de `.glass`.
- */
-.kan-grid-bg {
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px);
-  background-size: 42px 42px;
 }
 
 /*
@@ -684,81 +409,26 @@ body::after {
 }
 
 /*
- * Boot sequence (BootSequence.tsx, ShellChrome.tsx) — terminal de arranque
- * estilo eDEX-UI: pantalla negra → líneas de log tipeadas una por una →
- * fade del texto → avatar materializándose → paneles reales por debajo. Una
- * sola vez por sesión de browser (sessionStorage). Todo el timing vive en
- * CSS (`animation-delay`), no en JS: el componente solo dispara dos
- * callbacks (paneles/fin) con `setTimeout`, coordinados a mano con estos
- * mismos delays — ver comentario en BootSequence.tsx.
+ * Boot sequence (BootSequence.tsx, ShellChrome.tsx) — rediseño inspirado en
+ * Gemini: solo el logo apareciendo con un fade suave, nada de terminal ni
+ * sonido. Una sola vez por sesión de browser (sessionStorage). Todo el
+ * timing vive acá (`animation-delay`), no en JS — ver comentario en
+ * BootSequence.tsx. ~1s en total: 400ms de fade-in del logo + una pausa
+ * breve + 400ms de fade-out del overlay.
  */
-@keyframes kan-boot-line-type {
-  to {
-    width: var(--kan-boot-line-width);
-  }
-}
-
-.kan-boot-line {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  width: 0;
-  animation: kan-boot-line-type 220ms steps(28, end) both;
-}
-
-@keyframes kan-boot-cursor-blink {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
-  }
-}
-
-.kan-boot-cursor {
-  display: inline-block;
-  animation: kan-boot-cursor-blink 800ms step-end infinite;
-}
-
-@keyframes kan-boot-lines-out {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-}
-
-.kan-boot-lines {
-  animation: kan-boot-lines-out 300ms ease-in both;
-  animation-delay: 1500ms;
-}
-
 @keyframes kan-boot-avatar-in {
-  0% {
+  from {
     opacity: 0;
-    transform: scale(0.4);
-    filter: blur(12px);
+    transform: scale(0.92);
   }
-  60% {
-    opacity: 1;
-    transform: scale(1.08);
-    filter: blur(0);
-  }
-  100% {
+  to {
     opacity: 1;
     transform: scale(1);
-    filter: blur(0);
   }
 }
 
 .kan-boot-avatar {
-  animation: kan-boot-avatar-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: 1550ms;
+  animation: kan-boot-avatar-in 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes kan-boot-overlay-out {
@@ -771,16 +441,15 @@ body::after {
 }
 
 .kan-boot-overlay {
-  animation: kan-boot-overlay-out 700ms ease-in both;
-  animation-delay: 2200ms;
+  animation: kan-boot-overlay-out 400ms ease-in both;
+  animation-delay: 600ms;
 }
 
 /*
- * Respeta `prefers-reduced-motion` a nivel global — las animaciones de
- * arriba (aurora, glow, avatar, reveal, press, etc.) son deliberadamente
- * marcadas/perceptibles (pedido explícito del rediseño), así que quien pide
- * menos movimiento al sistema operativo las recibe casi instantáneas en vez
- * de desactivarlas a mitad de camino de forma inconsistente.
+ * Respeta `prefers-reduced-motion` a nivel global — quien pide menos
+ * movimiento al sistema operativo recibe las animaciones casi
+ * instantáneas en vez de desactivarlas a mitad de camino de forma
+ * inconsistente.
  */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { Fragment, Suspense, useEffect, useState } from "react";
 import { MessageSquareText, Home, Cpu, Workflow, FolderKanban, Settings, Plus, Trash2, Edit2, Check, X, type LucideIcon } from "lucide-react";
-import { KANMark } from "@/components/kan/KANMark";
 import { useRecentConversations } from "@/lib/conversations/useRecentConversations";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 
@@ -66,16 +65,11 @@ export function Sidebar({
       <aside
         aria-modal={open ? true : undefined}
         role={open ? "dialog" : undefined}
-        className={`glass hud-panel fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 p-4 transition-transform duration-base md:static md:z-auto md:w-60 md:m-4 md:h-[calc(100vh-32px)] ${transformClasses}`}
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 bg-surface-2 p-4 transition-transform duration-base md:static md:z-auto md:w-60 ${transformClasses}`}
       >
-        <div className="group mb-6 flex items-center gap-2.5 px-2">
-          <span className="bg-gradient-accent glow-accent-sm animate-glow-pulse hud-button flex h-9 w-9 shrink-0 items-center justify-center text-white transition-shadow duration-base group-hover:shadow-[0_0_28px_4px_var(--color-accent)]">
-            <KANMark className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 leading-tight">
-            <p className="text-gradient text-base font-bold tracking-tight">KAN</p>
-            <p className="text-[10px] tracking-wide text-ink-faint uppercase">Asistente</p>
-          </div>
+        <div className="mb-6 px-2">
+          <p className="text-lg font-medium tracking-tight text-accent">KAN</p>
+          <p className="text-xs text-ink-faint">Asistente</p>
         </div>
         <nav aria-label="Principal" className="kan-scroll flex flex-1 flex-col gap-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
@@ -87,10 +81,8 @@ export function Sidebar({
                   href={item.href}
                   onClick={onClose}
                   aria-current={active ? "page" : undefined}
-                  className={`press hud-button flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                    active
-                      ? "bg-accent/20 text-accent border border-accent/50"
-                      : "border border-transparent text-ink-muted hover:translate-x-0.5 hover:bg-accent/10 hover:border-accent/30 hover:text-accent"
+                  className={`press hud-button flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-colors duration-fast focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
+                    active ? "bg-surface-3 text-ink" : "text-ink-muted hover:bg-surface-3 hover:text-ink"
                   }`}
                 >
                   <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -128,8 +120,8 @@ function RecentConversations({ onNavigate }: { onNavigate: () => void }) {
       <Link
         href="/conversacion"
         onClick={onNavigate}
-        className={`press hud-button flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-all duration-fast border hover:translate-x-0.5 hover:bg-accent/10 hover:border-accent/30 hover:text-accent ${
-          activeId ? "border-transparent text-ink-faint" : "border-accent/50 bg-accent/20 text-accent"
+        className={`press hud-button flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-colors duration-fast ${
+          activeId ? "text-ink-faint hover:bg-surface-3 hover:text-ink" : "bg-surface-3 text-ink"
         }`}
       >
         <Plus className="h-3 w-3 shrink-0" aria-hidden="true" />
@@ -213,7 +205,7 @@ function ConversationItem({
 
   if (isEditing) {
     return (
-      <div className="flex items-center gap-1 px-3 py-1.5 text-xs border border-accent/40 bg-accent/10 hud-button">
+      <div className="flex items-center gap-1 px-3 py-1.5 text-xs bg-surface-3 hud-button">
         <input
           type="text"
           value={editTitle}
@@ -221,7 +213,7 @@ function ConversationItem({
           onKeyDown={(e) => e.key === "Enter" && handleSave()}
           autoFocus
           disabled={isSaving}
-          className="flex-1 min-w-0 bg-transparent outline-none text-accent placeholder-accent/50"
+          className="flex-1 min-w-0 bg-transparent outline-none text-ink placeholder-ink-faint"
         />
         <button onClick={handleSave} disabled={isSaving} className="text-success hover:text-success/80">
           <Check className="h-3 w-3" />
@@ -234,13 +226,13 @@ function ConversationItem({
   }
 
   return (
-    <div className={`group flex items-center justify-between px-3 py-1.5 text-xs transition-all duration-fast border hud-button ${active ? "border-accent/50 bg-accent/20 text-accent" : "border-transparent hover:border-accent/30 hover:bg-accent/10 hover:text-accent text-ink-faint"}`}>
+    <div className={`group flex items-center justify-between px-3 py-1.5 text-xs transition-colors duration-fast hud-button ${active ? "bg-surface-3 text-ink" : "text-ink-faint hover:bg-surface-3 hover:text-ink"}`}>
       <Link
         href={`/conversacion?c=${encodeURIComponent(conversation.id)}`}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
         title={conversation.title}
-        className="flex-1 min-w-0 flex flex-col gap-0.5 press hover:translate-x-0.5 transition-transform"
+        className="flex-1 min-w-0 flex flex-col gap-0.5 press"
       >
         <span className="truncate">{conversation.title}</span>
         <span className="text-[10px] opacity-70">{formatRelativeTime(conversation.updatedAt)}</span>

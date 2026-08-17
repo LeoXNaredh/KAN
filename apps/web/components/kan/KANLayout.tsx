@@ -58,16 +58,18 @@ export function KANLayout({
            * calcula `right/bottom` contra el viewport completo, lo cual
            * está bien para el borde derecho, pero igual se ancla dentro de
            * una banda acotada al ancho de la columna de contenido
-           * (`md:left-60`, mismo ancho que `Sidebar`; `lg:right-64`, mismo
-           * ancho que el InfoPanel del rediseño eDEX-UI — sin este borde
-           * derecho el avatar quedaría flotando debajo/detrás de esa
-           * columna en vez de en la esquina del panel central) por
-           * consistencia y para no invadir el Sidebar mobile (`z-20`, por
-           * debajo de `TopBar`/nav).
+           * (`md:left-60`, mismo ancho que `Sidebar` — el InfoPanel del
+           * rediseño anterior ya no es una columna persistente, así que no
+           * hace falta reservarle borde derecho) para no invadir el Sidebar
+           * mobile (`z-20`, por debajo de `TopBar`/nav). Escala 0.7 (no
+           * 0.38 como en el avatar de 220px de antes) para que el badge
+           * final ronde el mismo tamaño en píxeles ahora que el avatar base
+           * bajó a 120px. `showLabel={false}`: un label de texto a esta
+           * escala se ve amontonado, no legible.
            */}
-          <div className="pointer-events-none fixed inset-y-0 right-0 left-0 z-20 md:left-60 lg:right-64">
-            <div className="fade-in absolute right-6 bottom-28 origin-bottom-right scale-[0.38] sm:right-8 sm:bottom-32">
-              <KANAvatar size="lg" activity={activity} />
+          <div className="pointer-events-none fixed inset-y-0 right-0 left-0 z-20 md:left-60">
+            <div className="fade-in absolute right-6 bottom-28 origin-bottom-right scale-[0.7] sm:right-8 sm:bottom-32">
+              <KANAvatar size="lg" activity={activity} showLabel={false} />
             </div>
           </div>
 
@@ -89,7 +91,7 @@ export function KANLayout({
           </div>
         </>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 pt-10 pb-8 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-8 px-4 pt-16 pb-12 text-center">
           <KANAvatar size="lg" activity={activity} />
           {hint}
           {/* pb-12 extra acá (no solo en el contenedor de arriba): las cards de

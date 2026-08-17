@@ -23,9 +23,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       .slice(0, limit)
       .map((conversation) => ({
         id: conversation.id,
-        title:
-          conversation.title ??
-          deriveConversationTitle(conversation.messages.find((m) => m.role === "user")?.content, conversation.createdAt),
+        title: conversation.title ?? deriveConversationTitle(conversation.messages.find((m) => m.role === "user")?.content),
         updatedAt: conversation.updatedAt,
       }));
   }

@@ -9,26 +9,19 @@ import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 import { useClock } from "@/lib/useClock";
 
 /**
- * Tercer panel del layout eDEX-UI (rediseño completo) — columna derecha
- * persistente con estado del sistema, dispositivos, memoria/proyectos y
- * actividad reciente. Vive en `ShellChrome` (no en `KANHome`/`DashboardClient`)
- * porque el pedido es un frame de 3 columnas para todo el shell, no solo
- * para la pantalla de chat — reusa `useSystemStatusContext` (ya global, un
- * solo poll de 15s compartido con TopBar/DashboardClient) en vez de pedir
- * sus propios datos por separado.
+ * Panel de información (rediseño inspirado en Gemini) — estado del sistema,
+ * dispositivos, memoria/proyectos, plugins y actividad reciente. Colapsado
+ * por defecto: `ShellChrome` lo monta como panel lateral bajo demanda (ícono
+ * en el TopBar), no como una columna siempre visible — reusa
+ * `useSystemStatusContext` (ya global, un solo poll de 15s compartido con
+ * TopBar/DashboardClient) en vez de pedir sus propios datos por separado.
  *
  * No hay un campo real de CPU/RAM del Edge Agent en `SystemStatusResponse`
  * hoy (`lib/status/types.ts`) — se muestra lo que el backend efectivamente
  * expone (online/offline, capabilities, dispositivos) en vez de inventar
- * una métrica que no existe (mismo criterio que `ActivityFeed`/`SystemStatus`
- * ya seguían).
- *
- * `mobile`: por debajo de `lg` (1024px) no hay lugar para 3 columnas — ShellChrome
- * monta esta misma instancia (mismo componente, sin lógica duplicada) dentro
- * de un tab en vez de la columna fija; este prop solo cambia el wrapper
- * (ancho/posición), nunca el contenido.
+ * una métrica que no existe.
  */
-export function InfoPanel({ summary, mobile = false }: { summary: DashboardSummary | undefined; mobile?: boolean }) {
+export function InfoPanel({ summary }: { summary: DashboardSummary | undefined }) {
   const { status } = useSystemStatusContext();
   const resolveDeviceName = useDeviceDisplayNames();
   const now = useClock();
@@ -43,20 +36,13 @@ export function InfoPanel({ summary, mobile = false }: { summary: DashboardSumma
   );
 
   return (
-    <aside
-      aria-label="Panel de información"
-      className={
-        mobile
-          ? "hud-panel hud-brackets glass kan-scroll flex w-full flex-col gap-5 overflow-y-auto p-4 font-mono text-xs"
-          : "hud-panel hud-brackets glass kan-scroll hidden w-64 shrink-0 flex-col gap-5 overflow-y-auto p-4 font-mono text-xs lg:flex"
-      }
-    >
+    <aside aria-label="Panel de información" className="kan-scroll flex flex-1 flex-col gap-5 overflow-y-auto bg-surface-2 p-4 text-sm">
       <div>
-        <p className="text-[10px] tracking-[0.2em] text-ink-faint uppercase">Hora del sistema</p>
-        <p className="mt-1 text-2xl font-semibold text-ink tabular-nums">
+        <p className="text-xs text-ink-faint">Hora del sistema</p>
+        <p className="mt-1 text-xl font-medium text-ink tabular-nums">
           {now ? now.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--:--:--"}
         </p>
-        <p className="text-ink-muted">
+        <p className="text-xs text-ink-muted">
           {now ? now.toLocaleDateString("es", { weekday: "long", day: "2-digit", month: "short" }) : ""}
         </p>
       </div>
@@ -70,17 +56,16 @@ export function InfoPanel({ summary, mobile = false }: { summary: DashboardSumma
 
       <InfoSection icon={Cpu} title={`Dispositivos (${allDevices.length})`}>
         {allDevices.length === 0 ? (
-          <p className="text-ink-faint">Ninguno conectado.</p>
+          <p className="text-xs text-ink-faint">Ninguno conectado.</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {allDevices.map((device) => (
               <li key={device.id} className="flex items-center gap-2">
                 <span
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${device.agentOnline ? "bg-success" : "bg-ink-faint"}`}
-                  style={device.agentOnline ? { boxShadow: "0 0 6px 0 var(--color-success)" } : undefined}
                   aria-hidden="true"
                 />
-                <span className="truncate text-ink-muted">{resolveDeviceName(device.name)}</span>
+                <span className="truncate text-xs text-ink-muted">{resolveDeviceName(device.name)}</span>
               </li>
             ))}
           </ul>
@@ -94,11 +79,11 @@ export function InfoPanel({ summary, mobile = false }: { summary: DashboardSumma
 
       <InfoSection icon={Sparkles} title={`Plugins (${allPlugins.length})`}>
         {allPlugins.length === 0 ? (
-          <p className="text-ink-faint">Ninguno todavía.</p>
+          <p className="text-xs text-ink-faint">Ninguno todavía.</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {allPlugins.map((plugin) => (
-              <li key={plugin.id} className="truncate text-ink-muted">
+              <li key={plugin.id} className="truncate text-xs text-ink-muted">
                 {plugin.displayName}
               </li>
             ))}
@@ -108,12 +93,12 @@ export function InfoPanel({ summary, mobile = false }: { summary: DashboardSumma
 
       <InfoSection icon={Activity} title="Actividad reciente">
         {!status || status.recentActivity.length === 0 ? (
-          <p className="text-ink-faint">Sin actividad todavía.</p>
+          <p className="text-xs text-ink-faint">Sin actividad todavía.</p>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {status.recentActivity.slice(0, 5).map((entry) => (
               <li key={entry.id} className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-ink-muted">{entry.label}</span>
+                <span className="truncate text-xs text-ink-muted">{entry.label}</span>
                 <span className="shrink-0 text-[10px] text-ink-faint">{formatRelativeTime(entry.at)}</span>
               </li>
             ))}
@@ -135,8 +120,8 @@ function InfoSection({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="flex items-center gap-1.5 text-[10px] tracking-[0.2em] text-accent uppercase">
-        <Icon className="h-3 w-3" aria-hidden="true" />
+      <h2 className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
         {title}
       </h2>
       {children}
@@ -146,7 +131,7 @@ function InfoSection({
 
 function InfoRow({ label, value, ok, icon: Icon }: { label: string; value: string; ok?: boolean; icon?: typeof FolderKanban }) {
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex items-center justify-between gap-2 text-xs">
       <span className="flex items-center gap-1.5 text-ink-faint">
         {Icon && <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />}
         {label}

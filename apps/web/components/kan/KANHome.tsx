@@ -75,9 +75,9 @@ export function KANHome({
       activity={activity}
       homeContent={homeContent}
       hint={
-        <div className="fade-in flex flex-col items-center gap-1.5">
-          {greeting && <p className="text-2xl font-semibold tracking-tight text-ink">{greeting}</p>}
-          <p className="text-sm font-medium tracking-wide text-accent uppercase">
+        <div className="fade-in flex flex-col items-center gap-2">
+          {greeting && <p className="text-[32px] font-medium tracking-tight text-ink">{greeting}</p>}
+          <p className="text-sm text-ink-muted">
             {activity === "listening" ? "Escuchando…" : "Decí “KAN” o escribí abajo"}
           </p>
         </div>
@@ -132,7 +132,7 @@ export function KANHome({
       }
       bar={
         <form onSubmit={handleSubmit} className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 px-1">
             <LiveVoiceButton
               status={conv.live.status}
               onClick={conv.live.status === "active" ? conv.live.stop : conv.live.start}
@@ -156,37 +156,43 @@ export function KANHome({
               title="Adjuntar imagen"
               onClick={() => fileInputRef.current?.click()}
               disabled={conv.isSending}
-              className="flex h-8 shrink-0 items-center gap-1.5 px-4 hud-button border border-transparent text-xs font-medium text-ink-faint transition-all duration-fast hover:border-accent/40 hover:bg-accent/10 hover:text-accent active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-ink-faint transition-colors duration-fast hover:bg-surface-3 hover:text-ink-muted disabled:opacity-50"
             >
               <ImagePlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span>Imagen</span>
             </button>
             {conv.pendingImage && (
-              <div className="flex items-center gap-2 rounded-md border border-line bg-surface-3 px-2 py-1">
+              <div className="flex items-center gap-2 rounded-full bg-surface-3 px-2 py-1">
                 <img
                   src={`data:${conv.pendingImage.mimeType};base64,${conv.pendingImage.data}`}
                   alt="Imagen a adjuntar"
-                  className="h-6 w-6 rounded object-cover"
+                  className="h-6 w-6 rounded-full object-cover"
                 />
                 <button
                   type="button"
                   aria-label="Quitar imagen"
                   onClick={() => conv.setPendingImage(null)}
-                  className="press rounded p-0.5 text-ink-faint transition-colors hover:text-ink"
+                  className="press rounded-full p-0.5 text-ink-faint transition-colors hover:text-ink"
                 >
                   <X className="h-3 w-3" aria-hidden="true" />
                 </button>
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          {/*
+           * Input estilo Gemini — un único pill (radio 24px, fondo más
+           * claro que el fondo de página) con el micrófono adentro a la
+           * izquierda, en vez de tres piezas separadas (mic / input / send)
+           * como antes.
+           */}
+          <div className="flex items-end gap-1 rounded-[24px] bg-surface-3 py-2 pr-2 pl-2">
             <VoiceButton
               status={conv.voice.status}
               onClick={conv.voice.status === "recording" ? conv.voice.stop : conv.voice.start}
             />
             <input
-              className="glass hud-panel h-14 flex-1 px-5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-accent/70"
-              placeholder="Iniciando enlace de datos. Habla o escribe con KAN…"
+              className="min-w-0 flex-1 bg-transparent px-2 py-2 text-base text-ink outline-none placeholder:text-ink-faint"
+              placeholder="Escribile a KAN…"
               value={conv.input}
               onChange={(event) => conv.setInput(event.target.value)}
               disabled={conv.isSending}
@@ -194,10 +200,10 @@ export function KANHome({
             <button
               type="submit"
               aria-label="Enviar mensaje"
-              className="bg-gradient-accent glow-accent-sm flex h-14 w-16 shrink-0 items-center justify-center hud-button text-white transition-all duration-fast hover:scale-105 hover:brightness-110 disabled:opacity-50 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform duration-fast hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               disabled={conv.isSending || !conv.input.trim()}
             >
-              <Send className="h-5 w-5" aria-hidden="true" />
+              <Send className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </form>

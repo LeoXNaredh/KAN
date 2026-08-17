@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
-import { LayoutPanelLeft, Radio } from "lucide-react";
+import { X } from "lucide-react";
 import type { DashboardSummary, UserIdentity } from "@kan/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { InfoPanel } from "@/components/layout/InfoPanel";
 import { BootSequence } from "@/components/kan/BootSequence";
-import { ParticleField } from "@/components/kan/ParticleField";
 import { useBrowserEdgeAgent } from "@/lib/edgeAgent/useBrowserEdgeAgent";
 import { SystemStatusProvider } from "@/lib/status/SystemStatusProvider";
 
@@ -35,7 +34,12 @@ export function ShellChrome({
   children: ReactNode;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [mobilePane, setMobilePane] = useState<"main" | "info">("main");
+  // InfoPanel colapsado por defecto (rediseño inspirado en Gemini) — antes
+  // era una columna de 3ra siempre visible (>= lg) más tabs en mobile; acá
+  // pasa a ser un panel lateral bajo demanda, un solo ícono en el TopBar,
+  // igual en cualquier tamaño de pantalla — menos ruido visual por defecto,
+  // sin duplicar el mecanismo (tabs Y drawer) que tenía antes.
+  const [infoPanelOpen, setInfoPanelOpen] = useState(false);
   const [booting, setBooting] = useState(false);
   const [panelsRevealed, setPanelsRevealed] = useState(true);
   // Simulador corriendo en el propio tab (docs/19 continuación) — sobrevive
@@ -49,10 +53,7 @@ export function ShellChrome({
   // false`) es el mismo en servidor y cliente (sin sessionStorage en SSR),
   // así que esto no es un mismatch de hidratación, es un re-render normal
   // que React aplica antes de pintar. `prefers-reduced-motion`: se salta el
-  // teatro completo (la app arranca directo, sin overlay) en vez de mostrarlo
-  // igual con animaciones colapsadas a 0.01ms por el `@media` de
-  // globals.css — eso dejaría los `setTimeout` de BootSequence esperando ~3s
-  // reales frente a una pantalla negra sin nada visible pasando.
+  // teatro completo (la app arranca directo, sin overlay).
   useIsomorphicLayoutEffect(() => {
     try {
       const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -78,64 +79,46 @@ export function ShellChrome({
   return (
     <SystemStatusProvider>
       <div className="relative flex min-h-screen w-full bg-surface text-ink">
-        <ParticleField />
-        <div className="kan-scanlines" />
         <Sidebar open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} entering={!panelsRevealed} />
         <div
           className={`flex min-w-0 flex-1 flex-col transition-all duration-slow delay-150 ${
             panelsRevealed ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
           }`}
         >
-          <TopBar onOpenMenu={() => setMobileNavOpen(true)} user={user} />
-
-          {/* Tabs de mobile/tablet (< lg, 1024px) — el InfoPanel de 3 columnas no entra ahí, así que se alterna con el contenido normal en vez de apilarlos. */}
-          <div className="flex border-b border-line/60 lg:hidden">
-            <MobileTabButton active={mobilePane === "main"} onClick={() => setMobilePane("main")} icon={LayoutPanelLeft} label="Panel" />
-            <MobileTabButton active={mobilePane === "info"} onClick={() => setMobilePane("info")} icon={Radio} label="Info" />
-          </div>
-
-          <main className="flex flex-1 gap-4 p-4 md:p-6">
-            <div className={`min-w-0 flex-1 flex-col gap-4 ${mobilePane === "info" ? "hidden lg:flex" : "flex"}`}>{children}</div>
-            {/* Columna de escritorio (>= lg) — siempre visible ahí, sin depender del tab de mobile. */}
-            <div className="hidden lg:flex">
-              <InfoPanel summary={summary} />
-            </div>
-            {/* Tab de mobile/tablet (< lg) — misma info, instancia separada para no acoplar su visibilidad a la columna de escritorio. */}
-            {mobilePane === "info" && (
-              <div className="flex flex-1 lg:hidden">
-                <InfoPanel summary={summary} mobile />
-              </div>
-            )}
-          </main>
+          <TopBar onOpenMenu={() => setMobileNavOpen(true)} onOpenInfo={() => setInfoPanelOpen(true)} user={user} />
+          <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">{children}</main>
         </div>
+
+        {/* Panel lateral de info — colapsado por defecto, se abre con el ícono del TopBar, en cualquier tamaño de pantalla (no una columna que solo aparece en desktop). */}
+        {infoPanelOpen && (
+          <button
+            type="button"
+            aria-label="Cerrar panel de información"
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={() => setInfoPanelOpen(false)}
+          />
+        )}
+        <div
+          className={`fixed inset-y-0 right-0 z-50 flex w-80 max-w-[90vw] flex-col bg-surface-2 shadow-2xl transition-transform duration-base ${
+            infoPanelOpen ? "translate-x-0" : "translate-x-full"
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-3">
+            <p className="text-sm font-medium text-ink">Información</p>
+            <button
+              type="button"
+              aria-label="Cerrar panel de información"
+              onClick={() => setInfoPanelOpen(false)}
+              className="press rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-3 hover:text-ink"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+          <InfoPanel summary={summary} />
+        </div>
+
         {booting && <BootSequence onPanelsReveal={handleBootPanelsReveal} onDone={handleBootDone} />}
       </div>
     </SystemStatusProvider>
-  );
-}
-
-function MobileTabButton({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: typeof Radio;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`press flex flex-1 items-center justify-center gap-1.5 border-b-2 py-2 text-xs font-medium transition-colors duration-fast ${
-        active ? "border-accent text-accent" : "border-transparent text-ink-faint hover:text-ink-muted"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {label}
-    </button>
   );
 }

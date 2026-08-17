@@ -149,10 +149,10 @@ export function ConversationPanel({
             <span>Imagen</span>
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-end gap-1 rounded-[24px] bg-surface-3 py-2 pr-2 pl-2">
           <VoiceButton status={voice.status} onClick={voice.status === "recording" ? voice.stop : voice.start} />
           <input
-            className="glass h-14 flex-1 rounded-full border border-line/80 px-5 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-accent/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            className="min-w-0 flex-1 bg-transparent px-2 py-2 text-base text-ink outline-none placeholder:text-ink-faint"
             placeholder="Escribile a KAN…"
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -161,10 +161,10 @@ export function ConversationPanel({
           <button
             type="submit"
             aria-label="Enviar mensaje"
-            className="bg-gradient-accent glow-accent-sm flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white transition-all duration-fast hover:scale-105 hover:brightness-110 disabled:opacity-50 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition-transform duration-fast hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             disabled={isSending || !input.trim()}
           >
-            <Send className="h-5 w-5" aria-hidden="true" />
+            <Send className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </form>
