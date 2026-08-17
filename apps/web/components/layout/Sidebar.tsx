@@ -68,8 +68,8 @@ export function Sidebar({
         role={open ? "dialog" : undefined}
         className={`glass hud-panel fixed inset-y-0 left-0 z-50 flex w-64 flex-col gap-1 p-4 transition-transform duration-base md:static md:z-auto md:w-60 md:m-4 md:h-[calc(100vh-32px)] ${transformClasses}`}
       >
-        <div className="mb-6 flex items-center gap-2.5 px-2">
-          <span className="bg-gradient-accent glow-accent-sm animate-glow-pulse hud-button flex h-9 w-9 shrink-0 items-center justify-center text-white">
+        <div className="group mb-6 flex items-center gap-2.5 px-2">
+          <span className="bg-gradient-accent glow-accent-sm animate-glow-pulse hud-button flex h-9 w-9 shrink-0 items-center justify-center text-white transition-shadow duration-base group-hover:shadow-[0_0_28px_4px_var(--color-accent)]">
             <KANMark className="h-4 w-4" />
           </span>
           <div className="min-w-0 leading-tight">

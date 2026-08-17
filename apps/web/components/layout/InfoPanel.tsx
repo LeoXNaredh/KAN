@@ -23,7 +23,7 @@ import { useClock } from "@/lib/useClock";
  * una métrica que no existe (mismo criterio que `ActivityFeed`/`SystemStatus`
  * ya seguían).
  *
- * `mobile`: por debajo de `xl` no hay lugar para 3 columnas — ShellChrome
+ * `mobile`: por debajo de `lg` (1024px) no hay lugar para 3 columnas — ShellChrome
  * monta esta misma instancia (mismo componente, sin lógica duplicada) dentro
  * de un tab en vez de la columna fija; este prop solo cambia el wrapper
  * (ancho/posición), nunca el contenido.
@@ -48,7 +48,7 @@ export function InfoPanel({ summary, mobile = false }: { summary: DashboardSumma
       className={
         mobile
           ? "hud-panel hud-brackets glass kan-scroll flex w-full flex-col gap-5 overflow-y-auto p-4 font-mono text-xs"
-          : "hud-panel hud-brackets glass kan-scroll hidden w-72 shrink-0 flex-col gap-5 overflow-y-auto p-4 font-mono text-xs xl:flex"
+          : "hud-panel hud-brackets glass kan-scroll hidden w-64 shrink-0 flex-col gap-5 overflow-y-auto p-4 font-mono text-xs lg:flex"
       }
     >
       <div>

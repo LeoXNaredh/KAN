@@ -58,14 +58,14 @@ export function KANLayout({
            * calcula `right/bottom` contra el viewport completo, lo cual
            * está bien para el borde derecho, pero igual se ancla dentro de
            * una banda acotada al ancho de la columna de contenido
-           * (`md:left-60`, mismo ancho que `Sidebar`; `xl:right-72`, mismo
+           * (`md:left-60`, mismo ancho que `Sidebar`; `lg:right-64`, mismo
            * ancho que el InfoPanel del rediseño eDEX-UI — sin este borde
            * derecho el avatar quedaría flotando debajo/detrás de esa
            * columna en vez de en la esquina del panel central) por
            * consistencia y para no invadir el Sidebar mobile (`z-20`, por
            * debajo de `TopBar`/nav).
            */}
-          <div className="pointer-events-none fixed inset-y-0 right-0 left-0 z-20 md:left-60 xl:right-72">
+          <div className="pointer-events-none fixed inset-y-0 right-0 left-0 z-20 md:left-60 lg:right-64">
             <div className="fade-in absolute right-6 bottom-28 origin-bottom-right scale-[0.38] sm:right-8 sm:bottom-32">
               <KANAvatar size="lg" activity={activity} />
             </div>
@@ -92,16 +92,32 @@ export function KANLayout({
         <div className="flex flex-1 flex-col items-center justify-center gap-6 pt-10 pb-8 text-center">
           <KANAvatar size="lg" activity={activity} />
           {hint}
-          {/* pb-6 extra acá (no solo en el contenedor de arriba): las cards de
+          {/* pb-12 extra acá (no solo en el contenedor de arriba): las cards de
               onboarding quedaban tapadas por la barra `sticky` de abajo sin
               este colchón — `sticky` no reserva espacio propio más allá de
-              su propia caja, así que el contenido anterior necesita el suyo. */}
-          {homeContent && <div className="mt-4 w-full max-w-3xl pb-6">{homeContent}</div>}
+              su propia caja, así que el contenido anterior necesita el suyo.
+              El colchón es generoso a propósito (no solo unos px) para que
+              la tarjeta de onboarding y la barra de abajo se lean como dos
+              piezas claramente separadas, no una sola superficie continua —
+              ambas usan `.glass` (blur translúcido), así que sin aire de
+              sobra entre ellas se pueden percibir como una sola. */}
+          {homeContent && <div className="mt-6 w-full max-w-3xl pb-12">{homeContent}</div>}
         </div>
       )}
 
-      {/* `sticky`, no `fixed`: se queda pegada al fondo del viewport visible sin escapar la columna de contenido (a diferencia del avatar de "working", no necesita banda propia). */}
-      <div className="glass sticky bottom-0 z-10 -mx-4 mt-4 border-t border-line/80 px-4 py-3 md:-mx-6 md:px-6">{bar}</div>
+      {/*
+       * `sticky`, no `fixed`: se queda pegada al fondo del viewport visible
+       * sin escapar la columna de contenido (a diferencia del avatar de
+       * "working", no necesita banda propia). Fondo más sólido que
+       * `.glass` (translúcido) a propósito — es la única pieza de este
+       * layout que SIEMPRE está ahí en los 3 estados; necesita leerse como
+       * una barra de herramientas anclada, no como una tarjeta de contenido
+       * más flotando cerca de lo que sea que haya arriba (onboarding, hint,
+       * mensajes).
+       */}
+      <div className="sticky bottom-0 z-10 -mx-4 mt-4 border-t border-line bg-surface-2 px-4 py-3 shadow-[0_-12px_24px_-16px_rgba(0,0,0,0.5)] md:-mx-6 md:px-6">
+        {bar}
+      </div>
     </div>
   );
 }

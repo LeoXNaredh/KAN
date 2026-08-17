@@ -116,13 +116,18 @@ export class SupabaseConversationRepository implements ConversationRepositoryPor
   async listRecent(limit: number): Promise<ConversationSummary[]> {
     const { data: conversationRows, error: conversationsError } = await this.client
       .from("conversations")
-      .select("id, title, updated_at")
+      .select("id, title, created_at, updated_at")
       .eq("user_id", this.userId)
       .order("updated_at", { ascending: false })
       .limit(limit);
     if (conversationsError) throw new Error(conversationsError.message);
 
-    const conversations = (conversationRows ?? []) as Array<{ id: string; title: string | null; updated_at: string }>;
+    const conversations = (conversationRows ?? []) as Array<{
+      id: string;
+      title: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
     if (conversations.length === 0) return [];
 
     const ids = conversations.map((row) => row.id);
@@ -143,7 +148,7 @@ export class SupabaseConversationRepository implements ConversationRepositoryPor
 
     return conversations.map((row) => ({
       id: row.id,
-      title: row.title ?? deriveConversationTitle(firstUserMessageByConversation.get(row.id)),
+      title: row.title ?? deriveConversationTitle(firstUserMessageByConversation.get(row.id), row.created_at),
       updatedAt: row.updated_at,
     }));
   }

@@ -168,11 +168,16 @@ body::after {
   position: fixed;
   inset: 0;
   z-index: -1;
+  /* Color sólido (no `color-mix(... 8%, transparent)`) — diluir el color de
+     la línea Y bajar `opacity` del pseudo-elemento al mismo tiempo componía
+     las dos atenuaciones (8% × 4.5% ≈ menos del 0.4% real), dejando la
+     grilla prácticamente invisible en fondo negro puro. Con color sólido,
+     `opacity: 0.03` de acá abajo es la única atenuación — 3% real, no ~0.4%. */
   background-image:
-    linear-gradient(color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-ink) 8%, transparent) 1px, transparent 1px);
+    linear-gradient(var(--color-ink) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-ink) 1px, transparent 1px);
   background-size: 42px 42px;
-  opacity: 0.045;
+  opacity: 0.03;
   /* Sin mask: cubre toda la pantalla parejo, incluida la columna del Sidebar
      (antes se desvanecía hacia los bordes y ahí quedaba invisible). */
 }
@@ -420,23 +425,20 @@ body::after {
   100% { transform: translateY(100%); opacity: 0; }
 }
 
+/*
+ * `.kan-ring`/`.kan-ring-inner`/`.kan-ring-outer` solo manejan la rotación
+ * acá — la forma del arco (grosor, largo de segmento, puntas redondeadas)
+ * vive en el `<circle stroke-dasharray>` de KANAvatar.tsx (SVG), no en
+ * `background`/`mask` como antes: un `repeating-conic-gradient` recortado
+ * con un `mask` radial daba segmentos casi tan anchos como el grosor del
+ * propio anillo — se leían como cuadrados/rombos sueltos flotando, no como
+ * arcos de un círculo continuo.
+ */
 .kan-ring {
-  background: repeating-conic-gradient(
-    var(--color-accent) 0deg 2deg,
-    transparent 2deg 18deg
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 3px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 3px));
   animation: kan-ring-spin 40s linear infinite;
 }
 
 .kan-ring-inner {
-  background: repeating-conic-gradient(
-    color-mix(in srgb, var(--color-accent) 70%, transparent) 0deg 4deg,
-    transparent 4deg 30deg
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 6px), black calc(100% - 6px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 6px), black calc(100% - 6px));
   animation: kan-ring-spin-reverse 26s linear infinite;
 }
 
@@ -448,12 +450,6 @@ body::after {
  * principal.
  */
 .kan-ring-outer {
-  background: repeating-conic-gradient(
-    color-mix(in srgb, var(--color-accent) 55%, transparent) 0deg 1.5deg,
-    transparent 1.5deg 26deg
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
   animation: kan-ring-spin 70s linear infinite;
 }
 

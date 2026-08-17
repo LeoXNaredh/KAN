@@ -88,21 +88,21 @@ export function ShellChrome({
         >
           <TopBar onOpenMenu={() => setMobileNavOpen(true)} user={user} />
 
-          {/* Tabs de mobile/tablet (< xl) — el InfoPanel de 3 columnas no entra ahí, así que se alterna con el contenido normal en vez de apilarlos. */}
-          <div className="flex border-b border-line/60 xl:hidden">
+          {/* Tabs de mobile/tablet (< lg, 1024px) — el InfoPanel de 3 columnas no entra ahí, así que se alterna con el contenido normal en vez de apilarlos. */}
+          <div className="flex border-b border-line/60 lg:hidden">
             <MobileTabButton active={mobilePane === "main"} onClick={() => setMobilePane("main")} icon={LayoutPanelLeft} label="Panel" />
             <MobileTabButton active={mobilePane === "info"} onClick={() => setMobilePane("info")} icon={Radio} label="Info" />
           </div>
 
           <main className="flex flex-1 gap-4 p-4 md:p-6">
-            <div className={`min-w-0 flex-1 flex-col gap-4 ${mobilePane === "info" ? "hidden xl:flex" : "flex"}`}>{children}</div>
-            {/* Columna de escritorio (>= xl) — siempre visible ahí, sin depender del tab de mobile. */}
-            <div className="hidden xl:flex">
+            <div className={`min-w-0 flex-1 flex-col gap-4 ${mobilePane === "info" ? "hidden lg:flex" : "flex"}`}>{children}</div>
+            {/* Columna de escritorio (>= lg) — siempre visible ahí, sin depender del tab de mobile. */}
+            <div className="hidden lg:flex">
               <InfoPanel summary={summary} />
             </div>
-            {/* Tab de mobile/tablet (< xl) — misma info, instancia separada para no acoplar su visibilidad a la columna de escritorio. */}
+            {/* Tab de mobile/tablet (< lg) — misma info, instancia separada para no acoplar su visibilidad a la columna de escritorio. */}
             {mobilePane === "info" && (
-              <div className="flex flex-1 xl:hidden">
+              <div className="flex flex-1 lg:hidden">
                 <InfoPanel summary={summary} mobile />
               </div>
             )}

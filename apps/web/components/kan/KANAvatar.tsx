@@ -80,19 +80,61 @@ export function KANAvatar({
           opacity: activity === "idle" ? 0.35 : activity === "thinking" ? 0.45 : 0.6,
         }}
       />
-      {/* Grupo de 3 anillos girando a velocidades distintas (exterior/angular/HUD) — wrapper propio para que el pulso de listening / blur de thinking no choquen con la rotación individual de cada uno. */}
+      {/*
+       * Grupo de 3 anillos girando a velocidades distintas (exterior/angular/HUD) —
+       * wrapper propio para que el pulso de listening / blur de thinking no
+       * choquen con la rotación individual de cada uno. Arcos con
+       * `stroke-dasharray` + `stroke-linecap="round"` (SVG), no
+       * `repeating-conic-gradient` recortado con un `mask` — el gradiente
+       * cónico daba segmentos casi tan anchos como el grosor del propio
+       * anillo (se leían como cuadrados/rombos sueltos, no como arcos de un
+       * círculo); el SVG da arcos de verdad, con puntas redondeadas.
+       */}
       <span aria-hidden="true" className={`absolute inset-0 ${RING_GROUP_CLASS[activity]}`}>
         {/* Anillo exterior, más tenue, más lento (kan-ring-outer, 70s) — da profundidad. */}
-        <span className="kan-ring-outer absolute -inset-3 rounded-full opacity-70" />
+        <svg viewBox="0 0 100 100" className="kan-ring-outer absolute -inset-3 h-[calc(100%+1.5rem)] w-[calc(100%+1.5rem)] opacity-70">
+          <circle
+            cx="50"
+            cy="50"
+            r="47"
+            fill="none"
+            stroke="color-mix(in srgb, var(--color-accent) 55%, transparent)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeDasharray="6 21"
+          />
+        </svg>
         {/* Anillo de base — circunferencia continua */}
         <span
           className="absolute inset-0 rounded-full"
           style={{ border: "1.5px solid color-mix(in srgb, var(--color-accent) 20%, transparent)" }}
         />
         {/* Anillo angular */}
-        <span className={`kan-ring absolute inset-0 rounded-full ${RING_SPEED_CLASS[activity]}`} />
+        <svg viewBox="0 0 100 100" className={`kan-ring absolute inset-0 h-full w-full ${RING_SPEED_CLASS[activity]}`}>
+          <circle
+            cx="50"
+            cy="50"
+            r="48"
+            fill="none"
+            stroke="var(--color-accent)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeDasharray="9 15"
+          />
+        </svg>
         {/* Anillo interior invertido (HUD) */}
-        <span className="kan-ring-inner absolute inset-2 rounded-full opacity-60" />
+        <svg viewBox="0 0 100 100" className="kan-ring-inner absolute inset-2 h-[calc(100%-1rem)] w-[calc(100%-1rem)] opacity-60">
+          <circle
+            cx="50"
+            cy="50"
+            r="46"
+            fill="none"
+            stroke="color-mix(in srgb, var(--color-accent) 70%, transparent)"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray="7 12"
+          />
+        </svg>
       </span>
       {/* Grilla HUD tipo mira — círculo concéntrico + cruz, muy sutil, puramente decorativo. */}
       <span

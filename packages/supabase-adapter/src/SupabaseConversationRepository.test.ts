@@ -222,13 +222,18 @@ describe("SupabaseConversationRepository", () => {
     ]);
   });
 
-  it("listRecent() usa el título por defecto si una conversación no tiene mensajes user todavía", async () => {
+  it("listRecent() usa el título por defecto (fecha de creación) si una conversación no tiene mensajes user todavía", async () => {
     const client = createFakeFromClient({
-      conversations: { data: [{ id: "c1", updated_at: "2026-01-01T00:00:00.000Z" }], error: null },
+      conversations: {
+        data: [{ id: "c1", created_at: "2026-01-11T00:00:00.000Z", updated_at: "2026-01-11T00:00:00.000Z" }],
+        error: null,
+      },
       messages: { data: [], error: null },
     });
     const repo = new SupabaseConversationRepository(client, "u1");
 
-    expect(await repo.listRecent(5)).toEqual([{ id: "c1", title: "Conversación sin título", updatedAt: "2026-01-01T00:00:00.000Z" }]);
+    expect(await repo.listRecent(5)).toEqual([
+      { id: "c1", title: "Conversación · 11 ene", updatedAt: "2026-01-11T00:00:00.000Z" },
+    ]);
   });
 });
