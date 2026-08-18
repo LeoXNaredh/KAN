@@ -16,10 +16,17 @@ import {
   NodeProcessLauncher,
   SidecarProxyPlugin,
   resolveVenvPythonPath,
+  DeviceDiscoveryPlugin,
+  DeviceDiscoveryService,
+  BonjourWifiScanner,
+  NullBleScanner,
+  loadVidPidCatalog,
+  type BleDeviceScannerPort,
   type EdgeAgentEvents,
   type InstalledPlugin,
   type LoggerPort,
 } from "@kan/edge-agent-core";
+import { NodeSerialTransport } from "@kan/serial-line-transport";
 import { validatePluginManifest, type ActionSeverity } from "@kan/plugin-contract";
 import { GatewayPluginPackageFetcher } from "./GatewayPluginPackageFetcher";
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
@@ -200,6 +207,33 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   }
 
   await agent.registerPlugin(new DeviceSimulatorPlugin());
+
+  // Detección automática de dispositivos conectados (ADR-060) — serial
+  // (VID/PID contra catálogo), WiFi (mDNS pasivo, `bonjour-service`, puro
+  // JS) y BLE (opcional). BLE usa el mismo criterio de import dinámico +
+  // try/catch que Raspberry Pi (ADR-038): el intento de `@abandonware/noble`
+  // ya falló una vez en este repo para plugin-bluetooth-generic por falta
+  // de Visual Studio C++ (ver su README) — si vuelve a fallar acá, se
+  // degrada a `NullBleScanner` (BLE ausente) sin tumbar el resto del
+  // escaneo ni del Edge Agent.
+  let bleScanner: BleDeviceScannerPort = new NullBleScanner();
+  try {
+    const { NobleBleScanner } = await import("@kan/edge-agent-core/ble");
+    bleScanner = new NobleBleScanner();
+  } catch (error) {
+    logger.warn(`BLE no disponible para la detección de dispositivos (¿falta compilar @abandonware/noble?): ${error}`);
+  }
+  await agent.registerPlugin(
+    new DeviceDiscoveryPlugin(
+      new DeviceDiscoveryService({
+        serialTransport: new NodeSerialTransport(),
+        wifiScanner: new BonjourWifiScanner(),
+        bleScanner,
+        logger,
+        catalog: loadVidPidCatalog(join(userDataDir, "vid-pid-custom.json")),
+      }),
+    ),
+  );
 
   // Sin binding nativo — puro JS, sin el riesgo de ABI de Electron que sí
   // aplica a serialport (ver más abajo). Registro estático, mismo criterio

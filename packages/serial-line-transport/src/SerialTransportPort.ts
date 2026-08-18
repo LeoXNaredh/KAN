@@ -8,6 +8,9 @@ import type { LineConnection } from "./LineConnection";
 export interface PortInfo {
   path: string;
   manufacturer?: string;
+  /** Hex sin prefijo "0x" (ej. "2341"), tal cual lo expone `serialport` — `undefined` si el driver USB del SO no lo reportó. */
+  vendorId?: string;
+  productId?: string;
 }
 
 /** Alias histórico (viene de plugin-esp32-arduino) — el shape real vive en LineConnection.ts. */

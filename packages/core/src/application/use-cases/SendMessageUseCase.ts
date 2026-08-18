@@ -49,7 +49,9 @@ const SYSTEM_PROMPT =
   "analógico probablemente sea un sensor de medición, una salida digital probablemente sea un relé u otro " +
   "control on/off, pero eso es una hipótesis, no un dato confirmado. Ofrecela así, con lenguaje que deje " +
   "lugar a corrección (\"podría ser...\", \"parece un...\"), nunca la afirmes como si la supieras con " +
-  "certeza. Cerrá siempre el resumen preguntándole al usuario qué le gustaría hacer con ese sistema.";
+  "certeza. Cerrá siempre el resumen preguntándole al usuario qué le gustaría hacer con ese sistema.\n\n" +
+  "Hablá siempre en español rioplatense (Argentina): voseo ('sos', 'tenés', 'querés', nunca 'tú eres'/'tienes'/" +
+  "'quieres'), con vocabulario y giros naturales de acá, no un español neutro genérico ni de España.";
 
 const MAX_TOOL_ROUNDS = 4;
 // Límite superior de duración total del intercambio de tools (no de cada
@@ -262,7 +264,7 @@ export class SendMessageUseCase {
       createdAt: new Date().toISOString(),
       toolCall: { name: toolName, args },
     };
-    let conv = appendMessage(conversation, assistantMessage);
+    const conv = appendMessage(conversation, assistantMessage);
     onEvent?.({ type: "tool_call", name: toolName, args });
 
     const result: ToolExecutionResult = this.toolProvider

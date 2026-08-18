@@ -121,6 +121,51 @@ describe("GeminiLiveProxy (integración WS real — Gateway<->fake-Gemini)", () 
     ws.close();
   });
 
+  it("el setup manda speechConfig con la voz default (ADR-060) cuando no se configuró una explícita", async () => {
+    const { sessionId } = store.register(CONFIG);
+    const ws = connect(sessionId);
+    await waitForOpen(ws);
+    await waitForMessage(ws);
+
+    const setupSent = JSON.parse(fakeGeminiReceived[0].raw);
+    expect(setupSent.setup.generationConfig.speechConfig).toEqual({
+      voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } },
+    });
+
+    ws.close();
+  });
+
+  it("una voz custom pasada al constructor reemplaza el default", async () => {
+    const geminiPort = (fakeGeminiServer.address() as { port: number }).port;
+    const customProxy = new GeminiLiveProxy(store, "fake-api-key", fakeLogger(), `ws://localhost:${geminiPort}`, "Puck");
+
+    // Servidor propio para esta prueba, wireado al proxy con voz custom —
+    // el `gatewayServer`/`proxy` de beforeEach usan la voz default.
+    const customServer = createServer();
+    customServer.on("upgrade", (request, socket, head) => {
+      if (new URL(request.url ?? "/", "http://internal").pathname === "/live-voice") {
+        customProxy.handleUpgrade(request, socket, head);
+      } else {
+        socket.destroy();
+      }
+    });
+    await new Promise<void>((resolve) => customServer.listen(0, resolve));
+    const customPort = (customServer.address() as { port: number }).port;
+
+    try {
+      const { sessionId } = store.register(CONFIG);
+      const ws = new WebSocket(`ws://localhost:${customPort}/live-voice?sessionId=${sessionId}`);
+      await waitForOpen(ws);
+      await waitForMessage(ws);
+
+      const setupSent = JSON.parse(fakeGeminiReceived[0].raw);
+      expect(setupSent.setup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe("Puck");
+      ws.close();
+    } finally {
+      await new Promise<void>((resolve) => customServer.close(() => resolve()));
+    }
+  });
+
   it("el sessionId es de un solo uso — una segunda conexión con el mismo id se rechaza", async () => {
     const { sessionId } = store.register(CONFIG);
     const first = connect(sessionId);

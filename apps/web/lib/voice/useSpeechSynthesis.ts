@@ -26,13 +26,29 @@ function stripMarkdownForSpeech(text: string): string {
   return MARKDOWN_PATTERNS.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text).trim();
 }
 
+/**
+ * KAN habla en registro rioplatense (voseo, ya en todos los system prompts) —
+ * la voz nativa del navegador debería acompañar eso, no sonar en castellano
+ * de España (ADR-060). Prioridad: es-AR "mejorada" > es-AR cualquiera >
+ * "mejorada" en otro español > es-ES > cualquier español disponible. Muchos
+ * navegadores/SO no traen ninguna voz es-AR instalada — por eso el fallback
+ * en cascada, nunca falla en encontrar algo si hay al menos una voz "es-*".
+ */
 function pickSpanishVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
   const spanish = voices.filter((voice) => voice.lang.toLowerCase().startsWith("es"));
   if (spanish.length === 0) return undefined;
-  // Cuando el navegador expone voces "mejoradas" (ej. las Natural de Edge/Windows,
-  // u Online de Chrome), suenan bastante más fluidas que la voz por defecto del sistema.
-  const enhanced = spanish.find((voice) => /natural|neural|enhanced|premium|online/i.test(voice.name));
-  return enhanced ?? spanish.find((voice) => voice.lang.toLowerCase() === "es-es") ?? spanish[0];
+
+  const isEnhanced = (voice: SpeechSynthesisVoice) => /natural|neural|enhanced|premium|online/i.test(voice.name);
+  const isArgentine = (voice: SpeechSynthesisVoice) => voice.lang.toLowerCase() === "es-ar" || /\bar\b/i.test(voice.name);
+
+  const argentine = spanish.filter(isArgentine);
+  return (
+    argentine.find(isEnhanced) ??
+    argentine[0] ??
+    spanish.find(isEnhanced) ??
+    spanish.find((voice) => voice.lang.toLowerCase() === "es-es") ??
+    spanish[0]
+  );
 }
 
 /**
@@ -65,7 +81,11 @@ export function useSpeechSynthesis() {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
 
     const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = "es-ES";
+    // Default es-AR: si `pickSpanishVoice()` encuentra una voz instalada,
+    // `utterance.voice` la pisa (con su propio lang) — esto solo importa
+    // cuando no hay ninguna voz es-* explícita y el motor usa `lang` para
+    // elegir la síntesis por su cuenta.
+    utterance.lang = "es-AR";
     utterance.rate = 0.97;
     utterance.pitch = 1;
     utterance.onstart = () => setIsSpeaking(true);

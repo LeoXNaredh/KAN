@@ -118,7 +118,13 @@ const notificationService = new ExpoNotificationService(pushTokenStore, logger);
 const liveVoiceSessionStore = GEMINI_API_KEY ? new LiveVoiceSessionStore() : undefined;
 const geminiLiveProxy =
   GEMINI_API_KEY && liveVoiceSessionStore
-    ? new GeminiLiveProxy(liveVoiceSessionStore, GEMINI_API_KEY, logger)
+    ? new GeminiLiveProxy(
+        liveVoiceSessionStore,
+        GEMINI_API_KEY,
+        logger,
+        undefined,
+        process.env.GEMINI_LIVE_VOICE || undefined,
+      )
     : undefined;
 if (!GEMINI_API_KEY) {
   logger.warn("[gateway] GEMINI_API_KEY no configurada — la voz en tiempo real (ADR-044) queda deshabilitada.");

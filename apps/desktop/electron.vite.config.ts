@@ -46,7 +46,18 @@ const WORKSPACE_PACKAGES = [
 // declarada acá, Rollup igual intenta resolverla al bundlear. Confirmado
 // que `node-opcua` funciona igual sin ella (ADR-050: tests reales contra
 // un servidor OPC-UA embebido, sin instalarla).
-const NEVER_BUNDLE = ["cpu-features", "proper-lockfile"];
+// `@abandonware/noble` — mismo problema, mismo criterio (ADR-060): es
+// `optionalDependencies` de `@kan/edge-agent-core` (subpath `./ble`), no de
+// este package.json, así que `externalizeDepsPlugin` no la ve. Su binding
+// nativo (`@abandonware/bluetooth-hci-socket`) ya se denegó a propósito en
+// pnpm-workspace.yaml (`allowBuilds: false` — el intento previo para
+// plugin-bluetooth-generic falló por falta de Visual Studio C++, ver su
+// README) — sin externalizarla acá, Rollup intenta resolver en serio el
+// `.node` que ese build denegado nunca generó y el build entero falla
+// (confirmado en vivo, no hipotético). Externalizada, el `import()`
+// dinámico + try/catch de `main/index.ts` sí llega a ejecutarse en runtime
+// y degrada a `NullBleScanner` como corresponde.
+const NEVER_BUNDLE = ["cpu-features", "proper-lockfile", "@abandonware/noble"];
 
 export default defineConfig({
   main: {

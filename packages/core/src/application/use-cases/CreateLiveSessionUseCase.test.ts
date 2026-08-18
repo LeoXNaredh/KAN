@@ -153,6 +153,16 @@ describe("CreateLiveSessionUseCase", () => {
     expect(port.calls[0].systemPrompt).toMatch(/apenas arranca la conversaci.n/i);
   });
 
+  it("el system prompt pide hablar en español rioplatense (voseo), no neutro ni de España (ADR-060)", async () => {
+    const port = new RecordingLiveSessionPort();
+    const useCase = new CreateLiveSessionUseCase(port);
+
+    await useCase.execute();
+
+    expect(port.calls[0].systemPrompt).toMatch(/rioplatense/i);
+    expect(port.calls[0].systemPrompt).toMatch(/voseo/i);
+  });
+
   it("incluye la personalidad configurada en el system prompt", async () => {
     const port = new RecordingLiveSessionPort();
     const personalityContext = new FakePersonalityContext("Sé directo y breve, sin rodeos.");

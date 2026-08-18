@@ -1,0 +1,13 @@
+[
+  { "vendorId": "0x2341", "productId": "0x0043", "name": "Arduino Uno R3 (original)" },
+  { "vendorId": "0x2341", "productId": "0x0001", "name": "Arduino Uno R1/R2 (original)" },
+  { "vendorId": "0x1A86", "productId": "0x7523", "name": "Arduino / ESP32 (clon CH340)" },
+  { "vendorId": "0x10C4", "productId": "0xEA60", "name": "ESP32 / ESP8266 (CP210x)" },
+  { "vendorId": "0x0403", "productId": "0x6001", "name": "Arduino Mega / FTDI FT232" },
+  { "vendorId": "0x067B", "productId": "0x2303", "name": "Arduino compatible (PL2303)" },
+  { "vendorId": "0x2341", "productId": "0x0010", "name": "Arduino Mega 2560 (original)" },
+  { "vendorId": "0x0483", "productId": "0x5740", "name": "STM32 (Blue Pill / Nucleo)" },
+  { "vendorId": "0x04D8", "productId": "0x000A", "name": "Microchip / PIC" },
+  { "vendorId": "0x0547", "productId": "0x1002", "name": "Siemens S7 USB adapter" },
+  { "vendorId": "0x0908", "productId": "0x0004", "name": "Beckhoff EtherCAT USB" }
+]

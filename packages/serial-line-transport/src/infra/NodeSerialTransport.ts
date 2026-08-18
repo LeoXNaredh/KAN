@@ -13,7 +13,12 @@ import type { LineConnectionState } from "../LineConnection";
 export class NodeSerialTransport implements SerialTransportPort {
   async list(): Promise<PortInfo[]> {
     const ports = await SerialPort.list();
-    return ports.map((port) => ({ path: port.path, manufacturer: port.manufacturer }));
+    return ports.map((port) => ({
+      path: port.path,
+      manufacturer: port.manufacturer,
+      vendorId: port.vendorId,
+      productId: port.productId,
+    }));
   }
 
   async open(path: string, baudRate: number, delimiter = "\n"): Promise<SerialConnection> {

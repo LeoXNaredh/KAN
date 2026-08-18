@@ -29,6 +29,7 @@
     "@kan/plugin-serial-generic": "workspace:*",
     "@kan/plugin-ssh": "workspace:*",
     "@kan/plugin-ws-generic": "workspace:*",
+    "@kan/serial-line-transport": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "ws": "^8.18.0"

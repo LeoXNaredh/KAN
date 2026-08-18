@@ -61,6 +61,16 @@ describe("SendMessageUseCase", () => {
     expect(conversation.messages[1].content).toBe("Hola, ¿en qué te ayudo?");
   });
 
+  it("el system prompt pide hablar en español rioplatense (voseo), no neutro ni de España (ADR-060)", async () => {
+    const ai = new ScriptedAIProvider([{ content: "listo" }]);
+    const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository());
+
+    await useCase.execute({ userMessage: "hola" });
+
+    expect(ai.requestsSeen[0].systemPrompt).toMatch(/rioplatense/i);
+    expect(ai.requestsSeen[0].systemPrompt).toMatch(/voseo/i);
+  });
+
   it("ejecuta una tool propuesta y produce la respuesta final tras el resultado", async () => {
     const ai = new ScriptedAIProvider([
       { toolCalls: [{ name: "read_sensor", args: {} }] },

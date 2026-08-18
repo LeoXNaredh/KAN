@@ -7,6 +7,13 @@ import type { LiveVoiceSessionStore, LiveVoiceSessionConfig } from "../applicati
 
 const DEFAULT_GEMINI_WS_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+// Mismo default que GeminiTtsProvider (ADR-042) — un único nombre de voz
+// compartido entre Live y el TTS de red, no dos configuraciones divergentes
+// (ADR-060). Gemini no expone acento/locale por voz (solo timbre) — esto
+// NO es "voz argentina", es consistencia de timbre entre los dos caminos de
+// audio de KAN. El registro rioplatense (voseo) vive en el texto que se le
+// pide sintetizar, no en la selección de voz.
+const DEFAULT_VOICE = "Charon";
 // El audio va en base64 dentro de mensajes JSON — más pesado que el
 // protocolo Core<->Edge Agent, pero cada chunk sigue siendo chico (~100ms).
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
@@ -53,6 +60,7 @@ export class GeminiLiveProxy {
     private readonly apiKey: string,
     private readonly logger: LoggerPort,
     private readonly geminiWsUrl: string = DEFAULT_GEMINI_WS_URL,
+    private readonly voice: string = DEFAULT_VOICE,
   ) {}
 
   /** Se invoca desde el evento 'upgrade' del http.Server de apps/gateway. */
@@ -80,7 +88,10 @@ export class GeminiLiveProxy {
         JSON.stringify({
           setup: {
             model: `models/${config.model}`,
-            generationConfig: { responseModalities: ["AUDIO"] },
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } } },
+            },
             systemInstruction: { parts: [{ text: config.systemPrompt }] },
             tools: config.tools.length
               ? [{ functionDeclarations: config.tools.map(toGeminiFunctionDeclaration) }]
