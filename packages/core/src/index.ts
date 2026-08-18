@@ -23,6 +23,7 @@ export * from "./domain/ports/PushTokenStorePort";
 export * from "./domain/ports/LiveSessionPort";
 export * from "./application/translateToolCall";
 export * from "./application/memoryTools";
+export * from "./application/confirmationTool";
 export * from "./application/deviceNaming";
 export * from "./application/sessionContextTools";
 export * from "./application/SessionContext";

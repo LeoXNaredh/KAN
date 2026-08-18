@@ -8,6 +8,8 @@ import { MessageBubble } from "@/components/dashboard/ConversationPanel";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
 import { LiveVoiceButton } from "@/components/dashboard/LiveVoiceButton";
 import { ScreenShareButton } from "@/components/dashboard/ScreenShareButton";
+import { CameraShareButton } from "@/components/dashboard/CameraShareButton";
+import { PendingConfirmationModal } from "@/components/dashboard/PendingConfirmationModal";
 import { useConversation } from "@/lib/chat/useConversation";
 import { useKANState } from "@/lib/kan/useKANState";
 import { useWakeWord } from "@/lib/kan/useWakeWord";
@@ -70,7 +72,16 @@ export function KANHome({
   }
 
   return (
-    <KANLayout
+    <>
+      {conv.pendingConfirmation && (
+        <PendingConfirmationModal
+          confirmation={conv.pendingConfirmation}
+          busy={conv.isSending}
+          onCancel={() => conv.resolveConfirmation(false)}
+          onConfirm={() => conv.resolveConfirmation(true)}
+        />
+      )}
+      <KANLayout
       phase={phase}
       activity={activity}
       homeContent={homeContent}
@@ -143,6 +154,12 @@ export function KANHome({
                 onClick={conv.live.screenSharing ? conv.live.stopScreenShare : conv.live.startScreenShare}
               />
             )}
+            {conv.live.status === "active" && (
+              <CameraShareButton
+                sharing={conv.live.cameraSharing}
+                onClick={conv.live.cameraSharing ? conv.live.stopCameraShare : conv.live.startCameraShare}
+              />
+            )}
             <input
               ref={fileInputRef}
               type="file"
@@ -208,6 +225,7 @@ export function KANHome({
           </div>
         </form>
       }
-    />
+      />
+    </>
   );
 }

@@ -32,6 +32,9 @@ export interface ChatMessage {
   image?: ChatImage;
 }
 
+/** ADR-059: lo que necesita el modal de confirmación para describir la acción exacta al usuario. */
+export type PendingConfirmation = Extract<ChatStreamEvent, { type: "pending_confirmation" }>;
+
 // Mismo límite que /api/chat (ADR-018) — se valida acá también para dar
 // feedback inmediato en vez de esperar el viaje de ida y vuelta al servidor.
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -63,6 +66,7 @@ export function useConversation(initialConversationId?: string) {
   const [isSending, setIsSending] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const { speak, isSpeaking } = useSpeechSynthesis();
   // Evita re-hidratar en cada render y distingue "todavía no cargó este id"
   // de "ya está cargado" — sin esto, cada cambio de referencia del prop
@@ -118,24 +122,26 @@ export function useConversation(initialConversationId?: string) {
     };
   }, [initialConversationId]);
 
-  const sendMessage = useCallback(
-    async (userMessage: string, options?: { viaVoice?: boolean }) => {
-      if (!userMessage.trim() || isSending) return;
-      const trimmed = userMessage.trim();
-      const image = pendingImage ?? undefined;
-      const preSubmitCount = messages.length;
-      setMessages((prev) => [...prev, { role: "user", content: trimmed, image }]);
-      setInput("");
-      setPendingImage(null);
+  /**
+   * Corre un POST /api/chat y consume el stream SSE — compartido entre
+   * `sendMessage` (turno normal) y `resolveConfirmation` (ADR-059: reanuda
+   * un turno que había quedado esperando una decisión del usuario). Ambos
+   * difieren únicamente en el body que mandan y en qué mensaje optimista
+   * agregan antes de arrancar — el resto (streaming, merge de mensajes,
+   * habla por voz) es idéntico.
+   */
+  const runChatRequest = useCallback(
+    async (body: Record<string, unknown>, preSubmitCount: number, options?: { viaVoice?: boolean }) => {
       setIsSending(true);
       setStreamingStatus(null);
       setError(null);
+      setPendingConfirmation(null);
 
       try {
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: trimmed, conversationId, image }),
+          body: JSON.stringify(body),
         });
 
         if (!response.ok) {
@@ -149,6 +155,7 @@ export function useConversation(initialConversationId?: string) {
         // agregada durante el streaming — nunca queda divergiendo de lo real.
         let finalConversation: Conversation | undefined;
         let streamError: string | undefined;
+        let pending: PendingConfirmation | undefined;
 
         for await (const event of readSseStream<ChatSseEvent>(response)) {
           if (event.type === "tool_call") {
@@ -158,6 +165,9 @@ export function useConversation(initialConversationId?: string) {
             setMessages((prev) => [...prev, { role: "tool", content: summarizeToolResultForDisplay(event) }]);
           } else if (event.type === "final") {
             setStreamingStatus(null);
+          } else if (event.type === "pending_confirmation") {
+            setStreamingStatus(null);
+            pending = event;
           } else if (event.type === "done") {
             if ("error" in event) streamError = event.error;
             else finalConversation = event.conversation;
@@ -174,12 +184,14 @@ export function useConversation(initialConversationId?: string) {
         emitConversationUpdated();
 
         const newMessages: ChatMessage[] = finalConversation.messages
-          .slice(preSubmitCount + 1)
+          .slice(preSubmitCount)
           .map((m) => ({ role: m.role as ChatRole, content: m.content, toolCall: m.toolCall, image: m.image }));
         // Descarta las burbujas provisionales de tool_result y deja solo lo
         // realmente persistido — mismo criterio de "el server es la fuente
         // de verdad" que ya usaba la versión no-streaming.
-        setMessages((prev) => [...prev.slice(0, preSubmitCount + 1), ...newMessages]);
+        setMessages((prev) => [...prev.slice(0, preSubmitCount), ...newMessages]);
+
+        if (pending) setPendingConfirmation(pending);
 
         // Habla la respuesta solo si el turno del usuario vino por voz
         // (ADR-034) — evita costo real de TTS de red en cada mensaje tipeado.
@@ -192,7 +204,39 @@ export function useConversation(initialConversationId?: string) {
         setStreamingStatus(null);
       }
     },
-    [conversationId, isSending, messages.length, pendingImage, speak],
+    [speak],
+  );
+
+  const sendMessage = useCallback(
+    async (userMessage: string, options?: { viaVoice?: boolean }) => {
+      if (!userMessage.trim() || isSending) return;
+      const trimmed = userMessage.trim();
+      const image = pendingImage ?? undefined;
+      const preSubmitCount = messages.length + 1;
+      setMessages((prev) => [...prev, { role: "user", content: trimmed, image }]);
+      setInput("");
+      setPendingImage(null);
+
+      await runChatRequest({ message: trimmed, conversationId, image }, preSubmitCount, options);
+    },
+    [conversationId, isSending, messages.length, pendingImage, runChatRequest],
+  );
+
+  /**
+   * Resuelve la confirmación pendiente (ADR-059) — el usuario ya decidió
+   * (botones del modal), así que no hay mensaje de usuario nuevo que
+   * mostrar; el turno sigue exactamente donde había quedado.
+   */
+  const resolveConfirmation = useCallback(
+    async (approved: boolean) => {
+      if (!pendingConfirmation || isSending) return;
+      const { confirmationId } = pendingConfirmation;
+      const preSubmitCount = messages.length;
+      setPendingConfirmation(null);
+
+      await runChatRequest({ message: "", conversationId, confirmationResponse: { confirmationId, approved } }, preSubmitCount);
+    },
+    [pendingConfirmation, isSending, messages.length, conversationId, runChatRequest],
   );
 
   const voice = useVoiceInput((text) => sendMessage(text, { viaVoice: true }));
@@ -227,5 +271,7 @@ export function useConversation(initialConversationId?: string) {
     live,
     sendMessage,
     selectImage,
+    pendingConfirmation,
+    resolveConfirmation,
   };
 }

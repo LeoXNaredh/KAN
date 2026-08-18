@@ -1,5 +1,5 @@
 import type { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
-import type { ActionSeverity, AgentTaskDispatchMessage, TargetDescriptor } from "@kan/plugin-contract";
+import type { ActionSeverity, CoreToEdgeMessage, TargetDescriptor } from "@kan/plugin-contract";
 import type { InstalledPlugin } from "./domain/entities/InstalledPlugin";
 import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
 import type { LoggerPort } from "./domain/ports/LoggerPort";
@@ -223,10 +223,11 @@ export class EdgeAgent {
    * auditoría de backend): antes esto no dejaba rastro — el comentario
    * histórico en `invokeCapability()` lo marcaba como "trabajo futuro".
    * Mismo mecanismo que `invokeCapability()` (`audit.local` → Gateway lo
-   * graba con `actor: "user"`, ver `Gateway.ts`), y mismo criterio de
-   * alcance: solo si la acción efectivamente se ejecutó (aprobada) o quedó
-   * en error; un rechazo (`approved: false`) no ejecuta nada, así que
-   * `executeConfirmed()` no devuelve un outcome "executed" para auditar.
+   * graba con `actor: "user"`, ver `Gateway.ts`) — `executeConfirmed()`
+   * siempre devuelve un `ConfirmedOutcome` definido, tanto si se aprueba
+   * (se ejecuta) como si se rechaza (`result = {success:false, error:
+   * "Rechazado por el usuario"}`), así que ambos casos quedan auditados acá
+   * por igual; solo queda sin auditar si `confirmationId` no existe/ya venció.
    */
   async resolveConfirmation(confirmationId: string, approved: boolean): Promise<ConfirmedOutcome | undefined> {
     const outcome = await this.capabilityRegistry.executeConfirmed(confirmationId, approved);
@@ -272,7 +273,12 @@ export class EdgeAgent {
     return this.safetyPolicyStore.set(deviceId, target, { severity, alias });
   }
 
-  private async handleCoreMessage(message: AgentTaskDispatchMessage): Promise<void> {
+  private async handleCoreMessage(message: CoreToEdgeMessage): Promise<void> {
+    if (message.type === "agent_confirmation.resolve") {
+      await this.handleConfirmationResolve(message.confirmationId, message.approved);
+      return;
+    }
+
     const outcome = await this.capabilityRegistry.invoke(message.deviceId, message.capability, message.payload);
 
     if (outcome.status === "executed") {
@@ -295,6 +301,28 @@ export class EdgeAgent {
       taskId: message.taskId,
       status: "pending_confirmation",
       confirmationId: outcome.confirmationId,
+      at: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * ADR-059: mismo `resolveConfirmation()` que ya usaba el IPC local de
+   * `apps/desktop`, ahora también disparable en remoto (Gateway → chat web /
+   * voz) — el Edge Agent no distingue quién pidió la confirmación, solo que
+   * llegó por el canal correcto. Correlacionado por `confirmationId`, no por
+   * `taskId` (esa tarea ya terminó del lado del Gateway cuando quedó
+   * "pending_confirmation").
+   */
+  private async handleConfirmationResolve(confirmationId: string, approved: boolean): Promise<void> {
+    const outcome = await this.resolveConfirmation(confirmationId, approved);
+    this.deps.coreConnection.send({
+      type: "confirmation_resolved",
+      confirmationId,
+      deviceId: outcome?.deviceId,
+      capabilityName: outcome?.capabilityName,
+      success: outcome?.result.success ?? false,
+      data: outcome?.result.data,
+      error: outcome ? outcome.result.error : "Confirmación desconocida o ya expirada",
       at: new Date().toISOString(),
     });
   }

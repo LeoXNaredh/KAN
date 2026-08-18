@@ -62,6 +62,7 @@ export function useLiveSession() {
   const [status, setStatus] = useState<LiveSessionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [screenSharing, setScreenSharing] = useState(false);
+  const [cameraSharing, setCameraSharing] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -73,6 +74,8 @@ export function useLiveSession() {
   const sendBufferedSamplesRef = useRef(0);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const screenIntervalRef = useRef<number | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraIntervalRef = useRef<number | null>(null);
 
   const stopPlayback = useCallback(() => {
     for (const source of activeSourcesRef.current) {
@@ -96,6 +99,16 @@ export function useLiveSession() {
     setScreenSharing(false);
   }, []);
 
+  const stopCameraShare = useCallback(() => {
+    if (cameraIntervalRef.current !== null) {
+      window.clearInterval(cameraIntervalRef.current);
+      cameraIntervalRef.current = null;
+    }
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setCameraSharing(false);
+  }, []);
+
   const stop = useCallback(() => {
     wsRef.current?.close();
     wsRef.current = null;
@@ -114,9 +127,10 @@ export function useLiveSession() {
     sendBufferedSamplesRef.current = 0;
 
     stopScreenShare();
+    stopCameraShare();
 
     setStatus((current) => (current === "error" ? current : "idle"));
-  }, [stopPlayback, stopScreenShare]);
+  }, [stopPlayback, stopScreenShare, stopCameraShare]);
 
   const flushSendBuffer = useCallback(() => {
     const ws = wsRef.current;
@@ -229,75 +243,120 @@ export function useLiveSession() {
   }, [flushSendBuffer]);
 
   /**
-   * Visión de pantalla en tiempo real (ADR-044 fase 2) — independiente del
-   * audio: el usuario la prende/apaga durante una sesión Live ya activa, no
-   * es parte del setup inicial. Un frame JPEG por segundo, mandado como un
-   * turn de clientContent con turnComplete:false (ver comentario más abajo
-   * sobre por qué no es realtimeInput.video) — Gemini lo usa para leer
-   * texto/IDs/IPs en pantalla y guiar por voz, nunca para controlar el
-   * mouse/teclado del usuario (eso no está implementado).
+   * Mecánica compartida entre pantalla compartida y cámara (ADR-044 fase 2
+   * para pantalla; ADR-059 agrega cámara con el mismo pipeline) — la única
+   * diferencia real entre las dos es de dónde sale el `MediaStream`
+   * (`getDisplayMedia` vs `getUserMedia`). Un frame JPEG por segundo,
+   * mandado como un turn de clientContent con turnComplete:false (ver
+   * comentario más abajo sobre por qué no es realtimeInput.video) — Gemini
+   * los usa para leer texto/IDs/IPs, identificar hardware físico (cámara) o
+   * en pantalla, y guiar por voz, nunca para controlar el mouse/teclado del
+   * usuario (eso no está implementado).
    */
-  const startScreenShare = useCallback(async () => {
-    if (screenSharing) return;
+  const startVideoShare = useCallback(
+    async (
+      getStream: () => Promise<MediaStream>,
+      streamRef: { current: MediaStream | null },
+      intervalRef: { current: number | null },
+      setSharing: (value: boolean) => void,
+      alreadySharing: boolean,
+      stopThis: () => void,
+    ) => {
+      if (alreadySharing) return;
 
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-    screenStreamRef.current = stream;
+      const stream = await getStream();
+      streamRef.current = stream;
 
-    const video = document.createElement("video");
-    video.muted = true;
-    video.srcObject = stream;
-    await video.play();
+      const video = document.createElement("video");
+      video.muted = true;
+      video.srcObject = stream;
+      await video.play();
 
-    const track = stream.getVideoTracks()[0];
-    const settings = track?.getSettings();
-    const sourceWidth = settings?.width ?? video.videoWidth;
-    const sourceHeight = settings?.height ?? video.videoHeight;
-    const scale = Math.min(1, SCREEN_SHARE_MAX_WIDTH / sourceWidth);
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings();
+      const sourceWidth = settings?.width ?? video.videoWidth;
+      const sourceHeight = settings?.height ?? video.videoHeight;
+      const scale = Math.min(1, SCREEN_SHARE_MAX_WIDTH / sourceWidth);
 
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
-    const ctx = canvas.getContext("2d");
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+      canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+      const ctx = canvas.getContext("2d");
 
-    // Si el usuario corta el compartir desde el picker nativo del
-    // navegador (no desde nuestro botón), no debe quedar un estado
-    // "compartiendo" fantasma sin stream real detrás.
-    track?.addEventListener("ended", stopScreenShare);
+      // Si el usuario corta el compartir desde el picker nativo del
+      // navegador (no desde nuestro botón), no debe quedar un estado
+      // "compartiendo" fantasma sin stream real detrás.
+      track?.addEventListener("ended", stopThis);
 
-    screenIntervalRef.current = window.setInterval(() => {
-      const ws = wsRef.current;
-      if (!ctx || !ws || ws.readyState !== WebSocket.OPEN) return;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) return;
-          blob.arrayBuffer().then((buffer) => {
-            if (ws.readyState !== WebSocket.OPEN) return;
-            const base64 = toBase64(new Uint8Array(buffer));
-            // Verificado en vivo (ADR-044 fase 2): `realtimeInput.video` no
-            // funciona con esta cuenta/modelo — Gemini responde "no puedo
-            // ver imágenes" y lo ignora en silencio. El campo real es un
-            // turn de `clientContent` con la imagen como `inlineData`, con
-            // `turnComplete: false` para que solo sume contexto sin
-            // disparar una respuesta — el turno lo completa la voz, no la
-            // imagen.
-            ws.send(
-              JSON.stringify({
-                clientContent: {
-                  turns: [{ role: "user", parts: [{ inlineData: { mimeType: "image/jpeg", data: base64 } }] }],
-                  turnComplete: false,
-                },
-              }),
-            );
-          });
-        },
-        "image/jpeg",
-        SCREEN_SHARE_JPEG_QUALITY,
-      );
-    }, SCREEN_SHARE_INTERVAL_MS);
+      intervalRef.current = window.setInterval(() => {
+        const ws = wsRef.current;
+        if (!ctx || !ws || ws.readyState !== WebSocket.OPEN) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return;
+            blob.arrayBuffer().then((buffer) => {
+              if (ws.readyState !== WebSocket.OPEN) return;
+              const base64 = toBase64(new Uint8Array(buffer));
+              // Verificado en vivo (ADR-044 fase 2): `realtimeInput.video` no
+              // funciona con esta cuenta/modelo — Gemini responde "no puedo
+              // ver imágenes" y lo ignora en silencio. El campo real es un
+              // turn de `clientContent` con la imagen como `inlineData`, con
+              // `turnComplete: false` para que solo sume contexto sin
+              // disparar una respuesta — el turno lo completa la voz, no la
+              // imagen.
+              ws.send(
+                JSON.stringify({
+                  clientContent: {
+                    turns: [{ role: "user", parts: [{ inlineData: { mimeType: "image/jpeg", data: base64 } }] }],
+                    turnComplete: false,
+                  },
+                }),
+              );
+            });
+          },
+          "image/jpeg",
+          SCREEN_SHARE_JPEG_QUALITY,
+        );
+      }, SCREEN_SHARE_INTERVAL_MS);
 
-    setScreenSharing(true);
-  }, [screenSharing, stopScreenShare]);
+      setSharing(true);
+    },
+    [],
+  );
+
+  const startScreenShare = useCallback(
+    () =>
+      startVideoShare(
+        () => navigator.mediaDevices.getDisplayMedia({ video: true }),
+        screenStreamRef,
+        screenIntervalRef,
+        setScreenSharing,
+        screenSharing,
+        stopScreenShare,
+      ),
+    [startVideoShare, screenSharing, stopScreenShare],
+  );
+
+  /**
+   * Cámara (ADR-059) — el pedido original asumía que ya estaba implementada
+   * junto con pantalla compartida; ADR-044 la había dejado afuera a
+   * propósito ("mismo mecanismo serviría después, no pedido ahora"). Con el
+   * pipeline ya generalizado en startVideoShare(), agregarla es mecánico:
+   * mismo flujo, `getUserMedia({video:true})` en vez de `getDisplayMedia()`.
+   */
+  const startCameraShare = useCallback(
+    () =>
+      startVideoShare(
+        () => navigator.mediaDevices.getUserMedia({ video: true }),
+        cameraStreamRef,
+        cameraIntervalRef,
+        setCameraSharing,
+        cameraSharing,
+        stopCameraShare,
+      ),
+    [startVideoShare, cameraSharing, stopCameraShare],
+  );
 
   const start = useCallback(async () => {
     if (status === "connecting" || status === "active") return;
@@ -323,7 +382,35 @@ export function useLiveSession() {
 
       ws.onopen = () => {
         startMicCapture()
-          .then(() => setStatus("active"))
+          .then(() => {
+            setStatus("active");
+            // ADR-059: apenas conecta, le pedimos al modelo que revise qué
+            // dispositivos/capabilities tiene disponibles y lo resuma por
+            // voz — un turno real (turnComplete:true, a diferencia de los
+            // frames de video que solo suman contexto), porque acá
+            // necesitamos que efectivamente responda. El cliente no elige
+            // qué discover_io_map llamar: el modelo ya tiene cada
+            // capability de cada dispositivo conectado como tool nombrada.
+            ws.send(
+              JSON.stringify({
+                clientContent: {
+                  turns: [
+                    {
+                      role: "user",
+                      parts: [
+                        {
+                          text:
+                            "Recién te conectaste. Revisá qué dispositivos y capabilities tenés disponibles ahora " +
+                            "mismo y contame en una frase breve qué encontraste.",
+                        },
+                      ],
+                    },
+                  ],
+                  turnComplete: true,
+                },
+              }),
+            );
+          })
           .catch(() => {
             setError("No se pudo acceder al micrófono. Revisa los permisos del navegador.");
             setStatus("error");
@@ -355,5 +442,16 @@ export function useLiveSession() {
     }
   }, [handleServerMessage, startMicCapture, status, stop]);
 
-  return { status, error, start, stop, screenSharing, startScreenShare, stopScreenShare };
+  return {
+    status,
+    error,
+    start,
+    stop,
+    screenSharing,
+    startScreenShare,
+    stopScreenShare,
+    cameraSharing,
+    startCameraShare,
+    stopCameraShare,
+  };
 }

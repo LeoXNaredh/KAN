@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ActionSeverity, ToolExecutionResult } from "@kan/plugin-contract";
 import { appendMessage, createConversation, type Conversation } from "../../domain/entities/Conversation";
 import { createMessage, type Message, type MessageImage } from "../../domain/entities/Message";
 import type { AIProviderPort } from "../../domain/ports/AIProviderPort";
@@ -42,7 +43,13 @@ const SYSTEM_PROMPT =
   "preguntale al usuario cómo prefiere llamarlo antes de seguir usando ese nombre técnico. Guardá su " +
   `respuesta con kan_set_memory (categoría "dispositivos", clave "${deviceDisplayNameMemoryKey("")}" + el nombre técnico ` +
   "EXACTO tal como aparece — sin normalizarlo ni traducirlo —, valor el nombre elegido) y a partir de " +
-  "ahí referite siempre a ese dispositivo por su nombre personalizado, nunca por el técnico.";
+  "ahí referite siempre a ese dispositivo por su nombre personalizado, nunca por el técnico.\n\n" +
+  "Cuando uses discover_io_map (ADR-058) para reconocer un dispositivo recién conectado, interpretá el " +
+  "resultado con criterio pero SIN asumir qué hay conectado a cada pin como si fuera un hecho — un pin " +
+  "analógico probablemente sea un sensor de medición, una salida digital probablemente sea un relé u otro " +
+  "control on/off, pero eso es una hipótesis, no un dato confirmado. Ofrecela así, con lenguaje que deje " +
+  "lugar a corrección (\"podría ser...\", \"parece un...\"), nunca la afirmes como si la supieras con " +
+  "certeza. Cerrá siempre el resumen preguntándole al usuario qué le gustaría hacer con ese sistema.";
 
 const MAX_TOOL_ROUNDS = 4;
 // Límite superior de duración total del intercambio de tools (no de cada
@@ -59,6 +66,15 @@ export interface SendMessageInput {
   userMessage: string;
   /** Imagen adjunta al mensaje (P3, Visión) — opcional, ver ADR-018. */
   image?: MessageImage;
+  /**
+   * Reanuda un turno que quedó esperando una confirmación explícita
+   * (ADR-059) — cuando está presente, `execute()` no agrega `userMessage`
+   * ni llama al modelo primero: resuelve la confirmación, agrega el
+   * intercambio como un tool call sintético, y sigue el loop normal para
+   * que el modelo reaccione. `userMessage` se ignora en este caso (puede
+   * quedar vacío desde el cliente).
+   */
+  confirmationResponse?: { confirmationId: string; approved: boolean };
 }
 
 export interface SendMessageOutput {
@@ -74,7 +90,22 @@ export interface SendMessageOutput {
 export type ChatStreamEvent =
   | { type: "tool_call"; name: string; args: unknown }
   | { type: "tool_result"; name: string; success: boolean; data?: unknown; error?: string }
-  | { type: "final"; content: string };
+  | { type: "final"; content: string }
+  /**
+   * ADR-059: el turno se detuvo porque una acción propuesta necesita
+   * confirmación explícita del usuario antes de ejecutarse — el cliente
+   * debe mostrar un diálogo (título "Confirmar acción física", esta
+   * descripción, severidad) y, cuando el usuario decida, volver a llamar
+   * `execute()` con `confirmationResponse: {confirmationId, approved}`.
+   */
+  | {
+      type: "pending_confirmation";
+      confirmationId: string;
+      deviceId: string;
+      capabilityName: string;
+      input: unknown;
+      severity: ActionSeverity;
+    };
 
 /**
  * Versión con function-calling del Agent Orchestrator (docs/03, docs/05):
@@ -97,11 +128,14 @@ export class SendMessageUseCase {
       ? (await this.conversationRepository.getById(input.conversationId)) ?? createConversation()
       : createConversation();
 
-    conversation = appendMessage(conversation, createMessage("user", input.userMessage, input.image));
+    conversation = input.confirmationResponse
+      ? await this.resumeFromConfirmation(conversation, input.confirmationResponse, onEvent)
+      : appendMessage(conversation, createMessage("user", input.userMessage, input.image));
 
     const tools = await this.buildTools();
     const systemPrompt = await this.buildSystemPrompt();
     let finished = false;
+    let pendingConfirmation: Extract<ChatStreamEvent, { type: "pending_confirmation" }> | undefined;
     const startedAt = Date.now();
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -114,6 +148,11 @@ export class SendMessageUseCase {
       });
 
       if (response.toolCalls?.length && (this.toolProvider || this.memoryContext || this.sessionContext)) {
+        // Corre el batch completo siempre, sin cortar a mitad de camino — un
+        // `break` apenas aparece una confirmación pendiente dejaría a las
+        // tool calls siguientes del mismo batch sin mensaje ni rastro
+        // (ADR-059, hallazgo de validación). Recién después de terminar el
+        // batch se decide si la RONDA sigue o corta acá.
         for (const call of response.toolCalls) {
           const assistantMessage: Message = {
             id: randomUUID(),
@@ -128,14 +167,14 @@ export class SendMessageUseCase {
           // Memoria (ADR-035) y contexto de sesión (ADR-055) nunca pasan por
           // toolProvider/Gateway — se despachan acá mismo, siempre que haya
           // el puerto correspondiente.
-          const result =
+          const result: ToolExecutionResult =
             isMemoryToolName(call.name) && this.memoryContext
               ? await executeMemoryTool(this.memoryContext, call.name, call.args)
               : isSessionContextToolName(call.name) && this.sessionContext
                 ? await executeSessionContextTool(this.sessionContext, call.name, call.args)
                 : this.toolProvider
                   ? await this.toolProvider.executeTool(call.name, call.args)
-                  : { success: false as const, error: `Herramienta no disponible: ${call.name}` };
+                  : { success: false, error: `Herramienta no disponible: ${call.name}` };
           onEvent?.({
             type: "tool_result",
             name: call.name,
@@ -151,7 +190,29 @@ export class SendMessageUseCase {
             toolResult: { name: call.name, success: result.success, data: result.data, error: result.error },
           };
           conversation = appendMessage(conversation, toolMessage);
+
+          // ADR-059: severidad irreversible-material/safety-critical sin
+          // confirmar todavía. Si el modelo pidió varias acciones peligrosas
+          // en el mismo batch, solo la primera se ofrece a confirmar — las
+          // demás quedan para una ronda posterior (mismo criterio que ya usa
+          // apps/desktop: ConfirmationModal solo muestra pending[0]).
+          if (result.requiresConfirmation && !pendingConfirmation) {
+            const data = result.data as
+              | { confirmationId?: string; deviceId?: string; capabilityName?: string; input?: unknown; severity?: ActionSeverity }
+              | undefined;
+            if (data?.confirmationId) {
+              pendingConfirmation = {
+                type: "pending_confirmation",
+                confirmationId: data.confirmationId,
+                deviceId: data.deviceId ?? "",
+                capabilityName: data.capabilityName ?? call.name,
+                input: data.input ?? call.args,
+                severity: data.severity ?? "irreversible-material",
+              };
+            }
+          }
         }
+        if (pendingConfirmation) break;
         continue;
       }
 
@@ -161,7 +222,11 @@ export class SendMessageUseCase {
       break;
     }
 
-    if (!finished) {
+    if (pendingConfirmation) {
+      // El turno termina acá a propósito, sin mensaje "final" — es un estado
+      // válido en espera de una decisión del usuario, no una falla.
+      onEvent?.(pendingConfirmation);
+    } else if (!finished) {
       const fallbackContent = "No pude completar la solicitud usando las herramientas disponibles tras varios intentos.";
       conversation = appendMessage(conversation, createMessage("assistant", fallbackContent));
       onEvent?.({ type: "final", content: fallbackContent });
@@ -170,6 +235,49 @@ export class SendMessageUseCase {
     await this.conversationRepository.save(conversation);
 
     return { conversation };
+  }
+
+  /**
+   * Reanuda un turno que había quedado en `pending_confirmation` (ADR-059).
+   * Agrega el intercambio como un par assistant(toolCall)/tool(resultado)
+   * sintético — igual que cualquier tool call real del loop de arriba — en
+   * vez de agregar el resultado suelto: sin el mensaje `assistant` previo,
+   * Anthropic/OpenAI no tienen a qué `tool_use_id`/`tool_call_id` asociar el
+   * resultado (ambos lo derivan del índice del mensaje `assistant` anterior,
+   * ver `toolUseId()`/`toolCallId()` en cada provider) y los 3 proveedores
+   * quedarían con dos mensajes "tool"/"user" consecutivos sin alternancia.
+   */
+  private async resumeFromConfirmation(
+    conversation: Conversation,
+    confirmationResponse: { confirmationId: string; approved: boolean },
+    onEvent?: (event: ChatStreamEvent) => void,
+  ): Promise<Conversation> {
+    const toolName = "confirm_pending_action";
+    const args = { confirmationId: confirmationResponse.confirmationId, approved: confirmationResponse.approved };
+
+    const assistantMessage: Message = {
+      id: randomUUID(),
+      role: "assistant",
+      content: "",
+      createdAt: new Date().toISOString(),
+      toolCall: { name: toolName, args },
+    };
+    let conv = appendMessage(conversation, assistantMessage);
+    onEvent?.({ type: "tool_call", name: toolName, args });
+
+    const result: ToolExecutionResult = this.toolProvider
+      ? await this.toolProvider.resolveConfirmation(confirmationResponse.confirmationId, confirmationResponse.approved)
+      : { success: false, error: "No hay conexión con el Gateway para resolver la confirmación." };
+    onEvent?.({ type: "tool_result", name: toolName, success: result.success, data: result.data, error: result.error });
+
+    const toolMessage: Message = {
+      id: randomUUID(),
+      role: "tool",
+      content: summarizeToolResult(toolName, result),
+      createdAt: new Date().toISOString(),
+      toolResult: { name: toolName, success: result.success, data: result.data, error: result.error },
+    };
+    return appendMessage(conv, toolMessage);
   }
 
   private async safeListTools() {

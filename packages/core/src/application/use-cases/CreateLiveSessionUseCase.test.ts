@@ -33,6 +33,9 @@ class FakeToolProvider implements ToolProviderPort {
   async executeTool(): Promise<never> {
     throw new Error("no debería llamarse en este use case");
   }
+  async resolveConfirmation(): Promise<never> {
+    throw new Error("no debería llamarse en este use case");
+  }
 }
 
 class FakeMemoryContext implements MemoryContextPort {
@@ -110,7 +113,7 @@ describe("CreateLiveSessionUseCase", () => {
     }
   });
 
-  it("si el Gateway falla al listar tools, degrada a sin tools de Gateway (no rompe la sesión)", async () => {
+  it("si el Gateway falla al listar tools, degrada a sin tools de Gateway (no rompe la sesión) — pero confirm_pending_action sigue disponible, no depende de listTools()", async () => {
     const port = new RecordingLiveSessionPort();
     const toolProvider = new FakeToolProvider(() => {
       throw new Error("Gateway caído");
@@ -118,7 +121,36 @@ describe("CreateLiveSessionUseCase", () => {
     const useCase = new CreateLiveSessionUseCase(port, toolProvider);
 
     await expect(useCase.execute()).resolves.toEqual(FAKE_CONFIG);
-    expect(port.calls[0].tools).toEqual([]);
+    expect(port.calls[0].tools.map((t) => t.name)).toEqual(["confirm_pending_action"]);
+  });
+
+  it("confirm_pending_action (ADR-059) solo se ofrece con toolProvider configurado", async () => {
+    const port = new RecordingLiveSessionPort();
+    const toolProvider = new FakeToolProvider([]);
+    const useCase = new CreateLiveSessionUseCase(port, toolProvider);
+
+    await useCase.execute();
+
+    expect(port.calls[0].tools.map((t) => t.name)).toContain("confirm_pending_action");
+  });
+
+  it("el system prompt instruye a preguntar '¿confirmás?' y esperar antes de llamar confirm_pending_action", async () => {
+    const port = new RecordingLiveSessionPort();
+    const useCase = new CreateLiveSessionUseCase(port);
+
+    await useCase.execute();
+
+    expect(port.calls[0].systemPrompt).toMatch(/confirm.s/i);
+    expect(port.calls[0].systemPrompt).toContain("confirm_pending_action");
+  });
+
+  it("el system prompt pide resumir el hardware disponible al arrancar la conversación", async () => {
+    const port = new RecordingLiveSessionPort();
+    const useCase = new CreateLiveSessionUseCase(port);
+
+    await useCase.execute();
+
+    expect(port.calls[0].systemPrompt).toMatch(/apenas arranca la conversaci.n/i);
   });
 
   it("incluye la personalidad configurada en el system prompt", async () => {

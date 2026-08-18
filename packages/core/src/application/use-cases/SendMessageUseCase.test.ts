@@ -26,6 +26,8 @@ class ScriptedAIProvider implements AIProviderPort {
 
 class FakeToolProvider implements ToolProviderPort {
   executedCalls: Array<{ name: string; args: unknown }> = [];
+  resolvedConfirmations: Array<{ confirmationId: string; approved: boolean }> = [];
+  confirmationResult: ToolExecutionResult = { success: true, data: {} };
 
   constructor(
     private readonly tools: ToolDescriptor[],
@@ -39,6 +41,11 @@ class FakeToolProvider implements ToolProviderPort {
   async executeTool(name: string, args: unknown): Promise<ToolExecutionResult> {
     this.executedCalls.push({ name, args });
     return this.result;
+  }
+
+  async resolveConfirmation(confirmationId: string, approved: boolean): Promise<ToolExecutionResult> {
+    this.resolvedConfirmations.push({ confirmationId, approved });
+    return this.confirmationResult;
   }
 }
 
@@ -151,6 +158,7 @@ describe("SendMessageUseCase", () => {
         throw new Error("Gateway no disponible");
       },
       executeTool: async () => ({ success: false }),
+      resolveConfirmation: async () => ({ success: false }),
     };
     const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), failingToolProvider);
 
@@ -413,5 +421,101 @@ describe("SendMessageUseCase", () => {
     await useCase.execute({ userMessage: "hola" });
 
     expect(toolProvider.executedCalls).toEqual([]);
+  });
+
+  describe("pending_confirmation y resume (ADR-059)", () => {
+    it("un tool result con requiresConfirmation emite pending_confirmation y corta el turno sin mensaje final", async () => {
+      const ai = new ScriptedAIProvider([{ toolCalls: [{ name: "move_arm", args: { angle: 30 } }] }]);
+      const toolProvider = new FakeToolProvider(
+        [{ name: "move_arm", description: "...", inputSchema: {} }],
+        {
+          success: false,
+          requiresConfirmation: true,
+          data: { confirmationId: "conf-1", deviceId: "arm-1", capabilityName: "move_arm", input: { angle: 30 }, severity: "irreversible-material" },
+          error: "Esta acción requiere confirmación explícita antes de ejecutarse.",
+        },
+      );
+      const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), toolProvider);
+      const events: ChatStreamEvent[] = [];
+
+      const { conversation } = await useCase.execute({ userMessage: "mové el brazo 30 grados" }, (event) => events.push(event));
+
+      expect(events.at(-1)).toEqual({
+        type: "pending_confirmation",
+        confirmationId: "conf-1",
+        deviceId: "arm-1",
+        capabilityName: "move_arm",
+        input: { angle: 30 },
+        severity: "irreversible-material",
+      });
+      // Sin evento "final" ni mensaje assistant final — el turno queda en espera, no es una falla.
+      expect(events.some((e) => e.type === "final")).toBe(false);
+      expect(conversation.messages.map((m) => m.role)).toEqual(["user", "assistant", "tool"]);
+      expect(ai.requestsSeen).toHaveLength(1);
+    });
+
+    it("confirmationResponse con approved:true resuelve vía toolProvider.resolveConfirmation y continúa el loop", async () => {
+      const ai = new ScriptedAIProvider([{ content: "Listo, moví el brazo 30 grados." }]);
+      const toolProvider = new FakeToolProvider([], { success: true });
+      toolProvider.confirmationResult = { success: true, data: { moved: true } };
+      const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), toolProvider);
+      const events: ChatStreamEvent[] = [];
+
+      const { conversation } = await useCase.execute(
+        { userMessage: "", confirmationResponse: { confirmationId: "conf-1", approved: true } },
+        (event) => events.push(event),
+      );
+
+      expect(toolProvider.resolvedConfirmations).toEqual([{ confirmationId: "conf-1", approved: true }]);
+      expect(conversation.messages.map((m) => m.role)).toEqual(["assistant", "tool", "assistant"]);
+      expect(conversation.messages[0].toolCall).toEqual({ name: "confirm_pending_action", args: { confirmationId: "conf-1", approved: true } });
+      expect(conversation.messages[1].toolResult).toMatchObject({ name: "confirm_pending_action", success: true, data: { moved: true } });
+      expect(conversation.messages[2].content).toBe("Listo, moví el brazo 30 grados.");
+      expect(events[0]).toEqual({ type: "tool_call", name: "confirm_pending_action", args: { confirmationId: "conf-1", approved: true } });
+    });
+
+    it("confirmationResponse con approved:false también resuelve y el modelo reacciona en lenguaje natural", async () => {
+      const ai = new ScriptedAIProvider([{ content: "Entendido, no lo hago." }]);
+      const toolProvider = new FakeToolProvider([], { success: true });
+      toolProvider.confirmationResult = { success: false, error: "Rechazado por el usuario" };
+      const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), toolProvider);
+
+      const { conversation } = await useCase.execute({
+        userMessage: "",
+        confirmationResponse: { confirmationId: "conf-1", approved: false },
+      });
+
+      expect(toolProvider.resolvedConfirmations).toEqual([{ confirmationId: "conf-1", approved: false }]);
+      expect(conversation.messages[1].toolResult).toMatchObject({ success: false, error: "Rechazado por el usuario" });
+      expect(conversation.messages.at(-1)?.content).toBe("Entendido, no lo hago.");
+    });
+
+    it("el mensaje assistant sintético del resume mantiene la alternancia de roles (fix del bug de emparejamiento entre proveedores)", async () => {
+      const ai = new ScriptedAIProvider([{ content: "ok" }]);
+      const toolProvider = new FakeToolProvider([], { success: true });
+      const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository(), toolProvider);
+
+      const { conversation } = await useCase.execute({
+        userMessage: "",
+        confirmationResponse: { confirmationId: "conf-1", approved: true },
+      });
+
+      // Nunca dos mensajes "tool"/"user" consecutivos: el par assistant(toolCall) + tool(resultado) precede al resultado, igual que cualquier tool call real del loop.
+      expect(conversation.messages[0].role).toBe("assistant");
+      expect(conversation.messages[0].toolCall?.name).toBe("confirm_pending_action");
+      expect(conversation.messages[1].role).toBe("tool");
+    });
+
+    it("sin toolProvider configurado, resume falla con un error claro en vez de lanzar", async () => {
+      const ai = new ScriptedAIProvider([{ content: "no puedo confirmar eso" }]);
+      const useCase = new SendMessageUseCase(ai, new InMemoryConversationRepository());
+
+      const { conversation } = await useCase.execute({
+        userMessage: "",
+        confirmationResponse: { confirmationId: "conf-1", approved: true },
+      });
+
+      expect(conversation.messages[1].toolResult).toMatchObject({ success: false });
+    });
   });
 });

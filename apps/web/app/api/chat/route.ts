@@ -125,7 +125,15 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const userMessage = typeof body?.message === "string" ? body.message.trim() : "";
 
-  if (!userMessage) {
+  // ADR-059: reanuda un turno que quedó esperando confirmación — en ese
+  // caso 'message' viene vacío a propósito, no es un error de validación.
+  const rawConfirmationResponse = body?.confirmationResponse;
+  const confirmationResponse =
+    typeof rawConfirmationResponse?.confirmationId === "string" && typeof rawConfirmationResponse?.approved === "boolean"
+      ? { confirmationId: rawConfirmationResponse.confirmationId, approved: rawConfirmationResponse.approved }
+      : undefined;
+
+  if (!userMessage && !confirmationResponse) {
     return NextResponse.json({ error: "El campo 'message' es requerido." }, { status: 400 });
   }
 
@@ -156,7 +164,7 @@ export async function POST(request: Request) {
       const send = (event: ChatSseEvent) => controller.enqueue(encoder.encode(sseChunk(event)));
       try {
         const { conversation } = await useCase.execute(
-          { conversationId, userMessage, image: imageResult.image },
+          { conversationId, userMessage, image: imageResult.image, confirmationResponse },
           send,
         );
         send({ type: "done", conversation });

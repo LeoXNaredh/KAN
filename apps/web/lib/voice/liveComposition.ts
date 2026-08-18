@@ -4,6 +4,8 @@ import {
   UserScopedPersonalityContext,
   isMemoryToolName,
   executeMemoryTool,
+  isConfirmPendingActionToolName,
+  parseConfirmPendingActionArgs,
 } from "@kan/core";
 import type { ToolExecutionResult } from "@kan/plugin-contract";
 import { GatewayToolProvider } from "@/lib/gateway/GatewayToolProvider";
@@ -72,6 +74,16 @@ export async function buildLiveToolDispatcher(
   return async function executeLiveTool(name: string, args: unknown): Promise<ToolExecutionResult> {
     if (isMemoryToolName(name) && memoryContext) {
       return executeMemoryTool(memoryContext, name, args);
+    }
+    // ADR-059: confirm_pending_action no es una tool call común — resuelve
+    // una confirmación ya identificada, no propone una acción nueva, así
+    // que va por resolveConfirmation() en vez de executeTool().
+    if (isConfirmPendingActionToolName(name)) {
+      const parsed = parseConfirmPendingActionArgs(args);
+      if (!parsed) {
+        return { success: false, error: "confirm_pending_action requiere 'confirmationId' (string) y 'approved' (boolean)." };
+      }
+      return toolProvider.resolveConfirmation(parsed.confirmationId, parsed.approved);
     }
     return toolProvider.executeTool(name, args);
   };

@@ -10,6 +10,7 @@ import type { DeviceEnrichmentService } from "./application/DeviceEnrichmentServ
 import { AgentRegistry } from "./application/AgentRegistry";
 import { GlobalCapabilityRegistry } from "./application/GlobalCapabilityRegistry";
 import { TaskOrchestrator } from "./application/TaskOrchestrator";
+import { ConfirmationOrchestrator, type ResolveConfirmationResult } from "./application/ConfirmationOrchestrator";
 import { AuditService } from "./application/AuditService";
 import { CapabilityBackedToolRegistry, type ToolRegistry } from "./application/ToolRegistry";
 import { RegistryToolResolver } from "./application/ToolResolver";
@@ -42,6 +43,7 @@ export class Gateway {
   readonly agentRegistry: AgentRegistry;
   readonly capabilityRegistry: GlobalCapabilityRegistry;
   readonly taskOrchestrator: TaskOrchestrator;
+  readonly confirmationOrchestrator: ConfirmationOrchestrator;
   readonly auditService: AuditService;
   readonly scheduler: SchedulerPort;
   readonly toolRegistry: ToolRegistry;
@@ -63,9 +65,10 @@ export class Gateway {
       deps.bus,
       deps.taskStore,
     );
+    this.confirmationOrchestrator = new ConfirmationOrchestrator(deps.connectionManager, this.agentRegistry);
     this.toolRegistry = new CapabilityBackedToolRegistry(this.capabilityRegistry);
     this.toolResolver = new RegistryToolResolver(this.toolRegistry);
-    this.toolExecutor = new OrchestratorToolExecutor(this.taskOrchestrator, this.auditService, deps.bus);
+    this.toolExecutor = new OrchestratorToolExecutor(this.taskOrchestrator, this.confirmationOrchestrator, this.auditService, deps.bus);
   }
 
   bootstrap(): void {
@@ -120,6 +123,10 @@ export class Gateway {
     this.deps.connectionManager.onMessage((edgeAgentId, message) => {
       if (message.type === "telemetry") {
         this.taskOrchestrator.handleTelemetry(message);
+        return;
+      }
+      if (message.type === "confirmation_resolved") {
+        this.confirmationOrchestrator.handleResolved(message);
         return;
       }
       if (message.type === "safety_policy.changed") {
@@ -234,7 +241,11 @@ export class Gateway {
     }
 
     const capability = this.capabilityRegistry.resolve(resolution.call.ref);
-    const ownerId = capability ? this.agentRegistry.get(capability.edgeAgentId)?.ownerId : undefined;
+    if (!capability) {
+      return { success: false, error: `Capability desconocida: ${resolution.call.ref}` };
+    }
+
+    const ownerId = this.agentRegistry.get(capability.edgeAgentId)?.ownerId;
     if (ownerId !== undefined && ownerId !== requestingUserId) {
       this.auditService.record({
         actor: "user",
@@ -246,7 +257,17 @@ export class Gateway {
       return { success: false, error: "No autorizado: este dispositivo pertenece a otro usuario." };
     }
 
-    return this.toolExecutor.execute(resolution.call, requestingUserId);
+    return this.toolExecutor.execute(resolution.call, capability, requestingUserId);
+  }
+
+  /**
+   * ADR-059: resuelve remotamente una confirmación pendiente (irreversible-
+   * material/safety-critical) — hasta este incremento, solo `apps/desktop`
+   * podía hacerlo, vía IPC local. La autorización (¿esta confirmación es de
+   * este usuario?) vive en `ConfirmationOrchestrator.resolve()`.
+   */
+  async resolveConfirmation(confirmationId: string, approved: boolean, requestingUserId?: string): Promise<ResolveConfirmationResult | undefined> {
+    return this.confirmationOrchestrator.resolve(confirmationId, approved, requestingUserId);
   }
 }
 

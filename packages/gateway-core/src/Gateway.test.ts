@@ -614,6 +614,72 @@ describe("Gateway (integración, transporte simulado)", () => {
     });
   });
 
+  describe("resolveConfirmation() (ADR-059)", () => {
+    async function buildPendingConfirmation() {
+      const { gateway, connectionManager, auditStore } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+      const [tool] = gateway.listTools();
+
+      const executePromise = gateway.executeTool(tool.name, {}, "user-1");
+      const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "pending_confirmation",
+        confirmationId: "conf-web-1",
+        at: new Date().toISOString(),
+      });
+      const result = await executePromise;
+      connectionManager.dispatched.length = 0;
+
+      return { gateway, connectionManager, auditStore, edgeAgentId, pendingResult: result };
+    }
+
+    it("manda pending_confirmation con el detalle completo (no solo el id) — lo que necesita un modal remoto para describir la acción", async () => {
+      const { pendingResult } = await buildPendingConfirmation();
+
+      expect(pendingResult.requiresConfirmation).toBe(true);
+      expect(pendingResult.data).toMatchObject({ confirmationId: "conf-web-1", deviceId: "simulator-1", capabilityName: "read_sensor" });
+    });
+
+    it("aprobar reenvía agent_confirmation.resolve al Edge Agent dueño y resuelve con el resultado real", async () => {
+      const { gateway, connectionManager, edgeAgentId } = await buildPendingConfirmation();
+
+      const resolvePromise = gateway.resolveConfirmation("conf-web-1", true, "user-1");
+      expect(connectionManager.dispatched).toEqual([{ type: "agent_confirmation.resolve", confirmationId: "conf-web-1", approved: true }]);
+
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "confirmation_resolved",
+        confirmationId: "conf-web-1",
+        deviceId: "simulator-1",
+        capabilityName: "read_sensor",
+        success: true,
+        data: { value: 1 },
+        at: new Date().toISOString(),
+      });
+
+      await expect(resolvePromise).resolves.toEqual({ success: true, data: { value: 1 }, error: undefined });
+    });
+
+    it("rechaza si el requestingUserId no es el owner del Edge Agent, sin llegar a mandar nada", async () => {
+      const { gateway, connectionManager } = await buildPendingConfirmation();
+
+      const result = await gateway.resolveConfirmation("conf-web-1", true, "user-2");
+
+      expect(result).toEqual({ success: false, error: "No autorizado: esta confirmación pertenece a otro usuario." });
+      expect(connectionManager.dispatched).toHaveLength(0);
+    });
+
+    it("un confirmationId desconocido/ya resuelto devuelve undefined", async () => {
+      const { gateway } = await buildPendingConfirmation();
+
+      const result = await gateway.resolveConfirmation("no-existe", true, "user-1");
+
+      expect(result).toBeUndefined();
+    });
+  });
+
   describe("tools de automatizaciones (ADR-039)", () => {
     it("listTools() las incluye siempre, incluso sin ningún Edge Agent conectado", () => {
       const { gateway } = buildGateway();

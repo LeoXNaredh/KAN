@@ -73,6 +73,22 @@ export function createRoutes(
     res.json(result);
   });
 
+  // Resuelve una confirmación pendiente (irreversible-material/safety-critical,
+  // ADR-059) — hasta este incremento solo `apps/desktop` podía hacerlo, vía
+  // IPC local. La autorización por owner vive en `Gateway.resolveConfirmation()`.
+  router.post("/v1/confirmations/:id/resolve", async (req, res) => {
+    if (typeof req.body?.approved !== "boolean") {
+      res.status(400).json({ error: "Se requiere 'approved' como boolean." });
+      return;
+    }
+    const result = await gateway.resolveConfirmation(req.params.id, req.body.approved, req.userId);
+    if (!result) {
+      res.status(404).json({ error: "No se encontró la confirmación — puede haber expirado, ya haber sido resuelta, o el Gateway se reinició mientras estaba pendiente." });
+      return;
+    }
+    res.json(result);
+  });
+
   router.get("/v1/agents", (req, res) => {
     res.json({ agents: gateway.agentRegistry.list(req.userId) });
   });

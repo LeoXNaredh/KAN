@@ -3,6 +3,7 @@ import type { ToolProviderPort } from "../../domain/ports/ToolProviderPort";
 import type { MemoryContextPort } from "../../domain/ports/MemoryContextPort";
 import type { PersonalityContextPort } from "../../domain/ports/PersonalityContextPort";
 import { MEMORY_TOOL_DESCRIPTORS } from "../memoryTools";
+import { CONFIRM_PENDING_ACTION_TOOL_DESCRIPTOR } from "../confirmationTool";
 
 // A diferencia del prompt de chat de texto (SendMessageUseCase), este pide
 // explícitamente evitar markdown/formato — la respuesta se lee en voz alta
@@ -14,10 +15,21 @@ const VOICE_SYSTEM_PROMPT =
   "como en una llamada real. Nunca uses markdown, listas, ni ningún formato de texto — tu respuesta " +
   "se lee en voz alta, no se muestra escrita. Cuando el usuario pida algo que corresponda a una " +
   "herramienta disponible, invocala vos mismo. En cualquier momento el usuario puede activar " +
-  "'Compartir pantalla' — a partir de ahí vas a recibir frames intermitentes de lo que hay en su " +
-  "pantalla. Usalos para leer números de serie, IPs, nombres de dispositivos o cualquier texto " +
-  "visible, identificar hardware, y guiar al usuario paso a paso describiendo lo que ves en pantalla. " +
-  "No podés mover el mouse ni tocar el teclado del usuario — solo podés ver y guiar hablando.";
+  "'Compartir pantalla' o la cámara — a partir de ahí vas a recibir frames intermitentes de lo que " +
+  "hay en su pantalla o apuntando la cámara al hardware físico. Usalos para leer números de serie, " +
+  "IPs, nombres de dispositivos o cualquier texto visible, identificar hardware, relacionarlo con lo " +
+  "que encontraste con discover_io_map, y guiar al usuario paso a paso describiendo lo que ves. No " +
+  "podés mover el mouse ni tocar el teclado del usuario — solo podés ver y guiar hablando.\n\n" +
+  "Apenas arranca la conversación, revisá qué dispositivos y capabilities tenés disponibles y contale " +
+  "al usuario en una frase breve qué encontraste (ej. \"tengo conexión con un ESP32 por WiFi\"). Si " +
+  "alguno tiene discover_io_map, usala para reconocerlo — interpretá el resultado con criterio pero " +
+  "siempre como hipótesis tentativa (\"podría ser un sensor...\", \"parece un relé...\"), nunca como " +
+  "un hecho confirmado, y preguntale al usuario qué le gustaría hacer.\n\n" +
+  "Cuando el resultado de una tool traiga requiresConfirmation:true, la acción todavía NO se ejecutó — " +
+  "describí qué acción es y su severidad, preguntale explícitamente al usuario '¿confirmás?' y esperá " +
+  "su respuesta hablada. Recién cuando responda, llamá a confirm_pending_action con el confirmationId " +
+  "de esa tool y approved:true si dijo que sí o false si dijo que no. Nunca reintentes la acción " +
+  "original directo — confirm_pending_action es el único camino para que se ejecute o se cancele.";
 
 /**
  * Arma el system prompt (mismo criterio que SendMessageUseCase.buildSystemPrompt,
@@ -52,7 +64,12 @@ export class CreateLiveSessionUseCase {
   private async buildTools() {
     const gatewayTools = await this.safeListTools();
     const memoryTools = this.memoryContext ? MEMORY_TOOL_DESCRIPTORS : [];
-    return [...gatewayTools, ...memoryTools];
+    // confirm_pending_action (ADR-059): solo tiene sentido con toolProvider
+    // configurado — sin él, resolveConfirmation() no puede cruzar al
+    // Gateway y ofrecer la tool sería prometerle al modelo algo que no
+    // puede cumplir.
+    const confirmationTools = this.toolProvider ? [CONFIRM_PENDING_ACTION_TOOL_DESCRIPTOR] : [];
+    return [...gatewayTools, ...memoryTools, ...confirmationTools];
   }
 
   private async buildSystemPrompt(): Promise<string> {

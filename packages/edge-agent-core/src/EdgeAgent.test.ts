@@ -244,6 +244,76 @@ describe("EdgeAgent — dispatch del Gateway (auditoría distinta)", () => {
   });
 });
 
+describe("EdgeAgent — agent_confirmation.resolve remoto (ADR-059)", () => {
+  function dispatchHandlerOf(coreConnection: CoreConnectionPort): (message: Record<string, unknown>) => void {
+    const handler = (coreConnection.onMessage as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    if (!handler) throw new Error("onMessage no fue registrado");
+    return handler;
+  }
+
+  function confirmationResolvedMessages(coreConnection: { send: ReturnType<typeof vi.fn> }): EdgeToCoreMessage[] {
+    return coreConnection.send.mock.calls
+      .map((call) => call[0] as EdgeToCoreMessage)
+      .filter((message) => message.type === "confirmation_resolved");
+  }
+
+  it("aprobar remotamente ejecuta la capability y responde confirmation_resolved con el resultado real", async () => {
+    const { edgeAgent, coreConnection } = await buildEdgeAgent();
+    const pending = await edgeAgent.invokeCapability("fake-1", "dangerous_cap", {});
+    if (pending.status !== "pending_confirmation") throw new Error("se esperaba pending_confirmation");
+    coreConnection.send.mockClear();
+
+    await dispatchHandlerOf(coreConnection)({
+      type: "agent_confirmation.resolve",
+      confirmationId: pending.confirmationId,
+      approved: true,
+    });
+
+    const messages = confirmationResolvedMessages(coreConnection);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      type: "confirmation_resolved",
+      confirmationId: pending.confirmationId,
+      deviceId: "fake-1",
+      capabilityName: "dangerous_cap",
+      success: true,
+    });
+  });
+
+  it("rechazar remotamente no ejecuta nada y responde confirmation_resolved con success:false", async () => {
+    const { edgeAgent, coreConnection } = await buildEdgeAgent();
+    const pending = await edgeAgent.invokeCapability("fake-1", "dangerous_cap", {});
+    if (pending.status !== "pending_confirmation") throw new Error("se esperaba pending_confirmation");
+    coreConnection.send.mockClear();
+
+    await dispatchHandlerOf(coreConnection)({
+      type: "agent_confirmation.resolve",
+      confirmationId: pending.confirmationId,
+      approved: false,
+    });
+
+    const messages = confirmationResolvedMessages(coreConnection);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ success: false });
+    expect((messages[0] as { error?: string }).error).toMatch(/Rechazado por el usuario/);
+  });
+
+  it("un confirmationId desconocido/ya vencido responde success:false sin lanzar", async () => {
+    const { coreConnection } = await buildEdgeAgent();
+
+    await dispatchHandlerOf(coreConnection)({
+      type: "agent_confirmation.resolve",
+      confirmationId: "no-existe",
+      approved: true,
+    });
+
+    const messages = confirmationResolvedMessages(coreConnection);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ confirmationId: "no-existe", success: false });
+    expect((messages[0] as { error?: string }).error).toMatch(/desconocida o ya expirada/);
+  });
+});
+
 describe("EdgeAgent.bootstrap() — pairingToken en el hello (docs/19 P2, incremento 3)", () => {
   it("incluye pairingToken en el hello si configStore lo tiene guardado", async () => {
     const configStore = createInMemoryConfigStore();

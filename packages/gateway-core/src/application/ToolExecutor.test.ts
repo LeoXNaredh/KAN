@@ -4,6 +4,7 @@ import { GatewayBus } from "./GatewayBus";
 import { AgentRegistry } from "./AgentRegistry";
 import { GlobalCapabilityRegistry } from "./GlobalCapabilityRegistry";
 import { TaskOrchestrator } from "./TaskOrchestrator";
+import { ConfirmationOrchestrator } from "./ConfirmationOrchestrator";
 import type { AuditEntry } from "../domain/entities/AuditEntry";
 import { AuditService } from "./AuditService";
 import { OrchestratorToolExecutor } from "./ToolExecutor";
@@ -14,6 +15,13 @@ const CAP: CapabilityDescriptor = {
   name: "read_sensor",
   description: "...",
   severity: "read-only",
+  supportsDryRun: false,
+};
+
+const DANGEROUS_CAP: CapabilityDescriptor = {
+  name: "move_arm",
+  description: "...",
+  severity: "irreversible-material",
   supportsDryRun: false,
 };
 
@@ -55,9 +63,10 @@ function setup() {
   const capabilityRegistry = new GlobalCapabilityRegistry(bus);
   const connectionManager = new FakeConnectionManager();
   const orchestrator = new TaskOrchestrator(agentRegistry, capabilityRegistry, connectionManager, bus);
+  const confirmationOrchestrator = new ConfirmationOrchestrator(connectionManager, agentRegistry);
   const auditStore = new InMemoryAuditStore();
   const auditService = new AuditService(auditStore, bus);
-  const executor = new OrchestratorToolExecutor(orchestrator, auditService, bus);
+  const executor = new OrchestratorToolExecutor(orchestrator, confirmationOrchestrator, auditService, bus);
 
   agentRegistry.upsert({
     edgeAgentId: "agent-1",
@@ -68,20 +77,24 @@ function setup() {
     lastSeenAt: new Date().toISOString(),
   });
   agentRegistry.markOnline("agent-1");
-  capabilityRegistry.sync("agent-1", [{ deviceId: "simulator-1", capability: CAP }]);
-  const ref = capabilityRegistry.list()[0].ref;
+  capabilityRegistry.sync("agent-1", [
+    { deviceId: "simulator-1", capability: CAP },
+    { deviceId: "arm-1", capability: DANGEROUS_CAP },
+  ]);
+  const capability = capabilityRegistry.list().find((c) => c.capability.name === "read_sensor")!;
+  const dangerousCapability = capabilityRegistry.list().find((c) => c.capability.name === "move_arm")!;
 
-  return { orchestrator, connectionManager, auditStore, executor, ref };
+  return { orchestrator, confirmationOrchestrator, connectionManager, auditStore, executor, capability, dangerousCapability };
 }
 
 describe("OrchestratorToolExecutor", () => {
   it("registra auditoría ANTES de ejecutar (propuesta del LLM) y emite tool.proposed", async () => {
-    const { executor, auditStore, connectionManager, orchestrator, ref } = setup();
+    const { executor, auditStore, connectionManager, orchestrator, capability } = setup();
 
-    const executePromise = executor.execute({ ref, args: {} });
+    const executePromise = executor.execute({ ref: capability.ref, args: {} }, capability);
     // El registro de auditoría ocurre de forma síncrona antes de que se resuelva la tarea.
     expect(auditStore.entries).toHaveLength(1);
-    expect(auditStore.entries[0]).toMatchObject({ actor: "llm", action: "tool.execute", subject: ref });
+    expect(auditStore.entries[0]).toMatchObject({ actor: "llm", action: "tool.execute", subject: capability.ref });
 
     const taskId = (connectionManager.sent[0].message as { taskId: string }).taskId;
     orchestrator.handleTelemetry({ type: "telemetry", taskId, status: "done", data: { ok: true }, at: new Date().toISOString() });
@@ -90,9 +103,9 @@ describe("OrchestratorToolExecutor", () => {
   });
 
   it("mapea pending_confirmation a un ToolExecutionResult claro para el LLM (no ejecuta sola una acción peligrosa)", async () => {
-    const { executor, connectionManager, orchestrator, ref } = setup();
+    const { executor, connectionManager, orchestrator, dangerousCapability } = setup();
 
-    const executePromise = executor.execute({ ref, args: {} });
+    const executePromise = executor.execute({ ref: dangerousCapability.ref, args: { angle: 30 } }, dangerousCapability);
     const taskId = (connectionManager.sent[0].message as { taskId: string }).taskId;
     orchestrator.handleTelemetry({
       type: "telemetry",
@@ -105,12 +118,43 @@ describe("OrchestratorToolExecutor", () => {
     const result = await executePromise;
     expect(result.success).toBe(false);
     expect(result.requiresConfirmation).toBe(true);
-    expect(result.data).toEqual({ confirmationId: "conf-1" });
+    expect(result.data).toEqual({
+      confirmationId: "conf-1",
+      deviceId: "arm-1",
+      capabilityName: "move_arm",
+      input: { angle: 30 },
+      severity: "irreversible-material",
+    });
   });
 
-  it("propaga el error cuando la capability no existe", async () => {
-    const { executor } = setup();
-    const result = await executor.execute({ ref: "ref-inexistente", args: {} });
-    expect(result).toEqual({ success: false, data: undefined, error: "Capability desconocida: ref-inexistente" });
+  it("registra la confirmación pendiente en ConfirmationOrchestrator, resoluble después sin un segundo round-trip", async () => {
+    const { executor, connectionManager, orchestrator, confirmationOrchestrator, dangerousCapability } = setup();
+
+    const executePromise = executor.execute({ ref: dangerousCapability.ref, args: { angle: 30 } }, dangerousCapability);
+    const taskId = (connectionManager.sent[0].message as { taskId: string }).taskId;
+    orchestrator.handleTelemetry({
+      type: "telemetry",
+      taskId,
+      status: "pending_confirmation",
+      confirmationId: "conf-2",
+      at: new Date().toISOString(),
+    });
+    await executePromise;
+    connectionManager.sent.length = 0;
+
+    const resolvePromise = confirmationOrchestrator.resolve("conf-2", true);
+    expect(connectionManager.sent).toEqual([
+      { edgeAgentId: "agent-1", message: { type: "agent_confirmation.resolve", confirmationId: "conf-2", approved: true } },
+    ]);
+    confirmationOrchestrator.handleResolved({
+      type: "confirmation_resolved",
+      confirmationId: "conf-2",
+      deviceId: "arm-1",
+      capabilityName: "move_arm",
+      success: true,
+      data: { moved: true },
+      at: new Date().toISOString(),
+    });
+    await expect(resolvePromise).resolves.toEqual({ success: true, data: { moved: true }, error: undefined });
   });
 });

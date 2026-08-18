@@ -11,6 +11,7 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
   return {
     listTools: () => [{ name: "read_sensor", description: "...", inputSchema: {} }],
     executeTool: async () => ({ success: true, data: { ok: true } }),
+    resolveConfirmation: async () => ({ success: true, data: { ok: true } }),
     agentRegistry: { list: () => [] } as unknown as Gateway["agentRegistry"],
     auditService: { list: () => [] } as unknown as Gateway["auditService"],
     scheduler: {
@@ -101,6 +102,48 @@ describe("Gateway HTTP routes", () => {
       .set("Authorization", `Bearer ${TOKEN}`)
       .send();
     expect(response.status).toBe(200);
+  });
+
+  describe("POST /v1/confirmations/:id/resolve (ADR-059)", () => {
+    it("pasa el id, approved y el userId al Gateway", async () => {
+      let received: { id: string; approved: boolean; userId: string | undefined } | undefined;
+      const gateway = fakeGateway({
+        resolveConfirmation: async (id: string, approved: boolean, userId?: string) => {
+          received = { id, approved, userId };
+          return { success: true, data: { moved: true } };
+        },
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app)
+        .post("/v1/confirmations/conf-1/resolve")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ approved: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ success: true, data: { moved: true } });
+      expect(received).toEqual({ id: "conf-1", approved: true, userId: undefined });
+    });
+
+    it("rechaza con 400 si falta 'approved' o no es boolean", async () => {
+      const app = appWith(fakeGateway());
+
+      const response = await request(app).post("/v1/confirmations/conf-1/resolve").set("Authorization", `Bearer ${TOKEN}`).send({});
+
+      expect(response.status).toBe(400);
+    });
+
+    it("responde 404 si el Gateway no encuentra la confirmación (expirada/desconocida/Gateway reiniciado)", async () => {
+      const gateway = fakeGateway({ resolveConfirmation: async () => undefined });
+      const app = appWith(gateway);
+
+      const response = await request(app)
+        .post("/v1/confirmations/conf-1/resolve")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ approved: false });
+
+      expect(response.status).toBe(404);
+    });
   });
 
   it("GET /v1/agents expone el listado del Agent Registry", async () => {

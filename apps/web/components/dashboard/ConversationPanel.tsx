@@ -7,6 +7,8 @@ import { Card } from "@/components/ui/Card";
 import { VoiceButton } from "@/components/dashboard/VoiceButton";
 import { LiveVoiceButton } from "@/components/dashboard/LiveVoiceButton";
 import { ScreenShareButton } from "@/components/dashboard/ScreenShareButton";
+import { CameraShareButton } from "@/components/dashboard/CameraShareButton";
+import { PendingConfirmationModal } from "@/components/dashboard/PendingConfirmationModal";
 import { useConversation, type ChatMessage } from "@/lib/chat/useConversation";
 
 /**
@@ -40,6 +42,8 @@ export function ConversationPanel({
     live,
     sendMessage,
     selectImage,
+    pendingConfirmation,
+    resolveConfirmation,
   } = useConversation(initialConversationId);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,7 +65,16 @@ export function ConversationPanel({
     : "fade-in flex h-full flex-col gap-4";
 
   return (
-    <Wrapper className={wrapperClassName}>
+    <>
+      {pendingConfirmation && (
+        <PendingConfirmationModal
+          confirmation={pendingConfirmation}
+          busy={isSending}
+          onCancel={() => resolveConfirmation(false)}
+          onConfirm={() => resolveConfirmation(true)}
+        />
+      )}
+      <Wrapper className={wrapperClassName}>
       <div
         className={`kan-scroll flex flex-1 flex-col gap-4 overflow-y-auto ${compact ? "min-h-[16rem]" : "min-h-[24rem]"}`}
       >
@@ -130,6 +143,12 @@ export function ConversationPanel({
               onClick={live.screenSharing ? live.stopScreenShare : live.startScreenShare}
             />
           )}
+          {live.status === "active" && (
+            <CameraShareButton
+              sharing={live.cameraSharing}
+              onClick={live.cameraSharing ? live.stopCameraShare : live.startCameraShare}
+            />
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -168,7 +187,8 @@ export function ConversationPanel({
           </button>
         </div>
       </form>
-    </Wrapper>
+      </Wrapper>
+    </>
   );
 }
 

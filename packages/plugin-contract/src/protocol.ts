@@ -84,10 +84,35 @@ export interface AuditLocalMessage {
   at: string;
 }
 
-export type CoreToEdgeMessage = AgentTaskDispatchMessage;
+/**
+ * Resuelve remotamente una confirmación pendiente (ADR-059) — mismo efecto
+ * que `EdgeAgent.resolveConfirmation()`, que hasta ahora solo se disparaba
+ * vía IPC local en `apps/desktop`. `confirmationId` es el mismo id que
+ * `TelemetryMessage.confirmationId` ya devolvió al pedir la acción original.
+ */
+export interface AgentConfirmationResolveMessage {
+  type: "agent_confirmation.resolve";
+  confirmationId: string;
+  approved: boolean;
+}
+
+/** Respuesta a `AgentConfirmationResolveMessage` — correlacionada por `confirmationId`, no por `taskId` (esa tarea ya terminó del lado del Gateway cuando quedó "pending_confirmation"). */
+export interface ConfirmationResolvedMessage {
+  type: "confirmation_resolved";
+  confirmationId: string;
+  deviceId?: string;
+  capabilityName?: string;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+  at: string;
+}
+
+export type CoreToEdgeMessage = AgentTaskDispatchMessage | AgentConfirmationResolveMessage;
 export type EdgeToCoreMessage =
   | HelloMessage
   | HeartbeatMessage
   | TelemetryMessage
   | SafetyPolicyChangedMessage
-  | AuditLocalMessage;
+  | AuditLocalMessage
+  | ConfirmationResolvedMessage;

@@ -64,4 +64,31 @@ export class GatewayToolProvider implements ToolProviderPort {
       return { success: false, error: `No se pudo contactar al Gateway: ${message}` };
     }
   }
+
+  /** ADR-059: resuelve una confirmación pendiente (irreversible-material/safety-critical) — mismo timeout que executeTool(), cubre Gateway -> Edge Agent -> ack. */
+  async resolveConfirmation(confirmationId: string, approved: boolean): Promise<ToolExecutionResult> {
+    try {
+      const response = await fetch(`${this.config.baseUrl}/v1/confirmations/${encodeURIComponent(confirmationId)}/resolve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.config.internalToken}`,
+          "ngrok-skip-browser-warning": "true",
+          ...(this.config.userToken ? { "X-User-Token": this.config.userToken } : {}),
+        },
+        body: JSON.stringify({ approved }),
+        signal: AbortSignal.timeout(EXECUTE_TOOL_TIMEOUT_MS),
+      });
+      if (response.status === 404) {
+        return { success: false, error: "No se encontró la confirmación — puede haber expirado o ya haber sido resuelta." };
+      }
+      if (!response.ok) {
+        return { success: false, error: `Gateway respondió ${response.status} al resolver la confirmación` };
+      }
+      return (await response.json()) as ToolExecutionResult;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { success: false, error: `No se pudo contactar al Gateway: ${message}` };
+    }
+  }
 }
