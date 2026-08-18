@@ -1,3 +1,9 @@
+// Polyfill de reflect requerido por tsyringe (dependencia de node-opcua,
+// vía @kan/plugin-opcua) — debe ser el primer import del entry point real
+// del proceso main, antes que cualquier otra cosa. Bug preexistente, no
+// introducido por ADR-060: node-opcua ya se importaba estático antes; nunca
+// se había corrido `apps/desktop` de punta a punta en este entorno.
+import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { access, constants, readFile } from "node:fs/promises";
@@ -8,6 +14,7 @@ import {
   EdgeAgentBus,
   FileAndConsoleLogger,
   JsonFileConfigStore,
+  JsonFileDeviceStore,
   CoreWebSocketClient,
   NoopUpdater,
   PluginInstaller,
@@ -26,7 +33,6 @@ import {
   type InstalledPlugin,
   type LoggerPort,
 } from "@kan/edge-agent-core";
-import { NodeSerialTransport } from "@kan/serial-line-transport";
 import { validatePluginManifest, type ActionSeverity } from "@kan/plugin-contract";
 import { GatewayPluginPackageFetcher } from "./GatewayPluginPackageFetcher";
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
@@ -46,6 +52,9 @@ let edgeAgentId: string | undefined;
 // no expone listar el catálogo (Fase 3 solo necesitaba instalar por id), pero
 // la UI sí necesita mostrar qué hay disponible antes de instalar nada.
 let pluginPackageFetcher: GatewayPluginPackageFetcher | undefined;
+
+/** Ver el setInterval que la usa, cerca de agent.bootstrap() — detección en caliente de dispositivos seriales (ADR-060 incremento 2). */
+const DEVICE_DISCOVERY_POLL_MS = 3_000;
 
 const FORWARDED_EVENTS: Array<keyof EdgeAgentEvents> = [
   "plugin.loaded",
@@ -167,6 +176,9 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
     configStore,
     coreConnection,
     updater: new NoopUpdater(),
+    // Memoria de dispositivos entre reinicios — mismo directorio que
+    // config.json/vid-pid-custom.json, archivo propio (ver JsonFileDeviceStore).
+    deviceStore: new JsonFileDeviceStore(join(userDataDir, "known-devices.json")),
   });
 
   // ADR-056 (Fase 5): venv puro, sin Docker como prerequisito (decisión de
@@ -210,30 +222,50 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
 
   // Detección automática de dispositivos conectados (ADR-060) — serial
   // (VID/PID contra catálogo), WiFi (mDNS pasivo, `bonjour-service`, puro
-  // JS) y BLE (opcional). BLE usa el mismo criterio de import dinámico +
-  // try/catch que Raspberry Pi (ADR-038): el intento de `@abandonware/noble`
-  // ya falló una vez en este repo para plugin-bluetooth-generic por falta
-  // de Visual Studio C++ (ver su README) — si vuelve a fallar acá, se
-  // degrada a `NullBleScanner` (BLE ausente) sin tumbar el resto del
-  // escaneo ni del Edge Agent.
-  let bleScanner: BleDeviceScannerPort = new NullBleScanner();
+  // JS) y BLE (opcional).
+  //
+  // `@kan/serial-line-transport` (para `NodeSerialTransport`) se importa
+  // dinámico acá, nunca estático arriba — hallazgo real, no solo el mismo
+  // criterio defensivo que ESP32/Modbus/etc. (ADR-057): un `import` estático
+  // de este paquete a nivel de módulo lo funde en el chunk de entrada
+  // monolítico (`out/main/index.js`), y `serialport`/`@serialport/bindings-cpp`
+  // pierde ahí la resolución relativa a su `.node` prebuild ("No native
+  // build was found..."), aunque el mismo binding cargue perfecto bajo el
+  // Node interno de Electron sin bundlear (justo lo que verificó ADR-057).
+  // Import dinámico → chunk propio → la resolución relativa vuelve a
+  // funcionar, igual que ya le pasa a los 5 plugins que dependen de este
+  // mismo paquete. Confirmado en vivo: sin este cambio, la app entera
+  // revienta al arrancar, no solo esta feature.
   try {
-    const { NobleBleScanner } = await import("@kan/edge-agent-core/ble");
-    bleScanner = new NobleBleScanner();
+    const { NodeSerialTransport } = await import("@kan/serial-line-transport");
+
+    // BLE usa el mismo criterio de import dinámico + try/catch que Raspberry
+    // Pi (ADR-038): el intento de `@abandonware/noble` ya falló una vez en
+    // este repo para plugin-bluetooth-generic por falta de Visual Studio
+    // C++ (ver su README) — si vuelve a fallar acá, se degrada a
+    // `NullBleScanner` (BLE ausente) sin tumbar el resto del escaneo.
+    let bleScanner: BleDeviceScannerPort = new NullBleScanner();
+    try {
+      const { NobleBleScanner } = await import("@kan/edge-agent-core/ble");
+      bleScanner = new NobleBleScanner();
+    } catch (error) {
+      logger.warn(`BLE no disponible para la detección de dispositivos (¿falta compilar @abandonware/noble?): ${error}`);
+    }
+
+    await agent.registerPlugin(
+      new DeviceDiscoveryPlugin(
+        new DeviceDiscoveryService({
+          serialTransport: new NodeSerialTransport(),
+          wifiScanner: new BonjourWifiScanner(),
+          bleScanner,
+          logger,
+          catalog: loadVidPidCatalog(join(userDataDir, "vid-pid-custom.json")),
+        }),
+      ),
+    );
   } catch (error) {
-    logger.warn(`BLE no disponible para la detección de dispositivos (¿falta compilar @abandonware/noble?): ${error}`);
+    logger.warn(`No se pudo cargar la detección automática de dispositivos (¿falta compilar una dependencia nativa?): ${error}`);
   }
-  await agent.registerPlugin(
-    new DeviceDiscoveryPlugin(
-      new DeviceDiscoveryService({
-        serialTransport: new NodeSerialTransport(),
-        wifiScanner: new BonjourWifiScanner(),
-        bleScanner,
-        logger,
-        catalog: loadVidPidCatalog(join(userDataDir, "vid-pid-custom.json")),
-      }),
-    ),
-  );
 
   // Sin binding nativo — puro JS, sin el riesgo de ABI de Electron que sí
   // aplica a serialport (ver más abajo). Registro estático, mismo criterio
@@ -335,6 +367,19 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
 
   await agent.bootstrap();
 
+  // Detección en caliente (ADR-060 incremento 2) — sondea solo enumeración
+  // serial (rápida, consulta local al SO, ver DeviceDiscoveryService.scanSerial)
+  // cada pocos segundos para notar un dispositivo recién enchufado sin
+  // reiniciar la app ni pedir un rescan manual. Acotado a este único plugin
+  // (rediscoverDriver, no rediscoverDevices) — no repite discover() en el
+  // resto de los drivers habilitados en cada tick. No hace nada mientras el
+  // plugin siga pendiente de aprobación de permisos.
+  setInterval(() => {
+    void agent
+      .rediscoverDriver("kan-device-discovery")
+      .catch((error) => logger.warn(`Detección en caliente: fallo al re-escanear puertos seriales: ${error}`));
+  }, DEVICE_DISCOVERY_POLL_MS);
+
   return agent;
 }
 
@@ -368,7 +413,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle("kan:getPairingStatus", () => ({ paired: Boolean(configStore?.get<string>("pairingToken")) }));
   ipcMain.handle("kan:pair", (_event, code: string) => pairAgent(code));
   ipcMain.handle("kan:syncPluginConfig", () => syncPluginConfig());
-  ipcMain.handle("kan:listPendingPluginPermissions", () => edgeAgent?.listPendingPluginPermissions() ?? []);
+  // `PluginInstance.driver` es una instancia viva del plugin (métodos, posibles
+  // handles nativos) — no es clonable por IPC ("An object could not be
+  // cloned."), bug preexistente nunca disparado porque nadie había llegado acá
+  // con un plugin realmente pendiente en este entorno. El renderer
+  // (`toPendingPluginPermission` en App.tsx) solo usa `manifest`/`status`.
+  ipcMain.handle(
+    "kan:listPendingPluginPermissions",
+    () => edgeAgent?.listPendingPluginPermissions().map(({ manifest, status }) => ({ manifest, status })) ?? [],
+  );
   ipcMain.handle("kan:approvePluginPermissions", (_event, pluginId: string) => {
     if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
     return edgeAgent.approvePluginPermissions(pluginId);

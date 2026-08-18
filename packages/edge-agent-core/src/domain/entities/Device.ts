@@ -9,4 +9,7 @@ export interface Device {
   pluginId: string;
   status: DeviceStatus;
   capabilities: CapabilityDescriptor[];
+  /** Ver `DeviceDescriptor.transport` — opcional, solo presente si el driver lo informó. */
+  transport?: "serial" | "wifi" | "bluetooth";
+  address?: string;
 }

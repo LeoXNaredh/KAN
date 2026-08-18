@@ -2,16 +2,20 @@
   "name": "desktop",
   "private": true,
   "version": "0.1.0",
+  "description": "KAN — asistente de hardware, app de escritorio",
+  "author": "KAN",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:installer": "electron-vite build && electron-builder --win",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint . --config ../../eslint.config.mjs",
     "test": "vitest run --passWithNoTests",
     "rebuild:native": "electron-rebuild -f -o @serialport/bindings-cpp"
   },
   "dependencies": {
+    "reflect-metadata": "^0.2.2",
     "@kan/edge-agent-core": "workspace:*",
     "@kan/plugin-canbus": "workspace:*",
     "@kan/plugin-contract": "workspace:*",
@@ -24,6 +28,7 @@
     "@kan/plugin-mqtt": "workspace:*",
     "@kan/plugin-network-tools": "workspace:*",
     "@kan/plugin-opcua": "workspace:*",
+    "onoff": "^6.0.3",
     "@kan/plugin-raspberry-pi": "workspace:*",
     "@kan/plugin-sdk-ts": "workspace:*",
     "@kan/plugin-serial-generic": "workspace:*",
@@ -32,7 +37,8 @@
     "@kan/serial-line-transport": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "serialport": "^12.0.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
@@ -42,10 +48,41 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.kan.desktop",
+    "productName": "KAN",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "KAN"
+    }
   }
 }

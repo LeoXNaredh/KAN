@@ -1,23 +1,79 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DeviceDiscoveryService } from "./DeviceDiscoveryService";
 import { DeviceDiscoveryPlugin } from "./DeviceDiscoveryPlugin";
-import type { DiscoveryResult } from "../domain/entities/DiscoveredDevice";
+import type { DiscoveredDevice, DiscoveryResult } from "../domain/entities/DiscoveredDevice";
 
 function fakeResult(overrides: Partial<DiscoveryResult> = {}): DiscoveryResult {
   return { devices: [], scannedAt: new Date("2026-01-01T00:00:00.000Z"), durationMs: 5, ...overrides };
 }
 
-function fakeService(scan: () => Promise<DiscoveryResult>): DeviceDiscoveryService {
-  return { scan } as unknown as DeviceDiscoveryService;
+function fakeService(
+  scan: () => Promise<DiscoveryResult>,
+  scanSerial: () => Promise<DiscoveredDevice[]> = async () => [],
+): DeviceDiscoveryService {
+  return { scan, scanSerial } as unknown as DeviceDiscoveryService;
 }
 
 describe("DeviceDiscoveryPlugin", () => {
-  it("discover() expone un único pseudo-dispositivo, el host del Edge Agent", async () => {
+  it("discover() expone el host del Edge Agent cuando no hay ningún periférico serial visible", async () => {
     const plugin = new DeviceDiscoveryPlugin(fakeService(async () => fakeResult()));
 
     const devices = await plugin.discover();
 
     expect(devices).toEqual([{ id: "edge-agent-host", name: "Detección de dispositivos", kind: "device-discovery" }]);
+  });
+
+  it("discover() agrega un pseudo-dispositivo por cada periférico serial visible (detección en caliente)", async () => {
+    const pico: DiscoveredDevice = {
+      id: "serial:COM7",
+      transport: "serial",
+      port: "COM7",
+      name: "Raspberry Pi Pico",
+      confidence: "exact",
+      raw: {},
+    };
+    const plugin = new DeviceDiscoveryPlugin(fakeService(async () => fakeResult(), async () => [pico]));
+
+    const devices = await plugin.discover();
+
+    expect(devices).toEqual([
+      { id: "edge-agent-host", name: "Detección de dispositivos", kind: "device-discovery" },
+      {
+        id: "serial:COM7",
+        name: "Raspberry Pi Pico",
+        kind: "discovered-serial",
+        transport: "serial",
+        address: "COM7",
+      },
+    ]);
+  });
+
+  it("discover() no revienta si la enumeración serial falla — sigue devolviendo al menos el host", async () => {
+    const plugin = new DeviceDiscoveryPlugin(
+      fakeService(
+        async () => fakeResult(),
+        () => Promise.reject(new Error("puerto ocupado")),
+      ),
+    );
+
+    const devices = await plugin.discover();
+
+    expect(devices).toEqual([{ id: "edge-agent-host", name: "Detección de dispositivos", kind: "device-discovery" }]);
+  });
+
+  it("getCapabilities() de un pseudo-dispositivo serial es vacío — informativo, no controlable", () => {
+    const plugin = new DeviceDiscoveryPlugin(fakeService(async () => fakeResult()));
+
+    expect(plugin.getCapabilities("serial:COM7")).toEqual([]);
+  });
+
+  it("connect() de un pseudo-dispositivo serial no dispara ningún escaneo — nada que abrir", async () => {
+    const scan = vi.fn(async () => fakeResult());
+    const plugin = new DeviceDiscoveryPlugin(fakeService(scan));
+
+    await plugin.connect("serial:COM7");
+
+    expect(scan).not.toHaveBeenCalled();
   });
 
   it("expone una única capability, read-only, sin targetParam (opera sobre el host entero)", () => {

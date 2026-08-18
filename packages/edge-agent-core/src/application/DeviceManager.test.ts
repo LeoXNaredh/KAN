@@ -9,9 +9,22 @@ import { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
 import { EdgeAgentBus } from "./EdgeAgentBus";
 import { DeviceManager } from "./DeviceManager";
 import type { LoggerPort } from "../domain/ports/LoggerPort";
+import type { DeviceStorePort } from "../domain/ports/DeviceStorePort";
+import type { KnownDeviceRecord } from "../domain/entities/KnownDevice";
 
 function createLogger(): LoggerPort {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+/** Fake en memoria — mismo contrato que JsonFileDeviceStore, sin tocar disco. */
+class FakeDeviceStore implements DeviceStorePort {
+  records: KnownDeviceRecord[] = [];
+  load(): KnownDeviceRecord[] {
+    return this.records;
+  }
+  save(records: KnownDeviceRecord[]): void {
+    this.records = records;
+  }
 }
 
 class SlowDriver extends KanDeviceDriverPlugin {
@@ -106,5 +119,61 @@ describe("DeviceManager", () => {
 
   it("disconnect() de un dispositivo desconocido no lanza", async () => {
     await expect(manager.disconnect("no-existe")).resolves.toBeUndefined();
+  });
+
+  it("discoverAll() es idempotente: un dispositivo ya conocido no se reconecta ni remite device.connected de nuevo", async () => {
+    const driver = new SlowDriver("a", 0, []);
+    await manager.discoverAll([driver]);
+
+    const handler = vi.fn();
+    bus.on("device.connected", handler);
+    const second = await manager.discoverAll([driver]);
+
+    expect(second).toHaveLength(0);
+    expect(handler).not.toHaveBeenCalled();
+    expect(manager.list()).toHaveLength(1);
+  });
+
+  it("sin deviceStore, listKnown() devuelve vacío y discoverAll() no falla (ej. browser.ts, sin filesystem)", async () => {
+    await manager.discoverAll([new SlowDriver("a", 0, [])]);
+    expect(manager.listKnown()).toEqual([]);
+  });
+
+  describe("memoria de dispositivos entre reinicios", () => {
+    it("con un deviceStore, cada dispositivo descubierto se persiste con su fecha de última vez visto", async () => {
+      const store = new FakeDeviceStore();
+      const withStore = new DeviceManager(bus, logger, store);
+
+      await withStore.discoverAll([new SlowDriver("a", 0, [])]);
+
+      expect(store.records).toHaveLength(1);
+      expect(store.records[0]).toMatchObject({ id: "a-device", name: "a" });
+      expect(store.records[0].lastSeenAt).toEqual(expect.any(String));
+    });
+
+    it("un DeviceManager nuevo apuntando al mismo store carga los dispositivos ya vistos en listKnown(), sin que aparezcan como conectados", async () => {
+      const store = new FakeDeviceStore();
+      const first = new DeviceManager(bus, logger, store);
+      await first.discoverAll([new SlowDriver("a", 0, [])]);
+
+      const second = new DeviceManager(new EdgeAgentBus(), logger, store);
+
+      expect(second.listKnown()).toHaveLength(1);
+      expect(second.listKnown()[0].id).toBe("a-device");
+      // La Pico "ya sabida" no está conectada hasta que discoverAll() la vuelva a encontrar.
+      expect(second.list()).toEqual([]);
+    });
+
+    it("un dispositivo ya conocido que vuelve a aparecer se reconecta normalmente (no queda huérfano por el guard de idempotencia)", async () => {
+      const store = new FakeDeviceStore();
+      const first = new DeviceManager(bus, logger, store);
+      await first.discoverAll([new SlowDriver("a", 0, [])]);
+
+      const second = new DeviceManager(new EdgeAgentBus(), logger, store);
+      const rediscovered = await second.discoverAll([new SlowDriver("a", 0, [])]);
+
+      expect(rediscovered).toHaveLength(1);
+      expect(second.list()).toHaveLength(1);
+    });
   });
 });

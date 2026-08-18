@@ -2,6 +2,8 @@ node_modules/
 .next/
 dist/
 out/
+# Salida de electron-builder (apps/desktop build:installer)
+release/
 .turbo/
 apps/gateway/data/
 .env

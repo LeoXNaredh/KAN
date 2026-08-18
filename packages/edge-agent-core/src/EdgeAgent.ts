@@ -1,7 +1,9 @@
 import type { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
 import type { ActionSeverity, CoreToEdgeMessage, TargetDescriptor } from "@kan/plugin-contract";
 import type { InstalledPlugin } from "./domain/entities/InstalledPlugin";
+import type { KnownDeviceRecord } from "./domain/entities/KnownDevice";
 import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
+import type { DeviceStorePort } from "./domain/ports/DeviceStorePort";
 import type { LoggerPort } from "./domain/ports/LoggerPort";
 import type { CoreConnectionPort } from "./domain/ports/CoreConnectionPort";
 import type { UpdaterPort } from "./domain/ports/UpdaterPort";
@@ -30,6 +32,8 @@ export interface EdgeAgentDeps {
   configStore: ConfigStorePort;
   coreConnection: CoreConnectionPort;
   updater: UpdaterPort;
+  /** Memoria de dispositivos entre reinicios — opcional (ej. `browser.ts`, sin filesystem, no la pasa). */
+  deviceStore?: DeviceStorePort;
 }
 
 /**
@@ -50,7 +54,7 @@ export class EdgeAgent {
   constructor(private readonly deps: EdgeAgentDeps) {
     this.bus = deps.bus;
     this.pluginManager = new PluginManager(deps.bus, deps.logger, deps.configStore);
-    this.deviceManager = new DeviceManager(deps.bus, deps.logger);
+    this.deviceManager = new DeviceManager(deps.bus, deps.logger, deps.deviceStore);
     this.permissionManager = new PermissionManager(deps.bus, deps.logger);
     this.safetyPolicyStore = new SafetyPolicyStore(deps.configStore, deps.bus);
     this.capabilityRegistry = new CapabilityRegistry(
@@ -131,6 +135,24 @@ export class EdgeAgent {
     await this.deviceManager.discoverAll(this.pluginManager.getEnabledDrivers());
   }
 
+  /**
+   * Igual que `rediscoverDevices()` pero acotado a un único plugin — para
+   * detección en caliente por polling frecuente (ADR-060 incremento 2, ej.
+   * `kan-device-discovery` sondeado cada pocos segundos desde
+   * `apps/desktop`). A propósito no reusa `rediscoverDevices()`: llamar
+   * discover() en TODOS los drivers habilitados en cada tick de un poll
+   * corto repetiría trabajo real innecesario en drivers que sí hacen I/O de
+   * verdad en discover() (ej. sondear un dispositivo de red). No hace nada
+   * si el plugin no existe o no está habilitado (pendiente de aprobación,
+   * deshabilitado, o id inexistente) — mismo criterio best-effort del resto
+   * de este archivo, un poll en background nunca debe lanzar.
+   */
+  async rediscoverDriver(pluginId: string): Promise<void> {
+    const driver = this.pluginManager.getEnabledDrivers().find((d) => d.id === pluginId);
+    if (!driver) return;
+    await this.deviceManager.discoverAll([driver]);
+  }
+
   /** Plugins sidecar instalados (ADR-056) — `undefined` si este host no pasó `pluginInstaller` en `EdgeAgentDeps`. */
   listInstalledPlugins(): InstalledPlugin[] | undefined {
     return this.pluginInstaller?.listInstalled();
@@ -191,6 +213,11 @@ export class EdgeAgent {
 
   listDevices() {
     return this.deviceManager.list();
+  }
+
+  /** Dispositivos vistos alguna vez (memoria entre reinicios), incluyendo los desconectados ahora mismo — ver `DeviceManager.listKnown()`. */
+  listKnownDevices(): KnownDeviceRecord[] {
+    return this.deviceManager.listKnown();
   }
 
   listCapabilities(): CapabilityListing[] {

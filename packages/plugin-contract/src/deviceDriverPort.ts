@@ -4,6 +4,15 @@ export interface DeviceDescriptor {
   id: string;
   name: string;
   kind: string;
+  /**
+   * Cómo se llegó a este dispositivo — opcional: la mayoría de los drivers
+   * (ESP32, Modbus, simulador, etc.) no lo necesitan, es información propia
+   * de descubrimiento físico (hoy solo la completa `DeviceDiscoveryPlugin`
+   * para sus pseudo-dispositivos seriales, memoria de dispositivos).
+   */
+  transport?: "serial" | "wifi" | "bluetooth";
+  /** Puerto (serial, ej. "COM3") o dirección (wifi/bluetooth) — ver `transport`. */
+  address?: string;
 }
 
 /**

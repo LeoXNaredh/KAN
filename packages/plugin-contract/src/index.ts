@@ -1,4 +1,5 @@
 export * from "./severity";
+export * from "./confirmationCopy";
 export * from "./jsonSchema";
 export * from "./capability";
 export * from "./deviceDriverPort";
