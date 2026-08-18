@@ -34,6 +34,15 @@ function toGeminiFunctionDeclaration(tool: ToolDescriptor) {
 }
 
 /**
+ * Un aviso de alerta pendiente de mandar — `enqueueOrSend()` decide al toque
+ * si sale ya o si tiene que esperar (ver `LiveVoiceConnection`).
+ */
+interface LiveVoiceConnection {
+  /** true si se aceptó (mandado ya o encolado); false si el socket no está abierto (mismo contrato que antes tenía `speak()` directo sobre el WebSocket). */
+  enqueueOrSend(text: string): boolean;
+}
+
+/**
  * Proxy WS transparente Gateway<->Gemini Live API (ADR-044, rediseño tras
  * confirmar en vivo que la redención de tokens efímeros no funciona con
  * esta cuenta): el browser conecta acá (`/live-voice?sessionId=...`), nunca
@@ -45,15 +54,21 @@ function toGeminiFunctionDeclaration(tool: ToolDescriptor) {
  *
  * Corre en modo `noServer`, igual que `WsConnectionManager` — `apps/gateway`
  * decide cuándo delegarle un 'upgrade'. El único mensaje que arma este
- * proxy es el `setup` inicial hacia Gemini (con la config ya resuelta por
+ * proxy hacia Gemini es el `setup` inicial (con la config ya resuelta por
  * `CreateLiveSessionUseCase` del lado de `apps/web`, entregada acá vía
- * `LiveVoiceSessionStore`); todo lo demás es relay de bytes sin
- * interpretar — el browser manda audio/tool responses y recibe
- * audio/tool calls con exactamente el mismo protocolo que si hablara
- * directo con Gemini (`useLiveSession.ts` no cambia su lectura de mensajes).
+ * `LiveVoiceSessionStore`) más — desde el sistema básico de alertas —
+ * los turnos sintéticos de `speak()`; todo lo demás sigue siendo relay de
+ * bytes sin interpretar en el sentido de nunca transformarlo, aunque el
+ * mensaje de Gemini -> browser sí se inspecciona al pasar (best-effort, sin
+ * bloquear el relay si no es JSON parseable) para saber cuándo Gemini
+ * terminó de hablar y así poder vaciar la cola de avisos — el browser
+ * recibe exactamente los mismos bytes de siempre, sin cambios
+ * (`useLiveSession.ts` no necesita saber que esto existe).
  */
 export class GeminiLiveProxy {
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
+  /** Ver `speak()` — última sesión Live activa por userId (una pestaña por usuario a la vez; una nueva conexión reemplaza a la anterior). */
+  private readonly activeByUser = new Map<string, LiveVoiceConnection>();
 
   constructor(
     private readonly sessionStore: LiveVoiceSessionStore,
@@ -83,6 +98,53 @@ export class GeminiLiveProxy {
     // la conexión saliente a Gemini — se buffer y se vacía apenas abre.
     let queuedFromBrowser: string[] = [];
 
+    // Cola de avisos de alerta (sistema básico de alertas) — `speak()` nunca
+    // manda directo si Gemini está en medio de un turno (respondiendo, ya
+    // sea a una conversación normal o a un aviso anterior): lo apila acá y
+    // se vacía de a uno, recién cuando `serverContent.turnComplete` confirma
+    // que el turno en curso terminó (ver el handler de "message" abajo).
+    // Arranca en `false`: recién se marca "en curso" cuando efectivamente
+    // vemos a Gemini empezar a responder (un `serverContent` sin
+    // `turnComplete` todavía) — un `speak()` en el instante exacto entre
+    // "el usuario dejó de hablar" y "Gemini mandó su primer chunk" puede
+    // colarse y salir ya, ventana angosta aceptada a propósito (mismo
+    // criterio "solución simple" del resto de esto).
+    let awaitingTurnComplete = false;
+    const speechQueue: string[] = [];
+
+    function sendSpeechTurn(text: string): void {
+      if (geminiSocket.readyState !== WebSocket.OPEN) return;
+      geminiSocket.send(
+        JSON.stringify({
+          clientContent: {
+            turns: [
+              {
+                role: "user",
+                parts: [{ text: `[ALERTA] Avisale ahora mismo al usuario, con tus propias palabras, de forma clara y directa: ${text}` }],
+              },
+            ],
+            turnComplete: true,
+          },
+        }),
+      );
+      awaitingTurnComplete = true;
+    }
+
+    const connection: LiveVoiceConnection = {
+      enqueueOrSend(text: string): boolean {
+        if (geminiSocket.readyState !== WebSocket.OPEN) return false;
+        if (awaitingTurnComplete) speechQueue.push(text);
+        else sendSpeechTurn(text);
+        return true;
+      },
+    };
+    // Ver `speak()` — registrada apenas se abre la conexión saliente (no
+    // hace falta esperar el "open"/setup: `enqueueOrSend()` ya chequea
+    // readyState antes de mandar nada). Se saca al cerrar, y solo si sigue
+    // siendo esta misma instancia (una reconexión más nueva del mismo
+    // usuario ya pudo haber tomado su lugar en el mapa).
+    if (config.userId) this.activeByUser.set(config.userId, connection);
+
     geminiSocket.on("open", () => {
       geminiSocket.send(
         JSON.stringify({
@@ -110,7 +172,24 @@ export class GeminiLiveProxy {
     });
 
     geminiSocket.on("message", (data) => {
-      if (browserSocket.readyState === WebSocket.OPEN) browserSocket.send(data.toString());
+      const raw = data.toString();
+      if (browserSocket.readyState === WebSocket.OPEN) browserSocket.send(raw);
+
+      // Best-effort: si no es JSON parseable (no debería pasar, Gemini
+      // siempre manda JSON), el relay de arriba ya ocurrió — esto solo
+      // actualiza el estado de la cola, nunca bloquea ni retrasa el relay.
+      try {
+        const parsed = JSON.parse(raw) as { serverContent?: { turnComplete?: boolean } };
+        if (parsed.serverContent?.turnComplete) {
+          awaitingTurnComplete = false;
+          const next = speechQueue.shift();
+          if (next !== undefined) sendSpeechTurn(next);
+        } else if (parsed.serverContent) {
+          awaitingTurnComplete = true;
+        }
+      } catch {
+        // No JSON — nada que actualizar.
+      }
     });
 
     browserSocket.on("close", () => geminiSocket.close());
@@ -118,11 +197,31 @@ export class GeminiLiveProxy {
 
     geminiSocket.on("close", (code, reason) => {
       this.logger.info(`[GeminiLiveProxy] sesión con Gemini cerrada: ${code} ${reason.toString()}`);
+      if (config.userId && this.activeByUser.get(config.userId) === connection) this.activeByUser.delete(config.userId);
       if (browserSocket.readyState === WebSocket.OPEN) browserSocket.close();
     });
     geminiSocket.on("error", (error) => {
       this.logger.warn(`[GeminiLiveProxy] error de conexión con Gemini: ${error.message}`);
       if (browserSocket.readyState === WebSocket.OPEN) browserSocket.close();
     });
+  }
+
+  /**
+   * Avisa por voz a un usuario con una sesión Live activa ahora mismo
+   * (sistema básico de alertas) — si Gemini está idle, manda el turno
+   * sintético ya mismo; si está en medio de un turno (conversación normal o
+   * un aviso anterior todavía sin terminar), lo encola y sale recién al
+   * `turnComplete` de ese turno (ver `enqueueOrSend()`/`sendSpeechTurn()` en
+   * `proxy()`) — evita el audio superpuesto de mandar un turno nuevo
+   * mientras Gemini todavía está generando el anterior. La respuesta
+   * hablada fluye de vuelta al browser por el relay normal, sin que
+   * necesite ningún cambio. Devuelve `false` (nunca lanza) si el usuario no
+   * tiene ninguna sesión Live abierta ahora mismo — el llamador decide qué
+   * hacer con eso (Gateway ya mandó push/notificación de todos modos).
+   */
+  speak(userId: string, text: string): boolean {
+    const connection = this.activeByUser.get(userId);
+    if (!connection) return false;
+    return connection.enqueueOrSend(text);
   }
 }

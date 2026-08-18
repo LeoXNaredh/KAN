@@ -11,6 +11,8 @@ const CONFIG: LiveVoiceSessionConfig = {
   tools: [{ name: "read_sensor", description: "lee un sensor", inputSchema: { type: "object", properties: {} } }],
 };
 
+const CONFIG_WITH_USER: LiveVoiceSessionConfig = { ...CONFIG, userId: "user-1" };
+
 function fakeLogger(): LoggerPort {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -219,5 +221,108 @@ describe("GeminiLiveProxy (integración WS real — Gateway<->fake-Gemini)", () 
     ws.close();
 
     await geminiClosed;
+  });
+
+  describe("speak() — sistema básico de alertas", () => {
+    it("devuelve false si el usuario no tiene ninguna sesión Live activa", () => {
+      expect(proxy.speak("nadie-conectado", "mensaje")).toBe(false);
+    });
+
+    it("con Gemini idle (sin turno en curso), manda el turno sintético ya mismo", async () => {
+      const { sessionId } = store.register(CONFIG_WITH_USER);
+      const ws = connect(sessionId);
+      await waitForOpen(ws);
+      await waitForMessage(ws); // setupComplete
+
+      const sent = proxy.speak("user-1", "La temperatura llegó a 43 grados, superó el límite que definiste de 40.");
+      expect(sent).toBe(true);
+
+      await vi.waitFor(() => expect(fakeGeminiReceived).toHaveLength(2));
+      const alertTurn = JSON.parse(fakeGeminiReceived[1].raw);
+      expect(alertTurn.clientContent.turnComplete).toBe(true);
+      expect(alertTurn.clientContent.turns[0].role).toBe("user");
+      expect(alertTurn.clientContent.turns[0].parts[0].text).toContain(
+        "La temperatura llegó a 43 grados, superó el límite que definiste de 40.",
+      );
+
+      ws.close();
+    });
+
+    it("con Gemini en medio de un turno, encola el aviso y no lo manda todavía", async () => {
+      const { sessionId } = store.register(CONFIG_WITH_USER);
+      const ws = connect(sessionId);
+      await waitForOpen(ws);
+      await waitForMessage(ws); // setupComplete
+
+      // Gemini empieza a responder (turno en curso, sin turnComplete todavía).
+      fakeGeminiReceived[0].socket.send(
+        JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { data: "AAAA" } }] } } }),
+      );
+      await waitForMessage(ws); // relay del chunk al browser
+
+      const sent = proxy.speak("user-1", "aviso encolado");
+      expect(sent).toBe(true);
+
+      // Nada nuevo llegó a "Gemini" todavía — sigue encolado.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(fakeGeminiReceived).toHaveLength(1);
+
+      ws.close();
+    });
+
+    it("al llegar turnComplete, manda el aviso que estaba encolado", async () => {
+      const { sessionId } = store.register(CONFIG_WITH_USER);
+      const ws = connect(sessionId);
+      await waitForOpen(ws);
+      await waitForMessage(ws); // setupComplete
+
+      fakeGeminiReceived[0].socket.send(
+        JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { data: "AAAA" } }] } } }),
+      );
+      await waitForMessage(ws);
+
+      proxy.speak("user-1", "aviso encolado");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fakeGeminiReceived).toHaveLength(1); // todavía encolado
+
+      fakeGeminiReceived[0].socket.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+
+      await vi.waitFor(() => expect(fakeGeminiReceived).toHaveLength(2));
+      expect(JSON.parse(fakeGeminiReceived[1].raw).clientContent.turns[0].parts[0].text).toContain("aviso encolado");
+
+      ws.close();
+    });
+
+    it("varios avisos encolados se mandan de a uno, esperando el turnComplete de cada uno antes del siguiente", async () => {
+      const { sessionId } = store.register(CONFIG_WITH_USER);
+      const ws = connect(sessionId);
+      await waitForOpen(ws);
+      await waitForMessage(ws); // setupComplete
+
+      fakeGeminiReceived[0].socket.send(
+        JSON.stringify({ serverContent: { modelTurn: { parts: [{ inlineData: { data: "AAAA" } }] } } }),
+      );
+      await waitForMessage(ws);
+
+      proxy.speak("user-1", "aviso 1");
+      proxy.speak("user-1", "aviso 2");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fakeGeminiReceived).toHaveLength(1); // ambos encolados, ninguno mandado todavía
+
+      // Termina el turno actual -> sale el primer aviso encolado (arranca un turno nuevo).
+      fakeGeminiReceived[0].socket.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+      await vi.waitFor(() => expect(fakeGeminiReceived).toHaveLength(2));
+      expect(JSON.parse(fakeGeminiReceived[1].raw).clientContent.turns[0].parts[0].text).toContain("aviso 1");
+
+      // El aviso 1 en sí es un turno — hasta que no termine, el aviso 2 sigue encolado.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fakeGeminiReceived).toHaveLength(2);
+
+      fakeGeminiReceived[0].socket.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+      await vi.waitFor(() => expect(fakeGeminiReceived).toHaveLength(3));
+      expect(JSON.parse(fakeGeminiReceived[2].raw).clientContent.turns[0].parts[0].text).toContain("aviso 2");
+
+      ws.close();
+    });
   });
 });

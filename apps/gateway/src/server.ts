@@ -19,6 +19,7 @@ import {
   JsonFileScheduledJobStore,
   JsonFileAgentRegistryStore,
   JsonFileTaskStore,
+  JsonFileAlertRuleStore,
   ExpoNotificationService,
   ConsoleLogger,
   LiveVoiceSessionStore,
@@ -110,6 +111,9 @@ const agentRegistryStore = new JsonFileAgentRegistryStore(
   fileURLToPath(new URL("../data/agent-registry.json", import.meta.url)),
 );
 const taskStore = new JsonFileTaskStore(fileURLToPath(new URL("../data/tasks.json", import.meta.url)));
+// Sistema básico de alertas — mismo patrón de archivo JSON local que
+// taskStore/scheduledJobStore arriba: sobrevive un reinicio del Gateway.
+const alertRuleStore = new JsonFileAlertRuleStore(fileURLToPath(new URL("../data/alert-rules.json", import.meta.url)));
 // P7 (ADR-040): mismo cliente service_role, solo para leer los tokens Expo
 // del dueño del job al dispararle su notificación (best-effort, ver
 // ExpoNotificationService).
@@ -154,6 +158,10 @@ const gateway = new Gateway({
   deviceEnrichmentService,
   agentRegistryStore,
   taskStore,
+  alertRuleStore,
+  // Sin voz en tiempo real configurada (sin GEMINI_API_KEY), las alertas
+  // siguen avisando igual por push/app — solo sin este canal extra.
+  speakToUser: geminiLiveProxy ? (userId, text) => geminiLiveProxy.speak(userId, text) : undefined,
 });
 
 bus.on("agent.connected", ({ edgeAgentId }) => logger.info(`[gateway] Edge Agent conectado: ${edgeAgentId}`));

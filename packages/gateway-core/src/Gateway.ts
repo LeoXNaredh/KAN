@@ -5,6 +5,7 @@ import type { SchedulerPort } from "./domain/ports/SchedulerPort";
 import type { NotificationServicePort } from "./domain/ports/NotificationServicePort";
 import type { AgentRegistryStorePort } from "./domain/ports/AgentRegistryStorePort";
 import type { TaskStorePort } from "./domain/ports/TaskStorePort";
+import type { AlertRuleStorePort } from "./domain/ports/AlertRuleStorePort";
 import type { GatewayBus } from "./application/GatewayBus";
 import type { DeviceEnrichmentService } from "./application/DeviceEnrichmentService";
 import { AgentRegistry } from "./application/AgentRegistry";
@@ -16,6 +17,9 @@ import { CapabilityBackedToolRegistry, type ToolRegistry } from "./application/T
 import { RegistryToolResolver } from "./application/ToolResolver";
 import { OrchestratorToolExecutor } from "./application/ToolExecutor";
 import { SCHEDULER_TOOL_DESCRIPTORS, isSchedulerToolName, executeSchedulerTool } from "./application/schedulerTools";
+import { ALERT_TOOL_DESCRIPTORS, isAlertToolName, executeAlertTool } from "./application/alertTools";
+import { AlertMonitor } from "./application/AlertMonitor";
+import { describeAlertTriggered } from "./application/alertMessage";
 import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
 
 export interface GatewayDeps {
@@ -29,6 +33,19 @@ export interface GatewayDeps {
   /** Fix de auditoría de backend #2 — sin esto, AgentRegistry/TaskOrchestrator son puramente en memoria (comportamiento previo, retrocompatible). */
   agentRegistryStore?: AgentRegistryStorePort;
   taskStore?: TaskStorePort;
+  /** Sistema básico de alertas — sin esto, AlertMonitor es puramente en memoria (mismo criterio que agentRegistryStore/taskStore). */
+  alertRuleStore?: AlertRuleStorePort;
+  /**
+   * Avisa por voz durante una sesión Live activa del usuario (ver
+   * GeminiLiveProxy.speak()) — ausente si la voz en tiempo real no está
+   * configurada (sin GEMINI_API_KEY, ver server.ts) o si el usuario de la
+   * alerta no tiene ninguna sesión Live abierta ahora mismo, en cuyo caso
+   * el aviso llega igual por notificación de la app (best-effort, nunca
+   * bloquea ni reemplaza al resto de los canales).
+   */
+  speakToUser?: (userId: string, text: string) => boolean;
+  /** Solo para tests — sin esto, AlertMonitor sondea cada 30s (su default interno). */
+  alertPollIntervalMs?: number;
 }
 
 /**
@@ -46,6 +63,7 @@ export class Gateway {
   readonly confirmationOrchestrator: ConfirmationOrchestrator;
   readonly auditService: AuditService;
   readonly scheduler: SchedulerPort;
+  readonly alertMonitor: AlertMonitor;
   readonly toolRegistry: ToolRegistry;
   private readonly toolResolver: RegistryToolResolver;
   private readonly toolExecutor: OrchestratorToolExecutor;
@@ -64,6 +82,16 @@ export class Gateway {
       deps.connectionManager,
       deps.bus,
       deps.taskStore,
+    );
+    // Construido acá (no recibido ya armado como `scheduler`) para poder
+    // pasarle un reader que cierra sobre `this.taskOrchestrator` recién
+    // creado arriba, sin que AlertMonitor conozca su tipo concreto — mismo
+    // criterio que taskOrchestrator/agentRegistry con sus stores opcionales.
+    this.alertMonitor = new AlertMonitor(
+      (capabilityRef, input) => this.taskOrchestrator.submit({ capabilityRef, input }),
+      deps.alertRuleStore,
+      undefined,
+      deps.alertPollIntervalMs,
     );
     this.confirmationOrchestrator = new ConfirmationOrchestrator(deps.connectionManager, this.agentRegistry);
     this.toolRegistry = new CapabilityBackedToolRegistry(this.capabilityRegistry);
@@ -204,17 +232,51 @@ export class Gateway {
         });
       }
     });
+
+    // Sistema básico de alertas: dispatch solo corre en la transición
+    // "normal" -> "cruzada" (ver AlertMonitor) — nunca en cada poll mientras
+    // el valor siga cruzado. `createdBy` ausente (mismo caso que un
+    // ScheduledJob sin dueño) degrada a "system": queda auditado igual, pero
+    // sin push ni voz (ExpoNotificationService/speakToUser no tienen a quién
+    // avisarle sin un userId real).
+    this.alertMonitor.start(async (rule, value) => {
+      const message = describeAlertTriggered(rule, value);
+      const userId = rule.createdBy;
+
+      this.bus.emit("alert.triggered", { alertId: rule.id, capabilityRef: rule.capabilityRef, value, message });
+      this.auditService.record({
+        actor: "system",
+        action: "alert.triggered",
+        subject: "Alerta de KAN",
+        userId,
+        metadata: { alertId: rule.id, capabilityRef: rule.capabilityRef, value, threshold: rule.threshold, body: message },
+      });
+
+      await this.deps.notificationService.notify({
+        userId: userId ?? "system",
+        channel: "push",
+        title: "Alerta de KAN",
+        body: message,
+        severity: "warning",
+      });
+
+      // Best-effort: sin userId, o sin sesión Live activa para ese usuario
+      // ahora mismo, el aviso ya llegó por push/app arriba — nunca bloquea
+      // ni hace fallar el resto del dispatch.
+      if (userId) this.deps.speakToUser?.(userId, message);
+    });
   }
 
   shutdown(): void {
     this.deps.connectionManager.stop();
     this.deps.scheduler.stop();
+    this.alertMonitor.stop();
   }
 
   listTools(requestingUserId?: string): ToolDescriptor[] {
-    // Tools de automatizaciones (ADR-039) — no son capability de ningún
-    // dispositivo, así que no pasan por toolRegistry; siempre disponibles.
-    return [...this.toolRegistry.list(requestingUserId), ...SCHEDULER_TOOL_DESCRIPTORS];
+    // Tools de automatizaciones (ADR-039) y de alertas — no son capability de
+    // ningún dispositivo, así que no pasan por toolRegistry; siempre disponibles.
+    return [...this.toolRegistry.list(requestingUserId), ...SCHEDULER_TOOL_DESCRIPTORS, ...ALERT_TOOL_DESCRIPTORS];
   }
 
   /**
@@ -233,6 +295,10 @@ export class Gateway {
     // de ownership de abajo.
     if (isSchedulerToolName(name)) {
       return executeSchedulerTool(this.scheduler, name, args, requestingUserId);
+    }
+    // Mismo criterio: una alerta tampoco es de ningún dispositivo.
+    if (isAlertToolName(name)) {
+      return executeAlertTool(this.alertMonitor, name, args, requestingUserId);
     }
 
     const resolution = this.toolResolver.resolve(name, args);

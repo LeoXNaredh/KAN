@@ -4,12 +4,15 @@ import type { CoreToEdgeMessage, EdgeToCoreMessage, HelloMessage } from "@kan/pl
 import { GatewayBus } from "./application/GatewayBus";
 import { Gateway } from "./Gateway";
 import { SCHEDULER_TOOL_DESCRIPTORS } from "./application/schedulerTools";
+import { ALERT_TOOL_DESCRIPTORS } from "./application/alertTools";
 import type { AgentConnectionInfo, ConnectionManagerPort, Unsubscribe } from "./domain/ports/ConnectionManagerPort";
 import type { AuditStorePort } from "./domain/ports/AuditStorePort";
 import type { SchedulerDispatch, SchedulerPort } from "./domain/ports/SchedulerPort";
 import type { NotificationServicePort } from "./domain/ports/NotificationServicePort";
 import type { Notification } from "./domain/entities/Notification";
 import type { AuditEntry } from "./domain/entities/AuditEntry";
+
+const AUTOMATION_TOOL_COUNT = SCHEDULER_TOOL_DESCRIPTORS.length + ALERT_TOOL_DESCRIPTORS.length;
 
 /**
  * Fake de todo el transporte (no WS real — eso ya lo cubre
@@ -100,7 +103,9 @@ class RecordingNotificationStub implements NotificationServicePort {
   }
 }
 
-function buildGateway() {
+function buildGateway(
+  overrides: { speakToUser?: (userId: string, text: string) => boolean; alertPollIntervalMs?: number } = {},
+) {
   const bus = new GatewayBus();
   const connectionManager = new FakeConnectionManager();
   const auditStore = new InMemoryAuditStore();
@@ -112,6 +117,8 @@ function buildGateway() {
     auditStore,
     scheduler,
     notificationService,
+    speakToUser: overrides.speakToUser,
+    alertPollIntervalMs: overrides.alertPollIntervalMs,
   });
   gateway.bootstrap();
   return { gateway, connectionManager, auditStore, bus, scheduler, notificationService };
@@ -240,8 +247,8 @@ describe("Gateway (integración, transporte simulado)", () => {
     connectionManager.simulateAgentConnect(helloFor(randomUUID()));
 
     const tools = gateway.listTools();
-    // +3 tools de automatizaciones (ADR-039), siempre presentes.
-    expect(tools).toHaveLength(1 + SCHEDULER_TOOL_DESCRIPTORS.length);
+    // +tools de automatizaciones (ADR-039) y de alertas, siempre presentes.
+    expect(tools).toHaveLength(1 + AUTOMATION_TOOL_COUNT);
     expect(tools[0].name).toMatch(/simulator-1.*read_sensor|read_sensor/);
 
     const agents = gateway.agentRegistry.list();
@@ -298,13 +305,13 @@ describe("Gateway (integración, transporte simulado)", () => {
     gateway.capabilityRegistry.sync(edgeAgentId, [
       { deviceId: "d1", capability: { name: "cap1", description: "...", severity: "read-only", supportsDryRun: false } },
     ]);
-    // +3 tools de automatizaciones (ADR-039), siempre presentes con o sin agentes conectados.
-    expect(gateway.listTools()).toHaveLength(1 + SCHEDULER_TOOL_DESCRIPTORS.length);
+    // +tools de automatizaciones (ADR-039) y de alertas, siempre presentes con o sin agentes conectados.
+    expect(gateway.listTools()).toHaveLength(1 + AUTOMATION_TOOL_COUNT);
 
     gateway.agentRegistry.markOffline(edgeAgentId);
     gateway.capabilityRegistry.removeAgent(edgeAgentId);
 
-    expect(gateway.listTools()).toHaveLength(SCHEDULER_TOOL_DESCRIPTORS.length);
+    expect(gateway.listTools()).toHaveLength(AUTOMATION_TOOL_COUNT);
     expect(events).toContain(edgeAgentId);
   });
 
@@ -726,6 +733,201 @@ describe("Gateway (integración, transporte simulado)", () => {
 
       expect(result).toEqual({ success: true, data: { jobs: [] } });
       expect(listSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("tools de alertas (sistema básico de alertas)", () => {
+    it("listTools() las incluye siempre, incluso sin ningún Edge Agent conectado", () => {
+      const { gateway } = buildGateway();
+
+      const names = gateway.listTools().map((t) => t.name);
+
+      expect(names).toEqual(expect.arrayContaining(["kan_set_alert", "kan_cancel_alert", "kan_list_alerts"]));
+    });
+
+    it("executeTool('kan_set_alert', ...) crea la alerta sin tocar el Edge Agent", async () => {
+      const { gateway, connectionManager } = buildGateway();
+
+      const result = await gateway.executeTool("kan_set_alert", {
+        capabilityRef: "cualquier_ref",
+        field: "temperatureC",
+        comparator: "above",
+        threshold: 40,
+        label: "la temperatura",
+        unit: "grados",
+      });
+
+      expect(result.success).toBe(true);
+      expect(gateway.alertMonitor.list()).toHaveLength(1);
+      expect(connectionManager.dispatched).toHaveLength(0);
+    });
+
+    it("executeTool('kan_set_alert', ...) pasa requestingUserId como createdBy de la alerta", async () => {
+      const { gateway } = buildGateway();
+
+      await gateway.executeTool(
+        "kan_set_alert",
+        { capabilityRef: "c_x", comparator: "above", threshold: 40, label: "la temperatura" },
+        "user-3",
+      );
+
+      expect(gateway.alertMonitor.list()[0].createdBy).toBe("user-3");
+    });
+
+    it("executeTool('kan_list_alerts', ...) devuelve las alertas activas", async () => {
+      const { gateway } = buildGateway();
+      await gateway.executeTool("kan_set_alert", {
+        capabilityRef: "c_x",
+        comparator: "above",
+        threshold: 40,
+        label: "la temperatura",
+      });
+
+      const result = await gateway.executeTool("kan_list_alerts", {});
+
+      expect(result.success).toBe(true);
+      expect((result.data as { alerts: unknown[] }).alerts).toHaveLength(1);
+    });
+
+    it("executeTool('kan_cancel_alert', ...) la saca de kan_list_alerts", async () => {
+      const { gateway } = buildGateway();
+      await gateway.executeTool("kan_set_alert", {
+        capabilityRef: "c_x",
+        comparator: "above",
+        threshold: 40,
+        label: "la temperatura",
+      });
+      const alertId = gateway.alertMonitor.list()[0].id;
+
+      const result = await gateway.executeTool("kan_cancel_alert", { alertId });
+
+      expect(result).toEqual({ success: true, data: { alertId } });
+      expect(gateway.alertMonitor.list()).toHaveLength(0);
+    });
+  });
+
+  // Timers reales con un poll interval corto (mismo criterio que el resto
+  // del repo — ver JsonFileConfigStore.test.ts: "sin mockear timers, se
+  // espera el debounce/intervalo real" — en vez de fake timers, que no
+  // llevan bien mezclarse con una cadena async que depende de un evento
+  // externo real (simulateTelemetry, disparado por el propio test).
+  describe("dispatch de una alerta disparada (sistema básico de alertas)", () => {
+    const ALERT_POLL_INTERVAL_MS = 20;
+
+    it("cuando una alerta cruza su umbral, audita, notifica por push y — con sesión Live activa — avisa por voz", async () => {
+      const speakToUser = vi.fn(() => true);
+      const { gateway, connectionManager, auditStore, notificationService, bus } = buildGateway({
+        speakToUser,
+        alertPollIntervalMs: ALERT_POLL_INTERVAL_MS,
+      });
+      connectionManager.simulateAgentConnect(helloFor(randomUUID()));
+      // El nombre real de la tool lo decide GlobalCapabilityRegistry — se
+      // toma tal cual del catálogo en vez de adivinarlo, para no acoplar
+      // este test a esa convención de nombres.
+      const [readSensorTool] = gateway.listTools();
+
+      const events: unknown[] = [];
+      bus.on("alert.triggered", (payload) => events.push(payload));
+
+      await gateway.executeTool(
+        "kan_set_alert",
+        { capabilityRef: readSensorTool.name, field: "temperatureC", comparator: "above", threshold: 40, label: "la temperatura", unit: "grados" },
+        "user-1",
+      );
+
+      await vi.waitFor(() => expect(connectionManager.dispatched.length).toBeGreaterThan(0));
+      const taskId = (connectionManager.dispatched.at(-1) as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(gateway.agentRegistry.list()[0].edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "done",
+        data: { temperatureC: 43 },
+        at: new Date().toISOString(),
+      });
+
+      await vi.waitFor(() => expect(notificationService.sent.length).toBeGreaterThan(0));
+
+      expect(events).toEqual([
+        {
+          alertId: gateway.alertMonitor.list()[0].id,
+          capabilityRef: readSensorTool.name,
+          value: 43,
+          message: "La temperatura llegó a 43 grados, superó el límite que definiste de 40.",
+        },
+      ]);
+
+      expect(notificationService.sent).toEqual([
+        {
+          userId: "user-1",
+          channel: "push",
+          title: "Alerta de KAN",
+          body: "La temperatura llegó a 43 grados, superó el límite que definiste de 40.",
+          severity: "warning",
+        },
+      ]);
+
+      expect(speakToUser).toHaveBeenCalledWith("user-1", "La temperatura llegó a 43 grados, superó el límite que definiste de 40.");
+
+      expect(auditStore.entries.find((entry) => entry.action === "alert.triggered")).toMatchObject({
+        actor: "system",
+        subject: "Alerta de KAN",
+        userId: "user-1",
+        metadata: {
+          value: 43,
+          threshold: 40,
+          body: "La temperatura llegó a 43 grados, superó el límite que definiste de 40.",
+        },
+      });
+
+      gateway.shutdown();
+    });
+
+    it("sin sesión Live activa (speakToUser ausente), sigue avisando por push sin fallar", async () => {
+      const { gateway, connectionManager, notificationService } = buildGateway({
+        alertPollIntervalMs: ALERT_POLL_INTERVAL_MS,
+      });
+      connectionManager.simulateAgentConnect(helloFor(randomUUID()));
+      const [readSensorTool] = gateway.listTools();
+
+      await gateway.executeTool(
+        "kan_set_alert",
+        { capabilityRef: readSensorTool.name, field: "temperatureC", comparator: "above", threshold: 40, label: "la temperatura", unit: "grados" },
+        "user-1",
+      );
+
+      await vi.waitFor(() => expect(connectionManager.dispatched.length).toBeGreaterThan(0));
+      const taskId = (connectionManager.dispatched.at(-1) as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(gateway.agentRegistry.list()[0].edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "done",
+        data: { temperatureC: 41 },
+        at: new Date().toISOString(),
+      });
+
+      await vi.waitFor(() => expect(notificationService.sent).toHaveLength(1));
+
+      gateway.shutdown();
+    });
+
+    it("shutdown() detiene el sondeo de alertas — ningún poll más corre después", async () => {
+      const { gateway, connectionManager, notificationService } = buildGateway({
+        alertPollIntervalMs: ALERT_POLL_INTERVAL_MS,
+      });
+      connectionManager.simulateAgentConnect(helloFor(randomUUID()));
+      const [readSensorTool] = gateway.listTools();
+      await gateway.executeTool("kan_set_alert", {
+        capabilityRef: readSensorTool.name,
+        field: "temperatureC",
+        comparator: "above",
+        threshold: 40,
+        label: "la temperatura",
+      });
+
+      gateway.shutdown();
+      await new Promise((resolve) => setTimeout(resolve, ALERT_POLL_INTERVAL_MS * 5));
+
+      expect(notificationService.sent).toHaveLength(0);
     });
   });
 });

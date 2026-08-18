@@ -24,11 +24,16 @@ export function translateAuditEntry(entry: RawAuditEntry): string {
       return `Se disparó el job programado "${entry.subject}"`;
     case "job.notification":
       return `Notificación de automatización: "${entry.subject}"`;
+    case "alert.triggered":
+      return typeof entry.metadata.body === "string" ? entry.metadata.body : "Se disparó una alerta";
     case "device.enriched":
       return `Investigué tu dispositivo "${entry.subject}"`;
     case "job.cancel.denied":
       return `Se rechazó un intento de cancelar un recordatorio ajeno`;
     default:
-      return `${entry.action}: ${entry.subject}`;
+      // Nunca el `action` interno crudo (ej. "device.enriched") — mismo
+      // criterio de tono que el resto del archivo, para una acción futura
+      // sin traducir todavía.
+      return `Hubo actividad reciente: "${entry.subject}"`;
   }
 }

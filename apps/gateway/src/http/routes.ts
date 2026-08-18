@@ -197,7 +197,7 @@ export function createRoutes(
       res.status(400).json({ error: "Se requieren 'model' y 'systemPrompt' como strings no vacíos." });
       return;
     }
-    const { sessionId, expiresAt } = liveVoiceSessionStore.register({ model, systemPrompt, tools });
+    const { sessionId, expiresAt } = liveVoiceSessionStore.register({ model, systemPrompt, tools, userId: req.userId });
     res.status(201).json({ sessionId, expiresAt });
   });
 

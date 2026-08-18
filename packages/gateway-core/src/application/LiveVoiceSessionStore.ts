@@ -5,6 +5,15 @@ export interface LiveVoiceSessionConfig {
   model: string;
   systemPrompt: string;
   tools: ToolDescriptor[];
+  /**
+   * Usuario dueño de esta sesión (si `POST /v1/live-sessions` llegó con
+   * `X-User-Token` resuelto) — permite que GeminiLiveProxy registre la
+   * conexión activa por userId, para que el sistema básico de alertas pueda
+   * avisar por voz mientras el usuario está en modo Live (ver
+   * GeminiLiveProxy.speak()). Ausente si la request no traía sesión de
+   * usuario; la sesión de voz sigue funcionando igual, solo sin ese canal.
+   */
+  userId?: string;
 }
 
 // Ventana para que el browser efectivamente conecte tras registrar la

@@ -18,6 +18,8 @@ export interface GatewayEvents {
   "job.notification": { jobId: string; title: string };
   /** Investigación automática de un tipo de dispositivo nuevo (ADR-053). */
   "device.enriched": { ownerId: string; deviceKind: string; summary: string; deviceNames: string[]; sources?: string[] };
+  /** Sistema básico de alertas — disparado solo en la transición "normal" -> "cruzada" de una AlertRule (ver AlertMonitor). */
+  "alert.triggered": { alertId: string; capabilityRef: string; value: number; message: string };
 }
 
 /** Mismo patrón que EdgeAgentBus (packages/edge-agent-core) — docs/12 §7. */

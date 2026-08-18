@@ -21,10 +21,11 @@ interface RawAgentRecord {
 /**
  * (ADR-037) `Gateway.ts` graba `metadata.body` en la misma fila que dispara
  * `notificationService.notify()` (nunca leído en el navegador, ver ADR-037)
- * — esta fila de auditoría es el canal real que sí llega acá.
+ * — esta fila de auditoría es el canal real que sí llega acá. `alert.triggered`
+ * (sistema básico de alertas) sigue el mismo contrato metadata.body.
  */
 function toNotification(entry: RawAuditEntry): { title: string; body: string } | undefined {
-  if (entry.action !== "job.notification") return undefined;
+  if (entry.action !== "job.notification" && entry.action !== "alert.triggered") return undefined;
   const body = entry.metadata.body;
   return { title: entry.subject, body: typeof body === "string" ? body : "" };
 }
