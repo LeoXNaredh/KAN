@@ -7,8 +7,9 @@ import type {
   SafetyTargetListing,
   PluginInstance,
   InstalledPlugin,
+  VidPidCatalogEntry,
 } from "@kan/edge-agent-core";
-import type { ActionSeverity, IoMapEntry, PluginPermissions } from "@kan/plugin-contract";
+import { describeConfirmationConsequence, type ActionSeverity, type IoMapEntry, type PluginPermissions } from "@kan/plugin-contract";
 import type { BusEvent, PluginCatalogEntryDTO } from "../../preload/index";
 
 const SEVERITY_OPTIONS: ActionSeverity[] = ["read-only", "reversible", "irreversible-material", "safety-critical"];
@@ -25,7 +26,7 @@ interface PendingPluginPermission {
   permissions: PluginPermissions;
 }
 
-function toPendingPluginPermission(instance: PluginInstance): PendingPluginPermission {
+function toPendingPluginPermission(instance: Pick<PluginInstance, "manifest">): PendingPluginPermission {
   return {
     pluginId: instance.manifest.id,
     displayName: instance.manifest.displayName,
@@ -69,9 +70,14 @@ export default function App() {
   const [installedPlugins, setInstalledPlugins] = useState<InstalledPlugin[]>([]);
   const [installProgress, setInstallProgress] = useState<Record<string, string>>({});
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
+  const [customVidPidCatalog, setCustomVidPidCatalog] = useState<VidPidCatalogEntry[]>([]);
 
   function refreshInstalledPlugins() {
     window.kan.listInstalledPlugins().then(setInstalledPlugins);
+  }
+
+  function refreshCustomVidPidCatalog() {
+    window.kan.listCustomVidPidCatalog().then(setCustomVidPidCatalog);
   }
 
   function loadSafetyTargets(deviceId: string) {
@@ -112,9 +118,18 @@ export default function App() {
         }
       });
       setPaired((await window.kan.getPairingStatus()).paired);
-      const pendingInstances: PluginInstance[] = await window.kan.listPendingPluginPermissions();
+      // Bandeja de confirmaciones pendientes (requisito: verlas aunque no
+      // estuvieras mirando cuando se dispararon — ej. una secuencia de una
+      // alerta mientras la ventana estaba cerrada, ver el comentario en
+      // EdgeAgent.listPendingConfirmations()). Después de esta hidratación
+      // inicial, las que lleguen en vivo siguen entrando por el evento
+      // "permission.pending" de siempre, más abajo.
+      setPending(await window.kan.listPendingConfirmations());
+      const pendingInstances: Pick<PluginInstance, "manifest" | "status">[] =
+        await window.kan.listPendingPluginPermissions();
       setPendingPlugins(pendingInstances.map(toPendingPluginPermission));
       setInstalledPlugins(await window.kan.listInstalledPlugins());
+      setCustomVidPidCatalog(await window.kan.listCustomVidPidCatalog());
       // Sin vincular con una cuenta todavía, listPluginCatalog() lanza
       // ("Todavía no vinculaste..."): no es un error a mostrar, el catálogo
       // simplemente queda vacío hasta que el usuario vincule (PairingPanel
@@ -257,6 +272,8 @@ export default function App() {
         errors={installErrors}
         onInstalledChanged={refreshInstalledPlugins}
       />
+
+      <VidPidCatalogPanel entries={customVidPidCatalog} onChanged={refreshCustomVidPidCatalog} />
 
       <div className="grid flex-1 grid-cols-[1.4fr_1fr] gap-4 overflow-hidden">
         <section className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-zinc-800 p-4">
@@ -630,6 +647,120 @@ function PluginsPanel({
 }
 
 /**
+ * Dispositivos que el usuario agregó a mano al catálogo VID/PID custom
+ * (ADR-060) — hasta ahora solo se podía editar `vid-pid-custom.json` con un
+ * editor de texto; esto es la UI para hacerlo sin tocar archivos. Guarda a
+ * disco de inmediato y KAN lo toma en el próximo escaneo (la detección en
+ * caliente ya sondea cada pocos segundos, ver DEVICE_DISCOVERY_POLL_MS en
+ * apps/desktop/src/main/index.ts) — no hace falta reiniciar la app.
+ */
+function VidPidCatalogPanel({
+  entries,
+  onChanged,
+}: {
+  entries: VidPidCatalogEntry[];
+  onChanged: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [vendorId, setVendorId] = useState("");
+  const [productId, setProductId] = useState("");
+  const [error, setError] = useState<string | undefined>();
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    setSubmitting(true);
+    setError(undefined);
+    const result = await window.kan.addCustomVidPidCatalogEntry({
+      name: name.trim(),
+      vendorId: vendorId.trim(),
+      productId: productId.trim(),
+    });
+    setSubmitting(false);
+    if (result.ok) {
+      setName("");
+      setVendorId("");
+      setProductId("");
+      onChanged();
+    } else {
+      setError(result.error);
+    }
+  }
+
+  async function remove(entry: VidPidCatalogEntry) {
+    if (!window.confirm(`¿Eliminar "${entry.name}" del catálogo?`)) return;
+    await window.kan.removeCustomVidPidCatalogEntry(entry.vendorId, entry.productId);
+    onChanged();
+  }
+
+  const canSubmit = name.trim().length > 0 && vendorId.trim().length > 0 && productId.trim().length > 0;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-lg border border-zinc-800 p-4">
+      <div>
+        <h2 className="text-sm font-medium text-zinc-400">Dispositivos que agregaste vos</h2>
+        <p className="text-xs text-zinc-500">
+          Si KAN no reconoce un dispositivo por su nombre cuando lo conectás, agregalo acá una vez y la próxima vez ya lo va a identificar solo.
+        </p>
+      </div>
+
+      {entries.length === 0 ? (
+        <p className="text-xs text-zinc-600">Todavía no agregaste ningún dispositivo.</p>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {entries.map((entry) => (
+            <div
+              key={`${entry.vendorId}-${entry.productId}`}
+              className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5 text-xs"
+            >
+              <div className="min-w-0">
+                <div className="truncate font-medium text-zinc-200">{entry.name}</div>
+                <div className="text-zinc-500">
+                  VID {entry.vendorId} · PID {entry.productId}
+                </div>
+              </div>
+              <button className="btn shrink-0" onClick={() => remove(entry)}>
+                Eliminar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+        <div className="grid grid-cols-3 gap-2">
+          <input
+            className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm"
+            placeholder='Nombre (ej: "Mi PLC Siemens custom")'
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm"
+            placeholder="VID (ej: 0x1234)"
+            value={vendorId}
+            onChange={(e) => setVendorId(e.target.value)}
+          />
+          <input
+            className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm"
+            placeholder="PID (ej: 0x5678)"
+            value={productId}
+            onChange={(e) => setProductId(e.target.value)}
+          />
+        </div>
+        <p className="text-xs text-zinc-600">
+          ¿No sabés estos números? Los encontrás en el Administrador de dispositivos de Windows, bajo Propiedades del
+          dispositivo.
+        </p>
+        {error && <p className="text-xs text-red-400">{error}</p>}
+        <button className="btn self-start" disabled={submitting || !canSubmit} onClick={submit}>
+          {submitting ? "Agregando…" : "Agregar dispositivo"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
  * Deny-by-default (ADR-008/ADR-041, P8): un plugin recién registrado no
  * descubre ningún dispositivo hasta que el usuario aprueba acá los permisos
  * que declaró — mismo criterio visual que `ConfirmationModal`, pero es una
@@ -679,28 +810,20 @@ function ConfirmationModal({ confirmation }: { confirmation: PendingConfirmation
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black/60">
       <div className="w-full max-w-sm rounded-lg border border-amber-800 bg-zinc-900 p-5">
-        <h3 className="mb-1 text-base font-semibold text-amber-300">Confirmación requerida</h3>
-        <p className="mb-3 text-sm text-zinc-400">
-          Esta acción es <strong>{confirmation.severity}</strong> y no se ejecuta sin tu confirmación explícita
-          (ADR-004).
-        </p>
-        <div className="mb-4 rounded bg-zinc-950 p-2 font-mono text-xs text-zinc-300">
-          {confirmation.capabilityName} en {confirmation.deviceId}
-          <br />
-          input: {JSON.stringify(confirmation.input)}
-        </div>
+        <h3 className="mb-1 text-base font-semibold text-amber-300">¿Confirmás esta acción?</h3>
+        <p className="mb-4 text-sm text-zinc-400">{describeConfirmationConsequence(confirmation.severity)}</p>
         <div className="flex justify-end gap-2">
           <button
             className="btn"
             onClick={() => window.kan.resolveConfirmation(confirmation.id, false)}
           >
-            Rechazar
+            No, cancelar
           </button>
           <button
             className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-black hover:bg-amber-500"
             onClick={() => window.kan.resolveConfirmation(confirmation.id, true)}
           >
-            Confirmar
+            Sí, hacelo
           </button>
         </div>
       </div>

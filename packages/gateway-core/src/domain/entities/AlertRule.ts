@@ -1,10 +1,15 @@
+import type { TaskRequest } from "./GatewayTask";
+
 export type AlertComparator = "above" | "below";
 
 /**
  * Alerta de umbral sobre un sensor (requisito: "avisame si la temperatura
  * supera 40 grados") — vigila el valor que devuelve una capability de
  * lectura ya disponible, sondeada periódicamente por `AlertMonitor`. No es
- * un `ScheduledJob`: no ejecuta ninguna acción, solo compara y avisa.
+ * un `ScheduledJob`: no ejecuta ninguna acción por sí sola — con `steps`
+ * (multi-dispositivo coordinado), al disparar corre esa secuencia con el
+ * mismo runner que `kan_run_sequence` (ver `Gateway.runSteps()`), respetando
+ * el mismo flujo de confirmación para pasos irreversible-material/safety-critical.
  */
 export interface AlertRule {
   id: string;
@@ -21,4 +26,6 @@ export interface AlertRule {
   createdAt: string;
   /** Usuario que la creó (P7, mismo criterio que ScheduledJob.createdBy) — a quién avisarle por push/voz cuando dispare. */
   createdBy?: string;
+  /** Multi-dispositivo coordinado (opcional): secuencia a ejecutar cuando la alerta se dispara, mismo formato que kan_run_sequence/ScheduledJob.steps. */
+  steps?: TaskRequest[];
 }

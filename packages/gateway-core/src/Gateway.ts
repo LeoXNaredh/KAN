@@ -20,6 +20,8 @@ import { SCHEDULER_TOOL_DESCRIPTORS, isSchedulerToolName, executeSchedulerTool }
 import { ALERT_TOOL_DESCRIPTORS, isAlertToolName, executeAlertTool } from "./application/alertTools";
 import { AlertMonitor } from "./application/AlertMonitor";
 import { describeAlertTriggered } from "./application/alertMessage";
+import { SEQUENCE_TOOL_DESCRIPTORS, isSequenceToolName, parseSequenceSteps, type SequenceStepReport } from "./application/sequenceTools";
+import type { TaskRequest } from "./domain/entities/GatewayTask";
 import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
 
 export interface GatewayDeps {
@@ -240,8 +242,31 @@ export class Gateway {
     // sin push ni voz (ExpoNotificationService/speakToUser no tienen a quién
     // avisarle sin un userId real).
     this.alertMonitor.start(async (rule, value) => {
-      const message = describeAlertTriggered(rule, value);
       const userId = rule.createdBy;
+      let message = describeAlertTriggered(rule, value);
+      let sequenceConfirmationId: string | undefined;
+
+      // Multi-dispositivo coordinado (kan_set_alert con `steps`): mismo
+      // runner que kan_run_sequence — si un paso necesita confirmación, se
+      // detiene ahí (nunca la saltea) y esa frase se suma al aviso, para que
+      // el usuario sepa que la secuencia quedó a mitad de camino. Sin
+      // conversación de chat activa acá (esto dispara solo, en background),
+      // esa confirmación queda registrada y es resolvible vía la misma API
+      // que cualquier otra (POST /v1/confirmations/:id/resolve) — pero hoy
+      // no hay una UI dedicada para verla/aprobarla fuera de una conversación
+      // de chat en curso (mismo gap que ya tiene un ScheduledJob.steps con un
+      // paso confirmable, ver TaskOrchestrator).
+      if (rule.steps?.length) {
+        const sequenceResult = await this.runSteps(rule.steps, userId);
+        if (sequenceResult.requiresConfirmation) {
+          sequenceConfirmationId = (sequenceResult.data as { confirmationId?: string } | undefined)?.confirmationId;
+          message += " KAN necesita tu confirmación para terminar la secuencia asociada.";
+        } else if (!sequenceResult.success) {
+          message += ` La secuencia asociada falló: ${sequenceResult.error}`;
+        } else {
+          message += " Se ejecutó la secuencia asociada.";
+        }
+      }
 
       this.bus.emit("alert.triggered", { alertId: rule.id, capabilityRef: rule.capabilityRef, value, message });
       this.auditService.record({
@@ -249,7 +274,14 @@ export class Gateway {
         action: "alert.triggered",
         subject: "Alerta de KAN",
         userId,
-        metadata: { alertId: rule.id, capabilityRef: rule.capabilityRef, value, threshold: rule.threshold, body: message },
+        metadata: {
+          alertId: rule.id,
+          capabilityRef: rule.capabilityRef,
+          value,
+          threshold: rule.threshold,
+          body: message,
+          sequenceConfirmationId,
+        },
       });
 
       await this.deps.notificationService.notify({
@@ -274,9 +306,15 @@ export class Gateway {
   }
 
   listTools(requestingUserId?: string): ToolDescriptor[] {
-    // Tools de automatizaciones (ADR-039) y de alertas — no son capability de
-    // ningún dispositivo, así que no pasan por toolRegistry; siempre disponibles.
-    return [...this.toolRegistry.list(requestingUserId), ...SCHEDULER_TOOL_DESCRIPTORS, ...ALERT_TOOL_DESCRIPTORS];
+    // Tools de automatizaciones (ADR-039), de alertas y de secuencias — no
+    // son capability de ningún dispositivo, así que no pasan por
+    // toolRegistry; siempre disponibles.
+    return [
+      ...this.toolRegistry.list(requestingUserId),
+      ...SCHEDULER_TOOL_DESCRIPTORS,
+      ...ALERT_TOOL_DESCRIPTORS,
+      ...SEQUENCE_TOOL_DESCRIPTORS,
+    ];
   }
 
   /**
@@ -300,7 +338,29 @@ export class Gateway {
     if (isAlertToolName(name)) {
       return executeAlertTool(this.alertMonitor, name, args, requestingUserId);
     }
+    // Multi-dispositivo coordinado ad-hoc (kan_run_sequence) — tampoco es la
+    // capability de ningún dispositivo en sí, corre varias por turno.
+    if (isSequenceToolName(name)) {
+      const steps = parseSequenceSteps((args as { steps?: unknown } | null)?.steps);
+      if (!steps) {
+        return { success: false, error: `${name} requiere 'steps': una lista no vacía de { capabilityRef }.` };
+      }
+      return this.runSteps(steps, requestingUserId);
+    }
 
+    return this.executeSingleCapability(name, args, requestingUserId);
+  }
+
+  /**
+   * Resuelve y ejecuta UNA capability por nombre — extraído de `executeTool()`
+   * (antes era su única rama, ahora también lo reusa `runSteps()` por cada
+   * paso de una secuencia, para que `kan_run_sequence` y las alertas con
+   * `steps` pasen por exactamente el mismo camino que un tool call individual:
+   * mismo chequeo de ownership, mismo `ToolExecutor` (auditoría +
+   * `ConfirmationOrchestrator.record()` si queda `pending_confirmation` —
+   * el flujo de confirmación existente nunca se saltea acá).
+   */
+  private async executeSingleCapability(name: string, args: unknown, requestingUserId?: string): Promise<ToolExecutionResult> {
     const resolution = this.toolResolver.resolve(name, args);
     if (!resolution.ok) {
       return { success: false, error: resolution.error };
@@ -327,6 +387,45 @@ export class Gateway {
   }
 
   /**
+   * Corre `steps` en orden, deteniéndose en el primer paso que falle o que
+   * quede `pending_confirmation` — usado tanto por `kan_run_sequence` (chat,
+   * ad-hoc) como por una `AlertRule.steps` al disparar (ver `bootstrap()`).
+   *
+   * Un paso `pending_confirmation` NO se resume automáticamente después de
+   * que el usuario confirma: `confirm_pending_action` (ADR-059) resuelve esa
+   * UNA acción física, igual que si hubiera sido un tool call suelto — los
+   * pasos siguientes de la secuencia original no vuelven a correr solos.
+   * Limitación aceptada a propósito (mismo criterio que ya documenta
+   * TaskOrchestrator sobre no reanudar una tarea en vuelo): inventar una
+   * transacción multi-paso resumible es una pieza nueva de infraestructura,
+   * no lo que pide este incremento — acá "no saltearse la confirmación"
+   * significa parar limpio y devolver lo que ya se hizo, nunca continuar sin
+   * preguntar.
+   */
+  private async runSteps(steps: TaskRequest[], requestingUserId?: string): Promise<ToolExecutionResult> {
+    const completed: SequenceStepReport[] = [];
+
+    for (const step of steps) {
+      const result = await this.executeSingleCapability(step.capabilityRef, step.input, requestingUserId);
+      const capability = this.capabilityRegistry.resolve(step.capabilityRef);
+      const deviceName = capability?.deviceName ?? step.capabilityRef;
+      const description = capability?.capability.description ?? step.capabilityRef;
+
+      if (result.requiresConfirmation) {
+        completed.push({ deviceName, description, outcome: "pending_confirmation" });
+        return { ...result, data: { ...(result.data as Record<string, unknown> | undefined), steps: completed } };
+      }
+      if (!result.success) {
+        completed.push({ deviceName, description, outcome: "failed", error: result.error });
+        return { success: false, error: result.error, data: { steps: completed } };
+      }
+      completed.push({ deviceName, description, outcome: "done", data: result.data });
+    }
+
+    return { success: true, data: { steps: completed } };
+  }
+
+  /**
    * ADR-059: resuelve remotamente una confirmación pendiente (irreversible-
    * material/safety-critical) — hasta este incremento, solo `apps/desktop`
    * podía hacerlo, vía IPC local. La autorización (¿esta confirmación es de
@@ -334,6 +433,14 @@ export class Gateway {
    */
   async resolveConfirmation(confirmationId: string, approved: boolean, requestingUserId?: string): Promise<ResolveConfirmationResult | undefined> {
     return this.confirmationOrchestrator.resolve(confirmationId, approved, requestingUserId);
+  }
+
+  /**
+   * Bandeja de confirmaciones pendientes (requisito: verlas/aprobarlas fuera
+   * del chat que las disparó) — ver `ConfirmationOrchestrator.list()`.
+   */
+  listPendingConfirmations(requestingUserId?: string) {
+    return this.confirmationOrchestrator.list(requestingUserId);
   }
 }
 

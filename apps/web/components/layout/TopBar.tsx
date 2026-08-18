@@ -6,6 +6,7 @@ import { StatusDot, type StatusLevel } from "@/components/ui/StatusDot";
 import { useSystemStatusContext } from "@/lib/status/SystemStatusProvider";
 import { useJobNotificationToasts } from "@/lib/status/useJobNotificationToasts";
 import { NotificationToasts } from "@/components/layout/NotificationToasts";
+import { PendingConfirmationsButton } from "@/components/layout/PendingConfirmationsButton";
 import { signOutAction } from "@/lib/auth/actions";
 import type { SystemStatusResponse } from "@/lib/status/types";
 
@@ -50,6 +51,7 @@ export function TopBar({
       </button>
 
       <div className="ml-auto flex items-center gap-3">
+        {user && <PendingConfirmationsButton />}
         <StatusDot level={connection.level} label={connection.label} />
         <button
           type="button"

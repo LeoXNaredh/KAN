@@ -32,6 +32,7 @@ export * from "./infra/JsonFileDeviceStore";
 export * from "./infra/BonjourWifiScanner";
 export * from "./infra/NullBleScanner";
 export * from "./infra/loadVidPidCatalog";
+export * from "./infra/CustomVidPidCatalogStore";
 export * from "./infra/FileAndConsoleLogger";
 export * from "./infra/CoreWebSocketClient";
 export * from "./infra/NoopUpdater";

@@ -73,6 +73,14 @@ export function createRoutes(
     res.json(result);
   });
 
+  // Bandeja de confirmaciones pendientes (requisito: verlas/aprobarlas fuera
+  // del chat que las disparó, ej. una secuencia de una alerta sin
+  // conversación activa) — el filtro por owner vive en
+  // `ConfirmationOrchestrator.list()`, mismo criterio que /v1/tools.
+  router.get("/v1/confirmations", (req, res) => {
+    res.json({ confirmations: gateway.listPendingConfirmations(req.userId) });
+  });
+
   // Resuelve una confirmación pendiente (irreversible-material/safety-critical,
   // ADR-059) — hasta este incremento solo `apps/desktop` podía hacerlo, vía
   // IPC local. La autorización por owner vive en `Gateway.resolveConfirmation()`.

@@ -88,6 +88,52 @@ describe("executeAlertTool — kan_set_alert", () => {
     expect(result.success).toBe(false);
   });
 
+  it("con 'steps' válidos (multi-dispositivo coordinado), los guarda en la alerta", async () => {
+    const m = monitor();
+
+    await executeAlertTool(m, "kan_set_alert", {
+      capabilityRef: "c_sensor",
+      comparator: "above",
+      threshold: 35,
+      label: "la temperatura",
+      steps: [{ capabilityRef: "c_motor", input: { on: false } }, { capabilityRef: "c_led", input: { on: true } }],
+    });
+
+    expect(m.list()[0].steps).toEqual([
+      { capabilityRef: "c_motor", input: { on: false } },
+      { capabilityRef: "c_led", input: { on: true } },
+    ]);
+  });
+
+  it("sin 'steps', la alerta queda sin secuencia asociada (undefined, no [])", async () => {
+    const m = monitor();
+    await executeAlertTool(m, "kan_set_alert", { capabilityRef: "c_x", comparator: "above", threshold: 40, label: "x" });
+    expect(m.list()[0].steps).toBeUndefined();
+  });
+
+  it("rechaza 'steps' inválidos (vacío o sin capabilityRef) en vez de ignorarlos en silencio", async () => {
+    const m = monitor();
+
+    const emptySteps = await executeAlertTool(m, "kan_set_alert", {
+      capabilityRef: "c_x",
+      comparator: "above",
+      threshold: 40,
+      label: "x",
+      steps: [],
+    });
+    expect(emptySteps.success).toBe(false);
+
+    const noRef = await executeAlertTool(m, "kan_set_alert", {
+      capabilityRef: "c_x",
+      comparator: "above",
+      threshold: 40,
+      label: "x",
+      steps: [{ input: {} }],
+    });
+    expect(noRef.success).toBe(false);
+    expect(m.list()).toHaveLength(0);
+  });
+
   it("propaga como error el mensaje que lanza alertMonitor.create() (ej. límite de 20 alertas alcanzado)", async () => {
     const m = monitor();
     for (let i = 0; i < 20; i++) {

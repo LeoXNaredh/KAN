@@ -163,6 +163,34 @@ describe("EdgeAgent.invokeCapability() — auditoría de invocaciones manuales (
 
 });
 
+describe("EdgeAgent.listPendingConfirmations() — bandeja fuera del chat (requisito: verlas aunque la ventana no estuviera abierta cuando se dispararon)", () => {
+  it("sin ninguna confirmación pendiente, devuelve vacío", async () => {
+    const { edgeAgent } = await buildEdgeAgent();
+    expect(edgeAgent.listPendingConfirmations()).toEqual([]);
+  });
+
+  it("incluye una confirmación que quedó pending_confirmation, con su detalle completo", async () => {
+    const { edgeAgent } = await buildEdgeAgent();
+
+    const outcome = await edgeAgent.invokeCapability("fake-1", "dangerous_cap", {});
+    if (outcome.status !== "pending_confirmation") throw new Error("se esperaba pending_confirmation");
+
+    const pending = edgeAgent.listPendingConfirmations();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ id: outcome.confirmationId, deviceId: "fake-1", capabilityName: "dangerous_cap" });
+  });
+
+  it("una vez resuelta, ya no aparece en la lista", async () => {
+    const { edgeAgent } = await buildEdgeAgent();
+    const outcome = await edgeAgent.invokeCapability("fake-1", "dangerous_cap", {});
+    if (outcome.status !== "pending_confirmation") throw new Error("se esperaba pending_confirmation");
+
+    await edgeAgent.resolveConfirmation(outcome.confirmationId, true);
+
+    expect(edgeAgent.listPendingConfirmations()).toEqual([]);
+  });
+});
+
 describe("EdgeAgent.resolveConfirmation() — auditoría de confirmaciones resueltas (fix de auditoría de backend)", () => {
   it("aprobar una confirmación pendiente ejecuta la capability y envía audit.local con success:true", async () => {
     const { edgeAgent, coreConnection } = await buildEdgeAgent();
@@ -438,5 +466,86 @@ describe("EdgeAgent.rediscoverDevices() — sincronizar config de plugin sin rei
         .map((d) => d.id)
         .sort(),
     ).toEqual(["device-a", "device-b"]);
+  });
+});
+
+describe("EdgeAgent.rediscoverDriver() — re-descubrimiento acotado a un plugin (detección en caliente, ADR-060)", () => {
+  class MutableFakeDriver extends KanDeviceDriverPlugin {
+    readonly kind = "mutable-fake";
+    readonly manifest: PluginManifest;
+    deviceIds: string[];
+    discoverCalls = 0;
+
+    constructor(id: string) {
+      super();
+      this.deviceIds = [`${id}-device-a`];
+      this.manifest = {
+        id,
+        version: "0.0.1",
+        displayName: id,
+        kind: "device-driver",
+        runtime: "in-process-ts",
+        permissions: { devices: [id], network: false, filesystem: [] },
+      };
+    }
+
+    async discover(): Promise<DeviceDescriptor[]> {
+      this.discoverCalls += 1;
+      return this.deviceIds.map((id) => ({ id, name: id, kind: this.kind }));
+    }
+    async connect(): Promise<void> {}
+    async disconnect(): Promise<void> {}
+    getCapabilities(): CapabilityDescriptor[] {
+      return [];
+    }
+    async invoke(): Promise<CapabilityResult> {
+      return { success: true };
+    }
+  }
+
+  async function buildTwoDriverAgent() {
+    const target = new MutableFakeDriver("target-driver");
+    const other = new MutableFakeDriver("other-driver");
+    const edgeAgent = new EdgeAgent({
+      edgeAgentId: "edge-1",
+      agentVersion: "0.0.1",
+      bus: new EdgeAgentBus(),
+      logger: createLogger(),
+      configStore: createInMemoryConfigStore(),
+      coreConnection: createFakeCoreConnection(),
+      updater: createNoopUpdater(),
+    });
+    await edgeAgent.registerPlugin(target);
+    await edgeAgent.registerPlugin(other);
+    await edgeAgent.bootstrap();
+    await edgeAgent.approvePluginPermissions("target-driver");
+    await edgeAgent.approvePluginPermissions("other-driver");
+    return { edgeAgent, target, other };
+  }
+
+  it("solo vuelve a correr discover() del plugin pedido, no de los demás habilitados", async () => {
+    const { edgeAgent, target, other } = await buildTwoDriverAgent();
+    target.discoverCalls = 0;
+    other.discoverCalls = 0;
+
+    await edgeAgent.rediscoverDriver("target-driver");
+
+    expect(target.discoverCalls).toBe(1);
+    expect(other.discoverCalls).toBe(0);
+  });
+
+  it("agrega los dispositivos nuevos que aparezcan para ese plugin", async () => {
+    const { edgeAgent, target } = await buildTwoDriverAgent();
+
+    target.deviceIds = ["target-driver-device-a", "target-driver-device-b"];
+    await edgeAgent.rediscoverDriver("target-driver");
+
+    expect(edgeAgent.listDevices().map((d) => d.id)).toContain("target-driver-device-b");
+  });
+
+  it("no hace nada si el plugin no existe o no está habilitado — nunca lanza", async () => {
+    const { edgeAgent } = await buildTwoDriverAgent();
+
+    await expect(edgeAgent.rediscoverDriver("no-existe")).resolves.toBeUndefined();
   });
 });

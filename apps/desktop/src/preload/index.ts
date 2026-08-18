@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { EdgeAgentEvents, InstalledPlugin, InvokeOutcome } from "@kan/edge-agent-core";
+import type { EdgeAgentEvents, InstalledPlugin, InvokeOutcome, VidPidCatalogEntry } from "@kan/edge-agent-core";
 import type { ActionSeverity, PluginManifest } from "@kan/plugin-contract";
 
 export interface PluginCatalogEntryDTO {
@@ -20,6 +20,7 @@ const kanApi = {
     ipcRenderer.invoke("kan:resolveConfirmation", confirmationId, approved),
   getCoreStatus: () => ipcRenderer.invoke("kan:getCoreStatus"),
   listSafetyTargets: (deviceId: string) => ipcRenderer.invoke("kan:listSafetyTargets", deviceId),
+  listPendingConfirmations: () => ipcRenderer.invoke("kan:listPendingConfirmations"),
   setSafetyPolicy: (deviceId: string, target: string, severity: ActionSeverity, alias?: string) =>
     ipcRenderer.invoke("kan:setSafetyPolicy", deviceId, target, severity, alias),
   getPairingStatus: (): Promise<{ paired: boolean }> => ipcRenderer.invoke("kan:getPairingStatus"),
@@ -35,6 +36,15 @@ const kanApi = {
   listInstalledPlugins: (): Promise<InstalledPlugin[]> => ipcRenderer.invoke("kan:listInstalledPlugins"),
   installPlugin: (pluginId: string): Promise<InstalledPlugin> => ipcRenderer.invoke("kan:installPlugin", pluginId),
   uninstallPlugin: (pluginId: string): Promise<void> => ipcRenderer.invoke("kan:uninstallPlugin", pluginId),
+  // Catálogo VID/PID custom — UI para agregar dispositivos sin editar
+  // vid-pid-custom.json a mano.
+  listCustomVidPidCatalog: (): Promise<VidPidCatalogEntry[]> => ipcRenderer.invoke("kan:listCustomVidPidCatalog"),
+  addCustomVidPidCatalogEntry: (
+    input: { name: string; vendorId: string; productId: string },
+  ): Promise<{ ok: true; entry: VidPidCatalogEntry } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("kan:addCustomVidPidCatalogEntry", input),
+  removeCustomVidPidCatalogEntry: (vendorId: string, productId: string): Promise<void> =>
+    ipcRenderer.invoke("kan:removeCustomVidPidCatalogEntry", vendorId, productId),
   onEvent: (handler: (event: BusEvent) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: BusEvent) => handler(data);
     ipcRenderer.on("kan:event", listener);

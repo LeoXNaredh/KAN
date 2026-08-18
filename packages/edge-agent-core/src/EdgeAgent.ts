@@ -2,6 +2,7 @@ import type { KanDeviceDriverPlugin } from "@kan/plugin-sdk-ts";
 import type { ActionSeverity, CoreToEdgeMessage, TargetDescriptor } from "@kan/plugin-contract";
 import type { InstalledPlugin } from "./domain/entities/InstalledPlugin";
 import type { KnownDeviceRecord } from "./domain/entities/KnownDevice";
+import type { PendingConfirmation } from "./domain/entities/PendingConfirmation";
 import type { ConfigStorePort } from "./domain/ports/ConfigStorePort";
 import type { DeviceStorePort } from "./domain/ports/DeviceStorePort";
 import type { LoggerPort } from "./domain/ports/LoggerPort";
@@ -222,6 +223,19 @@ export class EdgeAgent {
 
   listCapabilities(): CapabilityListing[] {
     return this.capabilityRegistry.list();
+  }
+
+  /**
+   * Bandeja de confirmaciones pendientes (requisito: verlas/aprobarlas aunque
+   * la ventana no haya estado abierta cuando se disparó — ej. `apps/desktop`
+   * cerrada en Mac cuando llegó una secuencia de una alerta, ver
+   * FORWARDED_EVENTS en apps/desktop/src/main/index.ts, que solo reenvía
+   * "permission.pending" a un `mainWindow` ya abierto). El renderer llama
+   * esto al montar para hidratar `pending`, además de seguir escuchando el
+   * evento en vivo para las que lleguen después.
+   */
+  listPendingConfirmations(): PendingConfirmation[] {
+    return this.permissionManager.listPending();
   }
 
   async invokeCapability(deviceId: string, capabilityName: string, input: unknown): Promise<InvokeOutcome> {

@@ -28,10 +28,12 @@ import {
   BonjourWifiScanner,
   NullBleScanner,
   loadVidPidCatalog,
+  CustomVidPidCatalogStore,
   type BleDeviceScannerPort,
   type EdgeAgentEvents,
   type InstalledPlugin,
   type LoggerPort,
+  type VidPidCatalogEntry,
 } from "@kan/edge-agent-core";
 import { validatePluginManifest, type ActionSeverity } from "@kan/plugin-contract";
 import { GatewayPluginPackageFetcher } from "./GatewayPluginPackageFetcher";
@@ -52,6 +54,15 @@ let edgeAgentId: string | undefined;
 // no expone listar el catálogo (Fase 3 solo necesitaba instalar por id), pero
 // la UI sí necesita mostrar qué hay disponible antes de instalar nada.
 let pluginPackageFetcher: GatewayPluginPackageFetcher | undefined;
+// UI de catálogo VID/PID custom (requisito: agregar dispositivos sin editar
+// vid-pid-custom.json a mano) — `customVidPidCatalogStore` persiste a disco;
+// `liveVidPidCatalog` es la MISMA instancia de array que ya recibió
+// `DeviceDiscoveryService` en su construcción (ver createEdgeAgent()) — se
+// muta in-place después de cada add()/remove() para que el escaneo en curso
+// vea el cambio sin reiniciar la app (ver refreshVidPidCatalog()).
+let customVidPidCatalogStore: CustomVidPidCatalogStore | undefined;
+let liveVidPidCatalog: VidPidCatalogEntry[] | undefined;
+let vidPidCustomCatalogPath: string | undefined;
 
 /** Ver el setInterval que la usa, cerca de agent.bootstrap() — detección en caliente de dispositivos seriales (ADR-060 incremento 2). */
 const DEVICE_DISCOVERY_POLL_MS = 3_000;
@@ -158,6 +169,9 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   edgeAgentId = getOrCreateEdgeAgentId(configStore);
   applyPluginConfig(configStore);
 
+  vidPidCustomCatalogPath = join(userDataDir, "vid-pid-custom.json");
+  customVidPidCatalogStore = new CustomVidPidCatalogStore(vidPidCustomCatalogPath);
+
   // Sin servidor de Core todavía (ADR-009): esto reintentará indefinidamente
   // con backoff. Es el comportamiento esperado (Modo Offline, requisito 14).
   const coreConnection = new CoreWebSocketClient(
@@ -252,6 +266,13 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
       logger.warn(`BLE no disponible para la detección de dispositivos (¿falta compilar @abandonware/noble?): ${error}`);
     }
 
+    // Guardado en `liveVidPidCatalog` (no un literal inline): es la MISMA
+    // instancia de array que `DeviceDiscoveryService` va a leer en cada
+    // escaneo — `refreshVidPidCatalog()` la muta in-place después de
+    // add()/remove() para que el próximo escaneo (o la detección en
+    // caliente, cada pocos segundos) ya vea el catálogo actualizado, sin
+    // reiniciar la app.
+    liveVidPidCatalog = loadVidPidCatalog(vidPidCustomCatalogPath);
     await agent.registerPlugin(
       new DeviceDiscoveryPlugin(
         new DeviceDiscoveryService({
@@ -259,7 +280,7 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
           wifiScanner: new BonjourWifiScanner(),
           bleScanner,
           logger,
-          catalog: loadVidPidCatalog(join(userDataDir, "vid-pid-custom.json")),
+          catalog: liveVidPidCatalog,
         }),
       ),
     );
@@ -403,6 +424,10 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle("kan:getCoreStatus", () => edgeAgent?.getCoreConnectionStatus() ?? "disconnected");
   ipcMain.handle("kan:listSafetyTargets", (_event, deviceId: string) => edgeAgent?.listSafetyTargets(deviceId) ?? []);
+  // Bandeja de confirmaciones pendientes (requisito: verlas aunque la
+  // ventana no estuviera abierta cuando se dispararon) — el renderer llama
+  // esto al montar, además de seguir escuchando "permission.pending" en vivo.
+  ipcMain.handle("kan:listPendingConfirmations", () => edgeAgent?.listPendingConfirmations() ?? []);
   ipcMain.handle(
     "kan:setSafetyPolicy",
     (_event, deviceId: string, target: string, severity: ActionSeverity, alias?: string) => {
@@ -444,6 +469,59 @@ function registerIpcHandlers(): void {
     if (!edgeAgent) throw new Error("El Edge Agent todavía no terminó de arrancar.");
     return edgeAgent.uninstallPlugin(pluginId);
   });
+
+  // Catálogo VID/PID custom (requisito: agregar dispositivos sin editar
+  // vid-pid-custom.json a mano) — no depende de `edgeAgent` en sí
+  // (`customVidPidCatalogStore` ya existe apenas createEdgeAgent() arranca a
+  // computar `userDataDir`), solo de que ese setup temprano ya haya corrido.
+  ipcMain.handle("kan:listCustomVidPidCatalog", () => customVidPidCatalogStore?.list() ?? []);
+  ipcMain.handle(
+    "kan:addCustomVidPidCatalogEntry",
+    (_event, input: { name: string; vendorId: string; productId: string }) => addCustomVidPidCatalogEntry(input),
+  );
+  ipcMain.handle("kan:removeCustomVidPidCatalogEntry", (_event, vendorId: string, productId: string) => {
+    customVidPidCatalogStore?.remove(vendorId, productId);
+    refreshVidPidCatalog();
+  });
+}
+
+/**
+ * Vuelve a leer `vid-pid-custom.json` (base + custom mergeados, ver
+ * `loadVidPidCatalog()`) y reemplaza el contenido de `liveVidPidCatalog` IN
+ * PLACE — es la misma instancia de array que ya tiene `DeviceDiscoveryService`
+ * (le llegó por referencia al construirse en `createEdgeAgent()`), así que el
+ * próximo escaneo (o el próximo tick de detección en caliente, cada pocos
+ * segundos) ve el catálogo actualizado sin reiniciar la app. No-op si el
+ * Edge Agent todavía no llegó a esa parte de su arranque (`liveVidPidCatalog`
+ * sigue `undefined`) — el cambio ya quedó guardado en disco igual, el
+ * catálogo lo toma apenas termine de arrancar.
+ */
+function refreshVidPidCatalog(): void {
+  if (!liveVidPidCatalog || !vidPidCustomCatalogPath) return;
+  const fresh = loadVidPidCatalog(vidPidCustomCatalogPath);
+  liveVidPidCatalog.splice(0, liveVidPidCatalog.length, ...fresh);
+}
+
+/**
+ * Agrega un dispositivo al catálogo custom — mismo patrón de resultado
+ * `{ok:true}|{ok:false,error}` que `pairAgent()`/`syncPluginConfig()`, así
+ * la UI muestra el mensaje de validación (VID/PID inválido, ya existe...)
+ * tal cual lo arma `CustomVidPidCatalogStore.add()`, en lenguaje simple, sin
+ * depender de cómo Electron serialice un error lanzado por IPC.
+ */
+async function addCustomVidPidCatalogEntry(
+  input: { name: string; vendorId: string; productId: string },
+): Promise<{ ok: true; entry: VidPidCatalogEntry } | { ok: false; error: string }> {
+  if (!customVidPidCatalogStore) {
+    return { ok: false, error: "El Edge Agent todavía no terminó de arrancar." };
+  }
+  try {
+    const entry = customVidPidCatalogStore.add(input);
+    refreshVidPidCatalog();
+    return { ok: true, entry };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Error desconocido" };
+  }
 }
 
 /**

@@ -50,6 +50,27 @@ export class ConfirmationOrchestrator {
   }
 
   /**
+   * Bandeja de confirmaciones pendientes (requisito: verlas/aprobarlas fuera
+   * del chat que las disparó — ej. una secuencia de una alerta, sin
+   * conversación activa) — mismo criterio de filtro por owner que
+   * `GlobalCapabilityRegistry.list()`/`AgentRegistry.list()`: sin
+   * `requestingUserId`, no filtra; con él, solo las de Edge Agents propios o
+   * sin vincular. Nunca incluye `edgeAgentId` en la salida — es un detalle
+   * interno, no algo que la UI necesite mostrar.
+   */
+  list(requestingUserId?: string): Array<PendingConfirmationDetails & { confirmationId: string }> {
+    const entries = Array.from(this.records.entries());
+    const visible =
+      requestingUserId === undefined
+        ? entries
+        : entries.filter(([, record]) => {
+            const ownerId = this.agentRegistry.get(record.edgeAgentId)?.ownerId;
+            return ownerId === undefined || ownerId === requestingUserId;
+          });
+    return visible.map(([confirmationId, { edgeAgentId: _edgeAgentId, ...details }]) => ({ confirmationId, ...details }));
+  }
+
+  /**
    * `requestingUserId`: si el Edge Agent dueño de esta confirmación ya está
    * vinculado a otro usuario, se rechaza acá — sin esto, cualquiera con el
    * `confirmationId` (visible en el evento `pending_confirmation`) podría

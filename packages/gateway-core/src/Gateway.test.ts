@@ -5,6 +5,7 @@ import { GatewayBus } from "./application/GatewayBus";
 import { Gateway } from "./Gateway";
 import { SCHEDULER_TOOL_DESCRIPTORS } from "./application/schedulerTools";
 import { ALERT_TOOL_DESCRIPTORS } from "./application/alertTools";
+import { SEQUENCE_TOOL_DESCRIPTORS } from "./application/sequenceTools";
 import type { AgentConnectionInfo, ConnectionManagerPort, Unsubscribe } from "./domain/ports/ConnectionManagerPort";
 import type { AuditStorePort } from "./domain/ports/AuditStorePort";
 import type { SchedulerDispatch, SchedulerPort } from "./domain/ports/SchedulerPort";
@@ -12,7 +13,8 @@ import type { NotificationServicePort } from "./domain/ports/NotificationService
 import type { Notification } from "./domain/entities/Notification";
 import type { AuditEntry } from "./domain/entities/AuditEntry";
 
-const AUTOMATION_TOOL_COUNT = SCHEDULER_TOOL_DESCRIPTORS.length + ALERT_TOOL_DESCRIPTORS.length;
+const AUTOMATION_TOOL_COUNT =
+  SCHEDULER_TOOL_DESCRIPTORS.length + ALERT_TOOL_DESCRIPTORS.length + SEQUENCE_TOOL_DESCRIPTORS.length;
 
 /**
  * Fake de todo el transporte (no WS real — eso ya lo cubre
@@ -150,6 +152,61 @@ function helloFor(edgeAgentId: string): HelloMessage {
       },
     ],
   };
+}
+
+/**
+ * Multi-dispositivo coordinado (kan_run_sequence/AlertRule.steps) — el
+ * sensor de `helloFor` (para el chequeo de umbral de una alerta) más dos
+ * dispositivos reales para coordinar (para la secuencia en sí).
+ */
+function helloForSensorMotorAndLed(edgeAgentId: string): HelloMessage {
+  const base = helloFor(edgeAgentId);
+  return {
+    ...base,
+    capabilities: [
+      ...base.capabilities,
+      {
+        deviceId: "motor-1",
+        deviceName: "Motor del taller",
+        deviceKind: "device-simulator",
+        capability: { name: "toggle_motor", description: "Prende o apaga el motor", severity: "irreversible-material", supportsDryRun: false },
+      },
+      {
+        deviceId: "led-1",
+        deviceName: "LED de alerta",
+        deviceKind: "device-simulator",
+        capability: { name: "toggle_led", description: "Prende o apaga el LED", severity: "reversible", supportsDryRun: false },
+      },
+    ],
+  };
+}
+
+function findToolByDevice(tools: { name: string }[], deviceId: string): { name: string } {
+  const tool = tools.find((t) => t.name.includes(deviceId));
+  if (!tool) throw new Error(`No se encontró ninguna tool para el dispositivo "${deviceId}" — revisá el fixture del test.`);
+  return tool;
+}
+
+/** A nivel de módulo (no solo dentro de "resolveConfirmation()") — también la usa "listPendingConfirmations()". */
+async function buildPendingConfirmation() {
+  const { gateway, connectionManager, auditStore } = buildGateway();
+  const edgeAgentId = randomUUID();
+  connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+  const [tool] = gateway.listTools();
+
+  const executePromise = gateway.executeTool(tool.name, {}, "user-1");
+  const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+  connectionManager.simulateTelemetry(edgeAgentId, {
+    type: "telemetry",
+    taskId,
+    status: "pending_confirmation",
+    confirmationId: "conf-web-1",
+    at: new Date().toISOString(),
+  });
+  const result = await executePromise;
+  connectionManager.dispatched.length = 0;
+
+  return { gateway, connectionManager, auditStore, edgeAgentId, pendingResult: result };
 }
 
 describe("Gateway (integración, transporte simulado)", () => {
@@ -622,27 +679,6 @@ describe("Gateway (integración, transporte simulado)", () => {
   });
 
   describe("resolveConfirmation() (ADR-059)", () => {
-    async function buildPendingConfirmation() {
-      const { gateway, connectionManager, auditStore } = buildGateway();
-      const edgeAgentId = randomUUID();
-      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
-      const [tool] = gateway.listTools();
-
-      const executePromise = gateway.executeTool(tool.name, {}, "user-1");
-      const taskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
-      connectionManager.simulateTelemetry(edgeAgentId, {
-        type: "telemetry",
-        taskId,
-        status: "pending_confirmation",
-        confirmationId: "conf-web-1",
-        at: new Date().toISOString(),
-      });
-      const result = await executePromise;
-      connectionManager.dispatched.length = 0;
-
-      return { gateway, connectionManager, auditStore, edgeAgentId, pendingResult: result };
-    }
-
     it("manda pending_confirmation con el detalle completo (no solo el id) — lo que necesita un modal remoto para describir la acción", async () => {
       const { pendingResult } = await buildPendingConfirmation();
 
@@ -684,6 +720,52 @@ describe("Gateway (integración, transporte simulado)", () => {
       const result = await gateway.resolveConfirmation("no-existe", true, "user-1");
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe("listPendingConfirmations() — bandeja fuera del chat (requisito: verlas/aprobarlas sin conversación activa)", () => {
+    it("sin ninguna confirmación pendiente, devuelve vacío", () => {
+      const { gateway } = buildGateway();
+      expect(gateway.listPendingConfirmations()).toEqual([]);
+    });
+
+    it("incluye una confirmación pendiente con su detalle completo, sin el edgeAgentId interno", async () => {
+      const { gateway } = await buildPendingConfirmation();
+
+      const pending = gateway.listPendingConfirmations();
+
+      expect(pending).toEqual([
+        { confirmationId: "conf-web-1", deviceId: "simulator-1", capabilityName: "read_sensor", input: {}, severity: "read-only" },
+      ]);
+    });
+
+    it("una vez resuelta, ya no aparece en la lista", async () => {
+      const { gateway, edgeAgentId, connectionManager } = await buildPendingConfirmation();
+
+      const resolvePromise = gateway.resolveConfirmation("conf-web-1", true, "user-1");
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "confirmation_resolved",
+        confirmationId: "conf-web-1",
+        deviceId: "simulator-1",
+        capabilityName: "read_sensor",
+        success: true,
+        at: new Date().toISOString(),
+      });
+      await resolvePromise;
+
+      expect(gateway.listPendingConfirmations()).toEqual([]);
+    });
+
+    it("con requestingUserId, solo devuelve las de Edge Agents propios o sin vincular — nunca las de otro usuario", async () => {
+      const { gateway } = await buildPendingConfirmation(); // Edge Agent con ownerId "user-1"
+
+      expect(gateway.listPendingConfirmations("user-1")).toHaveLength(1);
+      expect(gateway.listPendingConfirmations("user-2")).toEqual([]);
+    });
+
+    it("sin requestingUserId, no filtra (mismo criterio que GlobalCapabilityRegistry.list())", async () => {
+      const { gateway } = await buildPendingConfirmation();
+      expect(gateway.listPendingConfirmations()).toHaveLength(1);
     });
   });
 
@@ -928,6 +1010,221 @@ describe("Gateway (integración, transporte simulado)", () => {
       await new Promise((resolve) => setTimeout(resolve, ALERT_POLL_INTERVAL_MS * 5));
 
       expect(notificationService.sent).toHaveLength(0);
+    });
+  });
+
+  describe("kan_run_sequence — multi-dispositivo coordinado ad-hoc", () => {
+    it("listTools() la incluye siempre, incluso sin ningún Edge Agent conectado", () => {
+      const { gateway } = buildGateway();
+      expect(gateway.listTools().map((t) => t.name)).toContain("kan_run_sequence");
+    });
+
+    it("rechaza sin 'steps'", async () => {
+      const { gateway } = buildGateway();
+      const result = await gateway.executeTool("kan_run_sequence", {});
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("steps");
+    });
+
+    it("corre los pasos en orden y reporta cada uno con deviceName + description (lenguaje simple, nunca el ref técnico)", async () => {
+      const { gateway, connectionManager } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloForSensorMotorAndLed(edgeAgentId));
+      const tools = gateway.listTools();
+      const motorTool = findToolByDevice(tools, "motor-1");
+      const ledTool = findToolByDevice(tools, "led-1");
+
+      const executePromise = gateway.executeTool("kan_run_sequence", {
+        steps: [
+          { capabilityRef: motorTool.name, input: { on: false } },
+          { capabilityRef: ledTool.name, input: { on: true } },
+        ],
+      });
+
+      expect(connectionManager.dispatched).toHaveLength(1);
+      const firstTaskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, { type: "telemetry", taskId: firstTaskId, status: "done", data: { ok: true }, at: new Date().toISOString() });
+
+      await vi.waitFor(() => expect(connectionManager.dispatched).toHaveLength(2));
+      const secondTaskId = (connectionManager.dispatched[1] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, { type: "telemetry", taskId: secondTaskId, status: "done", data: { ok: true }, at: new Date().toISOString() });
+
+      const result = await executePromise;
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({
+        steps: [
+          { deviceName: "Motor del taller", description: "Prende o apaga el motor", outcome: "done", data: { ok: true } },
+          { deviceName: "LED de alerta", description: "Prende o apaga el LED", outcome: "done", data: { ok: true } },
+        ],
+      });
+    });
+
+    it("se detiene en el primer paso que falla — el siguiente nunca se dispatchea", async () => {
+      const { gateway, connectionManager } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloForSensorMotorAndLed(edgeAgentId));
+      const tools = gateway.listTools();
+      const motorTool = findToolByDevice(tools, "motor-1");
+      const ledTool = findToolByDevice(tools, "led-1");
+
+      const executePromise = gateway.executeTool("kan_run_sequence", {
+        steps: [{ capabilityRef: motorTool.name }, { capabilityRef: ledTool.name }],
+      });
+
+      const firstTaskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, { type: "telemetry", taskId: firstTaskId, status: "failed", error: "el motor no responde", at: new Date().toISOString() });
+
+      const result = await executePromise;
+      expect(result).toEqual({
+        success: false,
+        error: "el motor no responde",
+        data: { steps: [{ deviceName: "Motor del taller", description: "Prende o apaga el motor", outcome: "failed", error: "el motor no responde" }] },
+      });
+      expect(connectionManager.dispatched).toHaveLength(1); // el LED nunca se llegó a dispatchear
+    });
+
+    it("se detiene en el primer paso que necesita confirmación — no la saltea, y el resultado trae el confirmationId como cualquier tool call individual", async () => {
+      const { gateway, connectionManager } = buildGateway();
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloForSensorMotorAndLed(edgeAgentId));
+      const tools = gateway.listTools();
+      const motorTool = findToolByDevice(tools, "motor-1");
+      const ledTool = findToolByDevice(tools, "led-1");
+
+      const executePromise = gateway.executeTool("kan_run_sequence", {
+        steps: [{ capabilityRef: motorTool.name }, { capabilityRef: ledTool.name }],
+      });
+
+      const firstTaskId = (connectionManager.dispatched[0] as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId: firstTaskId,
+        status: "pending_confirmation",
+        confirmationId: "conf-seq-1",
+        at: new Date().toISOString(),
+      });
+
+      const result = await executePromise;
+      expect(result.requiresConfirmation).toBe(true);
+      expect(result.data).toMatchObject({
+        confirmationId: "conf-seq-1",
+        deviceId: "motor-1",
+        capabilityName: "toggle_motor",
+        steps: [{ deviceName: "Motor del taller", description: "Prende o apaga el motor", outcome: "pending_confirmation" }],
+      });
+      expect(connectionManager.dispatched).toHaveLength(1); // el LED nunca se llegó a dispatchear
+
+      // El confirmationId es el mismo que usa cualquier acción individual —
+      // resolveConfirmation() ya funciona sobre él sin cambios.
+      const resolvePromise = gateway.resolveConfirmation("conf-seq-1", true, undefined);
+      expect(connectionManager.dispatched).toEqual([
+        expect.objectContaining({ type: "agent_task.dispatch" }),
+        { type: "agent_confirmation.resolve", confirmationId: "conf-seq-1", approved: true },
+      ]);
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "confirmation_resolved",
+        confirmationId: "conf-seq-1",
+        deviceId: "motor-1",
+        capabilityName: "toggle_motor",
+        success: true,
+        at: new Date().toISOString(),
+      });
+      await expect(resolvePromise).resolves.toEqual({ success: true, data: undefined, error: undefined });
+    });
+  });
+
+  describe("kan_set_alert con 'steps' — multi-dispositivo coordinado disparado por una alerta", () => {
+    // Mismo intervalo corto que el resto de los tests de alertas — el poll
+    // sigue disparando cada tick aunque ya esté auditada (AlertMonitor.
+    // pollRule() llama al reader en CADA tick, ver su comentario), así que
+    // `dispatched` puede traer más de un poll del sensor de sobra —
+    // `dispatchFor` busca por `deviceId` y se queda con el último, robusto
+    // ante eso en vez de asumir un índice fijo.
+    const ALERT_POLL_INTERVAL_MS = 20;
+
+    /** Encuentra (y espera si hace falta) el dispatch más nuevo para un deviceId — robusto ante pollos de la alerta interleaved. */
+    async function dispatchFor(connectionManager: FakeConnectionManager, deviceId: string) {
+      await vi.waitFor(() => expect(connectionManager.dispatched.some((m) => (m as { deviceId?: string }).deviceId === deviceId)).toBe(true));
+      const matches = connectionManager.dispatched.filter((m) => (m as { deviceId?: string }).deviceId === deviceId);
+      return matches[matches.length - 1] as { taskId: string };
+    }
+
+    it("al disparar, corre la secuencia y suma el resultado al mensaje del aviso", async () => {
+      const { gateway, connectionManager, notificationService } = buildGateway({ alertPollIntervalMs: ALERT_POLL_INTERVAL_MS });
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloForSensorMotorAndLed(edgeAgentId));
+      const tools = gateway.listTools();
+      const sensorTool = findToolByDevice(tools, "simulator-1");
+      const motorTool = findToolByDevice(tools, "motor-1");
+      const ledTool = findToolByDevice(tools, "led-1");
+
+      await gateway.executeTool("kan_set_alert", {
+        capabilityRef: sensorTool.name,
+        field: "temperatureC",
+        comparator: "above",
+        threshold: 35,
+        label: "la temperatura",
+        unit: "grados",
+        steps: [{ capabilityRef: motorTool.name, input: { on: false } }, { capabilityRef: ledTool.name, input: { on: true } }],
+      });
+
+      // Poll de la alerta -> el sensor supera el umbral.
+      const sensorTask = await dispatchFor(connectionManager, "simulator-1");
+      connectionManager.simulateTelemetry(edgeAgentId, { type: "telemetry", taskId: sensorTask.taskId, status: "done", data: { temperatureC: 40 }, at: new Date().toISOString() });
+
+      // Secuencia disparada: motor, luego LED.
+      const motorTask = await dispatchFor(connectionManager, "motor-1");
+      connectionManager.simulateTelemetry(edgeAgentId, { type: "telemetry", taskId: motorTask.taskId, status: "done", data: {}, at: new Date().toISOString() });
+      const ledTask = await dispatchFor(connectionManager, "led-1");
+      connectionManager.simulateTelemetry(edgeAgentId, { type: "telemetry", taskId: ledTask.taskId, status: "done", data: {}, at: new Date().toISOString() });
+
+      await vi.waitFor(() => expect(notificationService.sent).toHaveLength(1));
+      expect(notificationService.sent[0].body).toBe(
+        "La temperatura llegó a 40 grados, superó el límite que definiste de 35. Se ejecutó la secuencia asociada.",
+      );
+
+      gateway.shutdown();
+    });
+
+    it("si un paso de la secuencia necesita confirmación, el aviso lo dice y la auditoría guarda el confirmationId", async () => {
+      const { gateway, connectionManager, auditStore } = buildGateway({ alertPollIntervalMs: ALERT_POLL_INTERVAL_MS });
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloForSensorMotorAndLed(edgeAgentId));
+      const tools = gateway.listTools();
+      const sensorTool = findToolByDevice(tools, "simulator-1");
+      const motorTool = findToolByDevice(tools, "motor-1");
+
+      await gateway.executeTool("kan_set_alert", {
+        capabilityRef: sensorTool.name,
+        field: "temperatureC",
+        comparator: "above",
+        threshold: 35,
+        label: "la temperatura",
+        unit: "grados",
+        steps: [{ capabilityRef: motorTool.name }],
+      });
+
+      const sensorTask = await dispatchFor(connectionManager, "simulator-1");
+      connectionManager.simulateTelemetry(edgeAgentId, { type: "telemetry", taskId: sensorTask.taskId, status: "done", data: { temperatureC: 40 }, at: new Date().toISOString() });
+
+      const motorTask = await dispatchFor(connectionManager, "motor-1");
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId: motorTask.taskId,
+        status: "pending_confirmation",
+        confirmationId: "conf-alert-seq-1",
+        at: new Date().toISOString(),
+      });
+
+      await vi.waitFor(() =>
+        expect(auditStore.entries.find((e) => e.action === "alert.triggered")?.metadata.sequenceConfirmationId).toBe("conf-alert-seq-1"),
+      );
+      const entry = auditStore.entries.find((e) => e.action === "alert.triggered");
+      expect(entry?.metadata.body).toBe(
+        "La temperatura llegó a 40 grados, superó el límite que definiste de 35. KAN necesita tu confirmación para terminar la secuencia asociada.",
+      );
+
+      gateway.shutdown();
     });
   });
 });

@@ -35,8 +35,8 @@ export class GlobalCapabilityRegistry {
     private readonly agentRegistry?: AgentRegistry,
   ) {}
 
-  sync(edgeAgentId: string, capabilities: Array<{ deviceId: string; capability: CapabilityDescriptor }>): void {
-    const entries = capabilities.map(({ deviceId, capability }) => ({
+  sync(edgeAgentId: string, capabilities: Array<{ deviceId: string; deviceName?: string; capability: CapabilityDescriptor }>): void {
+    const entries = capabilities.map(({ deviceId, deviceName, capability }) => ({
       // Prefijo fijo `c_`: `edgeAgentId.slice(0, 8)` es un pedazo de UUID —
       // sin esto, cualquier agente cuyo id empezara con un dígito (ej.
       // "73348d00...") producía un ref que arranca con número, y Gemini
@@ -46,6 +46,10 @@ export class GlobalCapabilityRegistry {
       ref: `c_${sanitize(edgeAgentId.slice(0, 8))}_${sanitize(deviceId)}_${sanitize(capability.name)}`,
       edgeAgentId,
       deviceId,
+      // Opcional (varios tests/call sites construyen el hello a mano sin
+      // este campo) — sin nombre humano real, cae al deviceId, mejor que
+      // dejarlo vacío para kan_run_sequence (ver GlobalCapability.deviceName).
+      deviceName: deviceName ?? deviceId,
       capability,
     }));
     this.removeAgent(edgeAgentId);

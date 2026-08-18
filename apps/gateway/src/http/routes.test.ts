@@ -12,6 +12,7 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
     listTools: () => [{ name: "read_sensor", description: "...", inputSchema: {} }],
     executeTool: async () => ({ success: true, data: { ok: true } }),
     resolveConfirmation: async () => ({ success: true, data: { ok: true } }),
+    listPendingConfirmations: () => [],
     agentRegistry: { list: () => [] } as unknown as Gateway["agentRegistry"],
     auditService: { list: () => [] } as unknown as Gateway["auditService"],
     scheduler: {
@@ -102,6 +103,38 @@ describe("Gateway HTTP routes", () => {
       .set("Authorization", `Bearer ${TOKEN}`)
       .send();
     expect(response.status).toBe(200);
+  });
+
+  describe("GET /v1/confirmations — bandeja de confirmaciones pendientes", () => {
+    it("expone el listado del Gateway", async () => {
+      const gateway = fakeGateway({
+        listPendingConfirmations: () => [{ confirmationId: "conf-1", deviceId: "d1", capabilityName: "toggle_motor", input: {}, severity: "irreversible-material" }],
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app).get("/v1/confirmations").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        confirmations: [{ confirmationId: "conf-1", deviceId: "d1", capabilityName: "toggle_motor", input: {}, severity: "irreversible-material" }],
+      });
+    });
+
+    it("pasa req.userId al Gateway para el filtro por owner", async () => {
+      let received: string | undefined;
+      const gateway = fakeGateway({
+        listPendingConfirmations: (userId?: string) => {
+          received = userId;
+          return [];
+        },
+      });
+      const authPort = fakeAuthPort(async () => ({ userId: "user-1", email: "a@b.com" }));
+      const app = appWith(gateway, undefined, authPort);
+
+      await request(app).get("/v1/confirmations").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "valid-jwt");
+
+      expect(received).toBe("user-1");
+    });
   });
 
   describe("POST /v1/confirmations/:id/resolve (ADR-059)", () => {
