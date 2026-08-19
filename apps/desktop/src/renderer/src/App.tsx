@@ -14,6 +14,17 @@ import type { BusEvent, PluginCatalogEntryDTO } from "../../preload/index";
 
 const SEVERITY_OPTIONS: ActionSeverity[] = ["read-only", "reversible", "irreversible-material", "safety-critical"];
 
+// localStorage (Chromium real del renderer, mismo mecanismo que
+// LocalStorageConfigStore de @kan/edge-agent-core) — "una vez en la vida",
+// mismo criterio que kan:welcome-seen en apps/web.
+const WELCOME_SEEN_KEY = "kan-welcome-seen";
+
+const WELCOME_EXAMPLES = [
+  "Conectá tu Arduino o Raspberry Pi y te cuento qué encontré",
+  "Avisame cuando un sensor salga de rango",
+  "Coordiná varios dispositivos en secuencia",
+] as const;
+
 interface LogEntry {
   level: string;
   message: string;
@@ -71,6 +82,17 @@ export default function App() {
   const [installProgress, setInstallProgress] = useState<Record<string, string>>({});
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
   const [customVidPidCatalog, setCustomVidPidCatalog] = useState<VidPidCatalogEntry[]>([]);
+  // Lectura sincrónica al inicializar el estado (sin SSR acá, a diferencia
+  // de apps/web — no hay riesgo de mismatch de hidratación): "ya visto" por
+  // defecto si localStorage no está disponible, mismo criterio que
+  // DashboardClient.tsx.
+  const [welcomeSeen, setWelcomeSeen] = useState<boolean>(() => {
+    try {
+      return Boolean(window.localStorage.getItem(WELCOME_SEEN_KEY));
+    } catch {
+      return true;
+    }
+  });
 
   function refreshInstalledPlugins() {
     window.kan.listInstalledPlugins().then(setInstalledPlugins);
@@ -232,6 +254,25 @@ export default function App() {
         { level: "error", message: `Invocación falló: ${message}`, at: new Date().toISOString() },
       ]);
     });
+  }
+
+  // Primera vez: sin ningún dispositivo visto todavía y sin haber cerrado ya
+  // esta bienvenida antes (mismo criterio combinado que DashboardClient.tsx
+  // en apps/web — señal real de "recién arrancando" + persistencia local
+  // para no repetirla).
+  if (!welcomeSeen && devices.length === 0) {
+    return (
+      <FirstRunWelcome
+        onStart={() => {
+          setWelcomeSeen(true);
+          try {
+            window.localStorage.setItem(WELCOME_SEEN_KEY, "1");
+          } catch {
+            // Sin storage no se puede recordar — se repetiría en el próximo arranque, no es grave.
+          }
+        }}
+      />
+    );
   }
 
   return (
@@ -801,6 +842,42 @@ function PluginPermissionModal({ plugin }: { plugin: PendingPluginPermission }) 
             Aprobar
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Pantalla de bienvenida de primera vez (mismo texto exacto que
+ * FirstRunWelcome.tsx en apps/web — no menciona "chat" a propósito, sirve
+ * igual para este panel de hardware local). Reemplaza el panel completo
+ * hasta que el usuario hace clic en "Empezar" — gate en `App()`, ver
+ * `WELCOME_SEEN_KEY`.
+ */
+function FirstRunWelcome({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="flex h-screen items-center justify-center bg-zinc-950 p-4 text-zinc-50">
+      <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-center">
+        <p className="text-xl font-medium tracking-tight">Hola, soy KAN.</p>
+        <p className="mt-1 text-sm text-zinc-400">Puedo controlar y monitorear tu hardware desde acá.</p>
+
+        <ul className="mt-6 flex flex-col gap-3 text-left">
+          {WELCOME_EXAMPLES.map((example, index) => (
+            <li key={example} className="flex items-start gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-600 text-xs font-bold text-black">
+                {index + 1}
+              </span>
+              <span className="pt-0.5 text-sm text-zinc-300">{example}</span>
+            </li>
+          ))}
+        </ul>
+
+        <button
+          className="mt-7 w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-black hover:bg-sky-500"
+          onClick={onStart}
+        >
+          Empezar
+        </button>
       </div>
     </div>
   );

@@ -95,6 +95,11 @@ function summarize(rule: AlertRule) {
     label: rule.label,
     unit: rule.unit,
     steps: rule.steps,
+    // Nunca se narra en lenguaje natural (mismo criterio que alertId) — acá
+    // solo para que un consumidor HTTP (constructor visual de secuencias,
+    // apps/web) pueda filtrar por dueño antes de mostrar la lista, ya que
+    // este tool no filtra por `requestingUserId` como el resto del Gateway.
+    createdBy: rule.createdBy,
   };
 }
 

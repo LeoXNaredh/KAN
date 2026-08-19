@@ -14,6 +14,7 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
     resolveConfirmation: async () => ({ success: true, data: { ok: true } }),
     listPendingConfirmations: () => [],
     agentRegistry: { list: () => [] } as unknown as Gateway["agentRegistry"],
+    capabilityRegistry: { list: () => [] } as unknown as Gateway["capabilityRegistry"],
     auditService: { list: () => [] } as unknown as Gateway["auditService"],
     scheduler: {
       list: () => [],
@@ -103,6 +104,81 @@ describe("Gateway HTTP routes", () => {
       .set("Authorization", `Bearer ${TOKEN}`)
       .send();
     expect(response.status).toBe(200);
+  });
+
+  describe("GET /v1/capabilities — catálogo agrupado por dispositivo (constructor de secuencias)", () => {
+    it("agrupa las capabilities por deviceId", async () => {
+      const gateway = fakeGateway({
+        capabilityRegistry: {
+          list: () => [
+            {
+              ref: "c_agent1a_dev1_read_temp",
+              edgeAgentId: "agent1abc",
+              deviceId: "dev1",
+              deviceName: "Sensor de invernadero",
+              capability: { name: "read_temp", description: "Lee la temperatura", severity: "read-only", supportsDryRun: false, inputSchema: {} },
+            },
+            {
+              ref: "c_agent1a_dev1_toggle_fan",
+              edgeAgentId: "agent1abc",
+              deviceId: "dev1",
+              deviceName: "Sensor de invernadero",
+              capability: { name: "toggle_fan", description: "Prende/apaga el ventilador", severity: "reversible", supportsDryRun: false, inputSchema: { type: "object", properties: { on: { type: "boolean" } } } },
+            },
+            {
+              ref: "c_agent2b_dev2_read_level",
+              edgeAgentId: "agent2bcd",
+              deviceId: "dev2",
+              deviceName: "Tanque de agua",
+              capability: { name: "read_level", description: "Lee el nivel", severity: "read-only", supportsDryRun: false },
+            },
+          ],
+        } as unknown as Gateway["capabilityRegistry"],
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app).get("/v1/capabilities").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.devices).toHaveLength(2);
+      const invernadero = response.body.devices.find((d: { deviceId: string }) => d.deviceId === "dev1");
+      expect(invernadero.deviceName).toBe("Sensor de invernadero");
+      expect(invernadero.capabilities).toHaveLength(2);
+      expect(invernadero.capabilities[0]).toEqual({
+        ref: "c_agent1a_dev1_read_temp",
+        name: "read_temp",
+        description: "Lee la temperatura",
+        severity: "read-only",
+        supportsDryRun: false,
+        inputSchema: {},
+      });
+      const tanque = response.body.devices.find((d: { deviceId: string }) => d.deviceId === "dev2");
+      expect(tanque.capabilities[0].inputSchema).toEqual({});
+    });
+
+    it("rechaza requests sin token con 401", async () => {
+      const app = appWith(fakeGateway());
+      const response = await request(app).get("/v1/capabilities");
+      expect(response.status).toBe(401);
+    });
+
+    it("pasa req.userId al Gateway para el filtro por owner", async () => {
+      let received: string | undefined;
+      const gateway = fakeGateway({
+        capabilityRegistry: {
+          list: (userId?: string) => {
+            received = userId;
+            return [];
+          },
+        } as unknown as Gateway["capabilityRegistry"],
+      });
+      const authPort = fakeAuthPort(async () => ({ userId: "user-1", email: "a@b.com" }));
+      const app = appWith(gateway, undefined, authPort);
+
+      await request(app).get("/v1/capabilities").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "valid-jwt");
+
+      expect(received).toBe("user-1");
+    });
   });
 
   describe("GET /v1/confirmations — bandeja de confirmaciones pendientes", () => {

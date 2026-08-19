@@ -1,11 +1,53 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import type { DashboardSummary } from "@kan/core";
 import { useSystemStatusContext } from "@/lib/status/SystemStatusProvider";
 import { buildGreeting, timeOfDayGreeting } from "@/lib/greeting";
 import { useIsClient } from "@/lib/useIsClient";
 import { OnboardingWelcome } from "@/components/dashboard/OnboardingWelcome";
+import { FirstRunWelcome } from "@/components/dashboard/FirstRunWelcome";
 import { KANHome } from "@/components/kan/KANHome";
+
+// localStorage (no sessionStorage, a diferencia de kan-boot-shown): "una vez
+// en la vida", tiene que sobrevivir a cerrar la pestaña — mismo criterio que
+// kan:accent en theme.ts. `useSyncExternalStore` (no useEffect+setState,
+// mismo criterio que useIsClient/ThemeAccentPicker) — evita tanto el
+// mismatch de hidratación de leer localStorage recién en un efecto como el
+// re-render en cascada que dispara react-hooks/set-state-in-effect.
+const WELCOME_SEEN_KEY = "kan:welcome-seen";
+let welcomeListeners: Array<() => void> = [];
+
+function subscribeWelcomeSeen(listener: () => void): () => void {
+  welcomeListeners.push(listener);
+  return () => {
+    welcomeListeners = welcomeListeners.filter((l) => l !== listener);
+  };
+}
+
+// SSR y primer render del cliente: "ya visto" por defecto — evita mostrar
+// el gate en el HTML inicial (mismatch imposible), se corrige solo apenas
+// React confirma el snapshot real del cliente.
+function getWelcomeSeenServerSnapshot(): boolean {
+  return true;
+}
+
+function getWelcomeSeenClientSnapshot(): boolean {
+  try {
+    return Boolean(window.localStorage.getItem(WELCOME_SEEN_KEY));
+  } catch {
+    return true;
+  }
+}
+
+function markWelcomeSeen(): void {
+  try {
+    window.localStorage.setItem(WELCOME_SEEN_KEY, "1");
+  } catch {
+    // Sin storage no se puede recordar — se repetiría en la próxima carga, no es grave.
+  }
+  welcomeListeners.forEach((listener) => listener());
+}
 
 /**
  * Pantalla principal ("/") — desde el rediseño eDEX-UI (layout de 3
@@ -34,6 +76,12 @@ export function DashboardClient({ summary }: { summary: DashboardSummary | undef
   // sus dispositivos reales todavía están cargando (hasAnyDevice arranca en
   // false para cualquiera, no solo para quien es nuevo de verdad).
   const isNewUser = Boolean(summary) && !loading && summary?.memoriesCount === 0 && !hasAnyDevice;
+
+  const welcomeSeen = useSyncExternalStore(subscribeWelcomeSeen, getWelcomeSeenClientSnapshot, getWelcomeSeenServerSnapshot);
+
+  if (isNewUser && !welcomeSeen) {
+    return <FirstRunWelcome onStart={markWelcomeSeen} />;
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-4">

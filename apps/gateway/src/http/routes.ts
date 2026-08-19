@@ -73,6 +73,36 @@ export function createRoutes(
     res.json(result);
   });
 
+  // Catálogo de capabilities agrupado por dispositivo (constructor visual de
+  // secuencias, apps/web) — `/v1/tools` ya trae lo mismo (ref/description/
+  // inputSchema) pero aplanado, sin `deviceName`/`deviceId`; acá se agrupa
+  // porque la UI necesita elegir primero "qué dispositivo" y recién después
+  // "qué capability de ese dispositivo". Mismo filtro de ownership que
+  // /v1/tools (vía `capabilityRegistry.list(userId)`, ya usado por
+  // `CapabilityBackedToolRegistry`).
+  router.get("/v1/capabilities", (req, res) => {
+    const devices = new Map<
+      string,
+      { edgeAgentId: string; deviceId: string; deviceName: string; capabilities: unknown[] }
+    >();
+    for (const entry of gateway.capabilityRegistry.list(req.userId)) {
+      let device = devices.get(entry.deviceId);
+      if (!device) {
+        device = { edgeAgentId: entry.edgeAgentId, deviceId: entry.deviceId, deviceName: entry.deviceName, capabilities: [] };
+        devices.set(entry.deviceId, device);
+      }
+      device.capabilities.push({
+        ref: entry.ref,
+        name: entry.capability.name,
+        description: entry.capability.description,
+        severity: entry.capability.severity,
+        supportsDryRun: entry.capability.supportsDryRun,
+        inputSchema: entry.capability.inputSchema ?? {},
+      });
+    }
+    res.json({ devices: Array.from(devices.values()) });
+  });
+
   // Bandeja de confirmaciones pendientes (requisito: verlas/aprobarlas fuera
   // del chat que las disparó, ej. una secuencia de una alerta sin
   // conversación activa) — el filtro por owner vive en
