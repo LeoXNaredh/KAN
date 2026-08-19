@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
-import type { EdgeTicketPort, Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
+import { extractPrimaryNumericValue, type EdgeTicketPort, type Gateway, type LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
 import { createUserAuthMiddleware } from "./userAuthMiddleware";
@@ -14,6 +14,8 @@ export interface RateLimitOptions {
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 /** Cómodo frente al tráfico real (polling del Dashboard cada 15s + varias llamadas de function-calling por turno de chat), sin dejar de acotar abuso (docs/16 P6, ADR-025). */
 const DEFAULT_RATE_LIMIT_MAX = 120;
+/** Ver POST /v1/telemetry/poll — un usuario con 30 sensores activos simultáneos ya es un caso extremo. */
+const MAX_TELEMETRY_POLL_REFS = 30;
 
 /**
  * API pública del Gateway (docs/12 §10), versionada desde ya (`/v1`) porque
@@ -101,6 +103,62 @@ export function createRoutes(
       });
     }
     res.json({ devices: Array.from(devices.values()) });
+  });
+
+  // Dashboard de sensores (apps/web) — lee el valor ACTUAL de varias
+  // capabilities read-only en una sola request (nunca una por sensor: con
+  // 15+ sensores sondeados cada 5s se comería el rate limit de golpe). Gate
+  // de seguridad no negociable: nunca ejecuta nada que no sea read-only —
+  // esta ruta no es un "ejecutar cualquier capability" genérico. Reusa
+  // `gateway.executeTool()` (mismo camino que /v1/tools/:name/execute, ya
+  // valida ownership) — el historial se graba solo vía el listener de
+  // `tool.executed` en `Gateway.bootstrap()`, no hay lógica duplicada acá.
+  router.post("/v1/telemetry/poll", async (req, res) => {
+    const refs: unknown = req.body?.refs;
+    if (!Array.isArray(refs) || refs.length === 0 || refs.some((ref) => typeof ref !== "string")) {
+      res.status(400).json({ error: "Se requiere 'refs': una lista no vacía de strings." });
+      return;
+    }
+    // Tope duro (no solo defensivo): sin esto, un body con miles de refs
+    // dispara la misma cantidad de TaskOrchestrator.submit() en paralelo
+    // desde un solo request — nada más lo frena (el rate limit de arriba
+    // cuenta requests, no el tamaño de cada una). 30 cubre con margen
+    // cualquier instalación real.
+    if (refs.length > MAX_TELEMETRY_POLL_REFS) {
+      res.status(400).json({ error: `Se puede sondear como máximo ${MAX_TELEMETRY_POLL_REFS} sensores por request.` });
+      return;
+    }
+
+    const readings = await Promise.all(
+      refs.map(async (ref: string) => {
+        const capability = gateway.capabilityRegistry.resolve(ref);
+        if (!capability || capability.capability.severity !== "read-only") {
+          return { ref, success: false, error: "No es una capability de lectura válida." };
+        }
+        const result = await gateway.executeTool(ref, {}, req.userId);
+        return { ref, success: result.success, value: extractPrimaryNumericValue(result.data), error: result.error };
+      }),
+    );
+    res.json({ readings });
+  });
+
+  // Catálogo de TODO lo que el historial conoce (conectado o no) — permite
+  // mostrar la última lectura de un sensor cuyo dispositivo ya se desconectó
+  // (su capability desapareció de /v1/capabilities, pero el historial la
+  // sigue teniendo). `connected` cruza contra el catálogo en vivo.
+  router.get("/v1/telemetry", (req, res) => {
+    const sensors = gateway.telemetryHistory.list(req.userId).map((sensor) => ({
+      ...sensor,
+      connected: Boolean(gateway.capabilityRegistry.resolve(sensor.ref)),
+    }));
+    res.json({ sensors });
+  });
+
+  // Historial de un sensor puntual (gráfico) — hasta 200 lecturas, filtrado
+  // por dueño (mismo criterio que el resto: agentes sin owner + los del
+  // propio usuario).
+  router.get("/v1/telemetry/:ref/history", (req, res) => {
+    res.json({ readings: gateway.telemetryHistory.history(req.params.ref, req.userId) });
   });
 
   // Bandeja de confirmaciones pendientes (requisito: verlas/aprobarlas fuera

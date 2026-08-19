@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { Fragment, Suspense, useEffect, useState } from "react";
-import { MessageSquareText, Home, Cpu, Workflow, Route, FolderKanban, Settings, Plus, Trash2, Edit2, Check, X, type LucideIcon } from "lucide-react";
+import { MessageSquareText, Home, Cpu, Activity, Workflow, Route, FolderKanban, Settings, Plus, Trash2, Edit2, Check, X, type LucideIcon } from "lucide-react";
 import { useRecentConversations } from "@/lib/conversations/useRecentConversations";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 import { SkeletonText } from "@/components/ui/Skeleton";
@@ -16,6 +16,7 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: "/conversacion", label: "Conversación", icon: MessageSquareText },
   { href: "/", label: "Inicio", icon: Home },
   { href: "/dispositivos", label: "Dispositivos", icon: Cpu },
+  { href: "/sensores", label: "Sensores", icon: Activity },
   { href: "/secuencias", label: "Secuencias", icon: Route },
   { href: "/automatizaciones", label: "Recordatorios", icon: Workflow },
   { href: "/proyectos", label: "Proyectos", icon: FolderKanban },

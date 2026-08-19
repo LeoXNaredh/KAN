@@ -27,6 +27,8 @@ export * from "./application/ToolRegistry";
 export * from "./application/ToolResolver";
 export * from "./application/ToolExecutor";
 export * from "./application/AlertMonitor";
+export * from "./application/TelemetryHistoryStore";
+export * from "./application/extractPrimaryNumericValue";
 export * from "./application/alertMessage";
 export * from "./application/LiveVoiceSessionStore";
 export * from "./infra/GeminiLiveProxy";

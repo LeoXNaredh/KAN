@@ -14,7 +14,8 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
     resolveConfirmation: async () => ({ success: true, data: { ok: true } }),
     listPendingConfirmations: () => [],
     agentRegistry: { list: () => [] } as unknown as Gateway["agentRegistry"],
-    capabilityRegistry: { list: () => [] } as unknown as Gateway["capabilityRegistry"],
+    capabilityRegistry: { list: () => [], resolve: () => undefined } as unknown as Gateway["capabilityRegistry"],
+    telemetryHistory: { list: () => [], history: () => [] } as unknown as Gateway["telemetryHistory"],
     auditService: { list: () => [] } as unknown as Gateway["auditService"],
     scheduler: {
       list: () => [],
@@ -178,6 +179,165 @@ describe("Gateway HTTP routes", () => {
       await request(app).get("/v1/capabilities").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "valid-jwt");
 
       expect(received).toBe("user-1");
+    });
+  });
+
+  describe("POST /v1/telemetry/poll — lectura en vivo de sensores (dashboard)", () => {
+    it("rechaza sin token con 401", async () => {
+      const app = appWith(fakeGateway());
+      const response = await request(app).post("/v1/telemetry/poll").send({ refs: ["c_1_read_temp"] });
+      expect(response.status).toBe(401);
+    });
+
+    it("rechaza sin 'refs' (o vacío/no-array) con 400, sin llamar a executeTool", async () => {
+      let called = false;
+      const gateway = fakeGateway({ executeTool: async () => { called = true; return { success: true }; } });
+      const app = appWith(gateway);
+
+      const empty = await request(app).post("/v1/telemetry/poll").set("Authorization", `Bearer ${TOKEN}`).send({ refs: [] });
+      expect(empty.status).toBe(400);
+
+      const missing = await request(app).post("/v1/telemetry/poll").set("Authorization", `Bearer ${TOKEN}`).send({});
+      expect(missing.status).toBe(400);
+
+      const notStrings = await request(app).post("/v1/telemetry/poll").set("Authorization", `Bearer ${TOKEN}`).send({ refs: [1, 2] });
+      expect(notStrings.status).toBe(400);
+
+      expect(called).toBe(false);
+    });
+
+    it("rechaza más de 30 refs con 400, sin ejecutar ninguno", async () => {
+      let called = false;
+      const gateway = fakeGateway({ executeTool: async () => { called = true; return { success: true }; } });
+      const app = appWith(gateway);
+
+      const tooMany = Array.from({ length: 31 }, (_, i) => `c_ref_${i}`);
+      const atLimit = Array.from({ length: 30 }, (_, i) => `c_ref_${i}`);
+
+      const overLimit = await request(app).post("/v1/telemetry/poll").set("Authorization", `Bearer ${TOKEN}`).send({ refs: tooMany });
+      expect(overLimit.status).toBe(400);
+      expect(overLimit.body.error).toMatch(/30/);
+      expect(called).toBe(false);
+
+      const withinLimit = await request(app).post("/v1/telemetry/poll").set("Authorization", `Bearer ${TOKEN}`).send({ refs: atLimit });
+      expect(withinLimit.status).toBe(200);
+    });
+
+    it("un ref que no es read-only se rechaza SIN ejecutarlo — gate de seguridad no negociable", async () => {
+      let executed = false;
+      const gateway = fakeGateway({
+        capabilityRegistry: {
+          resolve: (ref: string) => (ref === "c_toggle_motor" ? { capability: { severity: "irreversible-material" } } : undefined),
+        } as unknown as Gateway["capabilityRegistry"],
+        executeTool: async () => {
+          executed = true;
+          return { success: true };
+        },
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app)
+        .post("/v1/telemetry/poll")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ refs: ["c_toggle_motor"] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.readings).toEqual([{ ref: "c_toggle_motor", success: false, error: "No es una capability de lectura válida." }]);
+      expect(executed).toBe(false);
+    });
+
+    it("un ref read-only se ejecuta y devuelve el valor numérico extraído", async () => {
+      const gateway = fakeGateway({
+        capabilityRegistry: {
+          resolve: (ref: string) => (ref === "c_read_temp" ? { capability: { severity: "read-only" } } : undefined),
+        } as unknown as Gateway["capabilityRegistry"],
+        executeTool: async (name: string) => (name === "c_read_temp" ? { success: true, data: { temperatureC: 23.4 } } : { success: false }),
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app)
+        .post("/v1/telemetry/poll")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ refs: ["c_read_temp"] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.readings).toEqual([{ ref: "c_read_temp", success: true, value: 23.4, error: undefined }]);
+    });
+
+    it("varios refs se resuelven en paralelo, cada uno con su propio resultado", async () => {
+      const gateway = fakeGateway({
+        capabilityRegistry: {
+          resolve: () => ({ capability: { severity: "read-only" } }),
+        } as unknown as Gateway["capabilityRegistry"],
+        executeTool: async (name: string) => ({ success: true, data: { value: name === "c_a" ? 1 : 2 } }),
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app)
+        .post("/v1/telemetry/poll")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .send({ refs: ["c_a", "c_b"] });
+
+      expect(response.body.readings).toEqual([
+        { ref: "c_a", success: true, value: 1, error: undefined },
+        { ref: "c_b", success: true, value: 2, error: undefined },
+      ]);
+    });
+  });
+
+  describe("GET /v1/telemetry — catálogo de sensores conocidos (conectados o no)", () => {
+    it("rechaza sin token con 401", async () => {
+      const app = appWith(fakeGateway());
+      const response = await request(app).get("/v1/telemetry");
+      expect(response.status).toBe(401);
+    });
+
+    it("marca 'connected' cruzando contra capabilityRegistry.resolve()", async () => {
+      const gateway = fakeGateway({
+        telemetryHistory: {
+          list: () => [
+            { ref: "c_online", edgeAgentId: "a1", deviceName: "D1", description: "Lee X", latest: { value: 1, at: "2026-01-01T00:00:00.000Z" } },
+            { ref: "c_offline", edgeAgentId: "a1", deviceName: "D1", description: "Lee Y", latest: { value: 2, at: "2026-01-01T00:00:00.000Z" } },
+          ],
+        } as unknown as Gateway["telemetryHistory"],
+        capabilityRegistry: {
+          resolve: (ref: string) => (ref === "c_online" ? {} : undefined),
+        } as unknown as Gateway["capabilityRegistry"],
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app).get("/v1/telemetry").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(200);
+      const byRef = Object.fromEntries(response.body.sensors.map((s: { ref: string; connected: boolean }) => [s.ref, s.connected]));
+      expect(byRef).toEqual({ c_online: true, c_offline: false });
+    });
+  });
+
+  describe("GET /v1/telemetry/:ref/history — historial para el gráfico", () => {
+    it("rechaza sin token con 401", async () => {
+      const app = appWith(fakeGateway());
+      const response = await request(app).get("/v1/telemetry/c_read_temp/history");
+      expect(response.status).toBe(401);
+    });
+
+    it("pasa el ref y el userId a telemetryHistory.history()", async () => {
+      let received: { ref: string; userId: string | undefined } | undefined;
+      const gateway = fakeGateway({
+        telemetryHistory: {
+          history: (ref: string, userId?: string) => {
+            received = { ref, userId };
+            return [{ value: 23.4, at: "2026-01-01T00:00:00.000Z" }];
+          },
+        } as unknown as Gateway["telemetryHistory"],
+      });
+      const app = appWith(gateway);
+
+      const response = await request(app).get("/v1/telemetry/c_read_temp/history").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.readings).toEqual([{ value: 23.4, at: "2026-01-01T00:00:00.000Z" }]);
+      expect(received?.ref).toBe("c_read_temp");
     });
   });
 

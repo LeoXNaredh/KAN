@@ -21,6 +21,8 @@ import { ALERT_TOOL_DESCRIPTORS, isAlertToolName, executeAlertTool } from "./app
 import { AlertMonitor } from "./application/AlertMonitor";
 import { describeAlertTriggered } from "./application/alertMessage";
 import { SEQUENCE_TOOL_DESCRIPTORS, isSequenceToolName, parseSequenceSteps, type SequenceStepReport } from "./application/sequenceTools";
+import { TelemetryHistoryStore } from "./application/TelemetryHistoryStore";
+import { extractPrimaryNumericValue } from "./application/extractPrimaryNumericValue";
 import type { TaskRequest } from "./domain/entities/GatewayTask";
 import type { ToolDescriptor, ToolExecutionResult } from "@kan/plugin-contract";
 
@@ -61,6 +63,7 @@ export class Gateway {
   readonly bus: GatewayBus;
   readonly agentRegistry: AgentRegistry;
   readonly capabilityRegistry: GlobalCapabilityRegistry;
+  readonly telemetryHistory: TelemetryHistoryStore;
   readonly taskOrchestrator: TaskOrchestrator;
   readonly confirmationOrchestrator: ConfirmationOrchestrator;
   readonly auditService: AuditService;
@@ -76,6 +79,10 @@ export class Gateway {
     // agentRegistry inyectado (P2 incremento 4): permite que list()/resolve
     // de capacidades sepan a qué usuario pertenece cada Edge Agent.
     this.capabilityRegistry = new GlobalCapabilityRegistry(deps.bus, this.agentRegistry);
+    // Dashboard de sensores — en memoria únicamente, sin store/migración
+    // (no hay tabla de telemetría en Supabase hoy, ver plan). Mismo criterio
+    // que capabilityRegistry: agentRegistry opcional para filtrar por dueño.
+    this.telemetryHistory = new TelemetryHistoryStore(this.agentRegistry);
     this.auditService = new AuditService(deps.auditStore, deps.bus);
     this.scheduler = deps.scheduler;
     this.taskOrchestrator = new TaskOrchestrator(
@@ -114,6 +121,27 @@ export class Gateway {
         subject: deviceKind,
         userId: ownerId,
         metadata: { deviceNames, sources },
+      });
+    });
+
+    // Dashboard de sensores (telemetryHistory) — se alimenta de CUALQUIER
+    // ejecución exitosa de una capability read-only, venga del chat, de una
+    // secuencia, de AlertMonitor o del propio dashboard sondeando
+    // /v1/telemetry/poll — nunca hay que llamar record() a mano desde cada
+    // camino de ejecución. `tool.executed` ya lo emite ToolExecutor.execute()
+    // en cada tool call (`packages/gateway-core/src/application/ToolExecutor.ts`).
+    this.bus.on("tool.executed", ({ name, result }) => {
+      if (!result.success || result.requiresConfirmation) return;
+      const capability = this.capabilityRegistry.resolve(name);
+      if (!capability || capability.capability.severity !== "read-only") return;
+      const value = extractPrimaryNumericValue(result.data);
+      if (value === undefined) return;
+      this.telemetryHistory.record(name, {
+        edgeAgentId: capability.edgeAgentId,
+        deviceName: capability.deviceName,
+        description: capability.capability.description,
+        value,
+        at: new Date().toISOString(),
       });
     });
 
