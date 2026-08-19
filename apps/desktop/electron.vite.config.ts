@@ -30,6 +30,14 @@ const WORKSPACE_PACKAGES = [
   "@kan/plugin-canbus",
   "@kan/plugin-mqtt",
   "@kan/plugin-gcode",
+  // Mismo motivo que el resto de la lista — confirmado en vivo, no era (como
+  // se creyó al principio) una limitación de hardware/binding nativo: el
+  // "No se pudo cargar el plugin de Raspberry Pi... ERR_UNKNOWN_FILE_EXTENSION"
+  // pasaba porque este paquete quedaba afuera de WORKSPACE_PACKAGES, así que
+  // Rollup lo externalizaba y Node intentaba requerir su `main` (`src/index.ts`)
+  // crudo. `apps/desktop/src/main/index.ts` YA lo importa con el mismo patrón
+  // dinámico + try/catch que ESP32/BLE — el problema era puramente de bundling.
+  "@kan/plugin-raspberry-pi",
 ];
 
 // `externalizeDepsPlugin` solo lee `dependencies`/`peerDependencies` del
@@ -57,7 +65,33 @@ const WORKSPACE_PACKAGES = [
 // (confirmado en vivo, no hipotético). Externalizada, el `import()`
 // dinámico + try/catch de `main/index.ts` sí llega a ejecutarse en runtime
 // y degrada a `NullBleScanner` como corresponde.
-const NEVER_BUNDLE = ["cpu-features", "proper-lockfile", "@abandonware/noble"];
+//
+// `serialport` — mismo problema de fondo, hallazgo real al correr
+// `apps/desktop` de punta a punta por primera vez en este entorno (ADR-060):
+// es transitiva de `@kan/serial-line-transport`/`@kan/plugin-esp32-arduino`/
+// etc. (todas workspace packages, ya bundleadas por WORKSPACE_PACKAGES), así
+// que `externalizeDepsPlugin` tampoco la ve — Rollup la bundlea igual, y el
+// binding nativo N-API de `@serialport/bindings-cpp` (que ADR-057 ya
+// verificó ABI-estable y funcional bajo Electron **sin bundlear**) pierde su
+// resolución relativa al `.node` una vez concatenado dentro de
+// `out/main/index.js`, con el mismo error "No native build was found" que
+// noble/cpu-features. Confirmado en vivo, dos formas: (1) requerido directo
+// bajo `ELECTRON_RUN_AS_NODE=1` desde su ubicación real en `node_modules`
+// (sin bundlear) — `SerialPort.list()` funciona perfecto; (2) el mismo
+// código, ya bundleado en un chunk dinámico separado — falla con el error de
+// arriba. Externalizada acá, Rollup deja un `require("serialport")` plano
+// que Node resuelve en runtime contra el `node_modules` real — mismo
+// mecanismo que ya prueba (1).
+// `onoff`/`epoll` — mismo criterio que `@abandonware/noble` de arriba: al
+// agregar `@kan/plugin-raspberry-pi` a WORKSPACE_PACKAGES (arriba), Rollup
+// ahora también intenta bundlear su dependencia `onoff`, que a su vez trae
+// `epoll` (binding nativo Linux-only, `allowBuilds: false` en
+// pnpm-workspace.yaml a propósito — no compila en Windows/Mac). Sin
+// externalizar ambos acá, el build entero vuelve a romperse igual que con
+// noble/cpu-features. Externalizados, el import dinámico + try/catch de
+// `main/index.ts` (ya existente, ver `OnoffGpioPort.ts`) degrada en runtime
+// sin tumbar el resto del Edge Agent — mismo mecanismo que BLE.
+const NEVER_BUNDLE = ["cpu-features", "proper-lockfile", "@abandonware/noble", "serialport", "onoff", "epoll"];
 
 export default defineConfig({
   main: {

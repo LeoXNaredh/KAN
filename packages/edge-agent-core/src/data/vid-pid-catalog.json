@@ -9,5 +9,8 @@
   { "vendorId": "0x0483", "productId": "0x5740", "name": "STM32 (Blue Pill / Nucleo)" },
   { "vendorId": "0x04D8", "productId": "0x000A", "name": "Microchip / PIC" },
   { "vendorId": "0x0547", "productId": "0x1002", "name": "Siemens S7 USB adapter" },
-  { "vendorId": "0x0908", "productId": "0x0004", "name": "Beckhoff EtherCAT USB" }
+  { "vendorId": "0x0908", "productId": "0x0004", "name": "Beckhoff EtherCAT USB" },
+  { "vendorId": "0x2E8A", "productId": "0x0005", "name": "Raspberry Pi Pico" },
+  { "vendorId": "0x2E8A", "productId": "0x000A", "name": "Raspberry Pi Pico W" },
+  { "vendorId": "0x2E8A", "productId": "0x0003", "name": "Raspberry Pi Pico (bootloader)" }
 ]

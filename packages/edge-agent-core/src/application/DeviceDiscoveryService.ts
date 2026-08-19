@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { SerialTransportPort, PortInfo } from "@kan/serial-line-transport";
 import type { LoggerPort } from "../domain/ports/LoggerPort";
 import type { WifiDeviceScannerPort, WifiScanEntry } from "../domain/ports/WifiDeviceScannerPort";
@@ -69,7 +68,15 @@ export class DeviceDiscoveryService {
     return [];
   }
 
-  private async scanSerial(): Promise<DiscoveredDevice[]> {
+  /**
+   * Expuesto público (a diferencia de scanWifi/scanBle, que tardan segundos
+   * por diseño — mDNS/BLE necesitan esperar respuestas) porque enumerar
+   * puertos seriales es una consulta local casi instantánea al SO, sin
+   * espera artificial: es la parte barata de reusar para detección en
+   * caliente (polling frecuente, ver DeviceDiscoveryPlugin) sin pagar el
+   * costo de un scan() completo cada vez.
+   */
+  async scanSerial(): Promise<DiscoveredDevice[]> {
     const ports = await this.deps.serialTransport.list();
     return ports.map((port) => this.matchSerialPort(port));
   }
@@ -78,7 +85,12 @@ export class DeviceDiscoveryService {
     const match =
       port.vendorId && port.productId ? findInVidPidCatalog(this.deps.catalog, port.vendorId, port.productId) : undefined;
     return {
-      id: randomUUID(),
+      // Estable entre escaneos (a diferencia de wifi/BLE, ver abajo): el
+      // mismo puerto físico siempre produce el mismo id mientras siga en el
+      // mismo puerto, necesario para que el polling de detección en caliente
+      // pueda distinguir "dispositivo ya visto" de "recién apareció" sin
+      // volver a conectarlo/loguearlo en cada tick (ver DeviceManager).
+      id: `serial:${port.path}`,
       transport: "serial",
       port: port.path,
       name: match?.name ?? "Dispositivo serial no identificado",
@@ -108,7 +120,7 @@ export class DeviceDiscoveryService {
     }
 
     return {
-      id: randomUUID(),
+      id: `wifi:${entry.address ?? entry.host ?? entry.name}`,
       transport: "wifi",
       address: entry.address,
       name: name ?? `Dispositivo de red (${entry.serviceType})`,
@@ -134,7 +146,7 @@ export class DeviceDiscoveryService {
     const confidence: DiscoveredDeviceConfidence = matchedUuid ? "exact" : entry.name ? "partial" : "unknown";
 
     return {
-      id: randomUUID(),
+      id: `bluetooth:${entry.id}`,
       transport: "bluetooth",
       address: entry.id,
       name,
