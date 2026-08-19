@@ -6,6 +6,7 @@ import { Fragment, Suspense, useEffect, useState } from "react";
 import { MessageSquareText, Home, Cpu, Workflow, Route, FolderKanban, Settings, Plus, Trash2, Edit2, Check, X, type LucideIcon } from "lucide-react";
 import { useRecentConversations } from "@/lib/conversations/useRecentConversations";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
+import { SkeletonText } from "@/components/ui/Skeleton";
 
 // Orden por frecuencia de uso (rediseño de interfaz): la conversación es el
 // modo primario de KAN, va primero. "Logs" sale del nivel superior — es
@@ -114,7 +115,7 @@ function RecentConversations({ onNavigate }: { onNavigate: () => void }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const activeId = pathname === "/conversacion" ? (searchParams.get("c") ?? undefined) : undefined;
-  const { conversations, refresh } = useRecentConversations(RECENT_CONVERSATIONS_LIMIT);
+  const { conversations, loading, refresh } = useRecentConversations(RECENT_CONVERSATIONS_LIMIT);
 
   return (
     <div className="mb-1 flex flex-col gap-0.5 pl-4">
@@ -128,6 +129,13 @@ function RecentConversations({ onNavigate }: { onNavigate: () => void }) {
         <Plus className="h-3 w-3 shrink-0" aria-hidden="true" />
         Nueva conversación
       </Link>
+      {loading && (
+        <div className="flex flex-col gap-1 px-3 py-1">
+          <SkeletonText className="h-3 w-5/6" />
+          <SkeletonText className="h-3 w-3/4" />
+          <SkeletonText className="h-3 w-4/6" />
+        </div>
+      )}
       {conversations.map((conversation) => (
         <ConversationItem
           key={conversation.id}

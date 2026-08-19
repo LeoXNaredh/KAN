@@ -53,18 +53,36 @@ const STATUS_LABEL: Record<CoreConnectionStatus, string> = {
 };
 
 const STATUS_COLOR: Record<CoreConnectionStatus, string> = {
-  connected: "bg-emerald-500",
-  connecting: "bg-amber-500",
-  reconnecting: "bg-amber-500",
-  disconnected: "bg-zinc-500",
+  connected: "bg-success",
+  connecting: "bg-warning",
+  reconnecting: "bg-warning",
+  // Neutro, no `danger` — es el estado inicial/de reposo, no una falla activa.
+  disconnected: "bg-ink-faint",
 };
 
+/**
+ * Remapeo semántico (no solo cambio de paleta): `read-only` pasa a un chip
+ * neutro-acento (mismo criterio que `Badge.tsx` de apps/web — informativo,
+ * no un nivel de riesgo), el resto se alinea 1:1 con cómo apps/web ya trata
+ * la severidad vía `describeConfirmationConsequence` (success/warning/danger
+ * = reversible/irreversible-material/safety-critical).
+ */
 const SEVERITY_COLOR: Record<string, string> = {
-  "read-only": "bg-sky-900 text-sky-200",
-  reversible: "bg-emerald-900 text-emerald-200",
-  "irreversible-material": "bg-amber-900 text-amber-200",
-  "safety-critical": "bg-red-900 text-red-200",
+  "read-only": "bg-accent/10 text-accent",
+  reversible: "bg-success/15 text-success",
+  "irreversible-material": "bg-warning/15 text-warning",
+  "safety-critical": "bg-danger/15 text-danger",
 };
+
+// Copiadas literal de apps/web/components/ui/formStyles.ts (mismos strings)
+// — sin importar entre paquetes (no hay librería de UI compartida), pero
+// mismos tokens de color en ambos `index.css`, así que el resultado visual
+// es idéntico.
+const INPUT_CLASSES =
+  "rounded-xl border border-line/80 bg-surface-3/70 px-3 py-2 text-sm text-ink outline-none backdrop-blur transition-colors placeholder:text-ink-faint focus:border-accent/70 focus:bg-surface-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent";
+
+const PRIMARY_BUTTON_CLASSES =
+  "bg-gradient-accent rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-accent/25 transition-all duration-fast hover:scale-[1.02] hover:shadow-accent/40 hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -276,13 +294,13 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen flex-col gap-4 bg-zinc-950 p-4 text-zinc-50">
+    <div className="flex h-screen flex-col gap-4 bg-surface p-4 text-ink">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">KAN Edge Agent</h1>
-          <p className="text-sm text-zinc-400">Infraestructura local — dispositivos, plugins y permisos.</p>
+          <p className="text-sm text-ink-faint">Infraestructura local — dispositivos, plugins y permisos.</p>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-zinc-800 px-3 py-1 text-sm">
+        <div className="flex items-center gap-2 rounded-full border border-line px-3 py-1 text-sm">
           <span className={`h-2 w-2 rounded-full ${STATUS_COLOR[coreStatus]}`} />
           {STATUS_LABEL[coreStatus]}
         </div>
@@ -291,12 +309,12 @@ export default function App() {
       {paired !== null && <PairingPanel paired={paired} onPaired={() => setPaired(true)} />}
 
       {pluginWarnings.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-200">
+        <div className="flex flex-col gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
           {pluginWarnings.map((warning, index) => (
             <div key={index} className="flex items-start justify-between gap-3">
               <span>⚠ {warning.message}</span>
               <button
-                className="shrink-0 text-xs text-amber-400 underline hover:text-amber-200"
+                className="shrink-0 text-xs text-warning underline hover:opacity-80"
                 onClick={() => setPluginWarnings((prev) => prev.filter((_, i) => i !== index))}
               >
                 Descartar
@@ -317,14 +335,14 @@ export default function App() {
       <VidPidCatalogPanel entries={customVidPidCatalog} onChanged={refreshCustomVidPidCatalog} />
 
       <div className="grid flex-1 grid-cols-[1.4fr_1fr] gap-4 overflow-hidden">
-        <section className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-zinc-800 p-4">
-          <h2 className="text-sm font-medium text-zinc-400">Dispositivos</h2>
-          {devices.length === 0 && <p className="text-sm text-zinc-500">Descubriendo dispositivos…</p>}
+        <section className="flex flex-col gap-3 overflow-y-auto rounded-lg border border-line p-4">
+          <h2 className="text-sm font-medium text-ink-muted">Dispositivos</h2>
+          {devices.length === 0 && <p className="text-sm text-ink-faint">Descubriendo dispositivos…</p>}
           {devices.map((device) => (
-            <div key={device.id} className="rounded-md border border-zinc-800 bg-zinc-900 p-3">
+            <div key={device.id} className="rounded-md border border-line bg-surface-2 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <span className="font-medium">{device.name}</span>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-ink-faint">
                   {device.kind} · {device.status}
                 </span>
               </div>
@@ -334,7 +352,7 @@ export default function App() {
                   .map((c) => (
                     <div
                       key={c.capability.name}
-                      className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5"
+                      className="flex items-center justify-between gap-3 rounded border border-line px-2 py-1.5"
                     >
                       <div>
                         <div className="flex items-center gap-2">
@@ -343,7 +361,7 @@ export default function App() {
                             {c.capability.severity}
                           </span>
                         </div>
-                        <p className="text-xs text-zinc-500">{c.capability.description}</p>
+                        <p className="text-xs text-ink-faint">{c.capability.description}</p>
                       </div>
                       <CapabilityControls
                         onInvoke={(input) => invoke(device.id, c.capability.name, input)}
@@ -362,12 +380,12 @@ export default function App() {
           ))}
         </section>
 
-        <section className="flex flex-col overflow-hidden rounded-lg border border-zinc-800 p-4">
-          <h2 className="mb-2 text-sm font-medium text-zinc-400">Logs</h2>
+        <section className="flex flex-col overflow-hidden rounded-lg border border-line p-4">
+          <h2 className="mb-2 text-sm font-medium text-ink-muted">Logs</h2>
           <div className="flex-1 overflow-y-auto font-mono text-xs">
             {logs.map((log, index) => (
-              <div key={index} className="whitespace-pre-wrap text-zinc-400">
-                <span className="text-zinc-600">{log.at.slice(11, 19)}</span> [{log.level}] {log.message}
+              <div key={index} className="whitespace-pre-wrap text-ink-muted">
+                <span className="text-ink-faint">{log.at.slice(11, 19)}</span> [{log.level}] {log.message}
               </div>
             ))}
           </div>
@@ -426,18 +444,18 @@ function SafetyPolicyPanel({ deviceId, targets }: { deviceId: string; targets: S
   }
 
   return (
-    <div className="mt-3 border-t border-zinc-800 pt-3">
-      <h3 className="mb-2 text-xs font-medium text-zinc-400">
+    <div className="mt-3 border-t border-line pt-3">
+      <h3 className="mb-2 text-xs font-medium text-ink-muted">
         Safety Policy — clasificación de targets (pines). Sin configurar = usa el default más restrictivo.
       </h3>
       <div className="flex flex-col gap-1.5">
         {targets.map((target) => {
           const draft = draftFor(target);
           return (
-            <div key={target.target} className="flex items-center gap-2 rounded border border-zinc-800 px-2 py-1.5 text-xs">
-              <span className="w-16 font-mono text-zinc-400">{target.target}</span>
+            <div key={target.target} className="flex items-center gap-2 rounded border border-line px-2 py-1.5 text-xs">
+              <span className="w-16 font-mono text-ink-muted">{target.target}</span>
               <input
-                className="min-w-0 flex-1 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-1"
+                className={`min-w-0 flex-1 ${INPUT_CLASSES}`}
                 placeholder="Alias (ej. Relé bomba de agua)"
                 value={draft.alias}
                 onChange={(e) =>
@@ -445,7 +463,7 @@ function SafetyPolicyPanel({ deviceId, targets }: { deviceId: string; targets: S
                 }
               />
               <select
-                className="rounded border border-zinc-800 bg-zinc-950 px-1.5 py-1"
+                className={INPUT_CLASSES}
                 value={draft.severity}
                 onChange={(e) =>
                   setDrafts((prev) => ({
@@ -460,7 +478,7 @@ function SafetyPolicyPanel({ deviceId, targets }: { deviceId: string; targets: S
                   </option>
                 ))}
               </select>
-              <span className={`rounded px-1.5 py-0.5 text-[10px] ${target.configured ? "bg-emerald-900 text-emerald-200" : "bg-zinc-800 text-zinc-400"}`}>
+              <span className={`rounded px-1.5 py-0.5 text-[10px] ${target.configured ? "bg-success/15 text-success" : "bg-surface-3 text-ink-faint"}`}>
                 {target.configured ? "configurado" : `default: ${target.defaultSeverity}`}
               </span>
               <button className="btn" onClick={() => save(target)}>
@@ -488,27 +506,27 @@ const IO_MODE_LABEL: Record<string, string> = {
  */
 function IoMapPanel({ entries, onRefresh }: { entries: IoMapEntry[]; onRefresh: () => void }) {
   return (
-    <div className="mt-3 border-t border-zinc-800 pt-3">
+    <div className="mt-3 border-t border-line pt-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-medium text-zinc-400">Mapa de IO — estado conocido del dispositivo</h3>
+        <h3 className="text-xs font-medium text-ink-muted">Mapa de IO — estado conocido del dispositivo</h3>
         <button className="btn" onClick={onRefresh}>
           Actualizar
         </button>
       </div>
       {entries.length === 0 ? (
-        <p className="text-xs text-zinc-500">Sin datos todavía.</p>
+        <p className="text-xs text-ink-faint">Sin datos todavía.</p>
       ) : (
         <div className="flex flex-col gap-1">
           {entries.map((entry) => (
             <div
               key={entry.target}
-              className="flex items-center gap-2 rounded border border-zinc-800 px-2 py-1 text-xs"
+              className="flex items-center gap-2 rounded border border-line px-2 py-1 text-xs"
             >
-              <span className="w-20 shrink-0 font-mono text-zinc-400">{entry.target}</span>
-              <span className="w-16 shrink-0 text-zinc-500">{entry.type}</span>
-              <span className="w-20 shrink-0 text-zinc-500">{IO_MODE_LABEL[entry.mode] ?? entry.mode}</span>
+              <span className="w-20 shrink-0 font-mono text-ink-muted">{entry.target}</span>
+              <span className="w-16 shrink-0 text-ink-faint">{entry.type}</span>
+              <span className="w-20 shrink-0 text-ink-faint">{IO_MODE_LABEL[entry.mode] ?? entry.mode}</span>
               <span className="flex-1 font-mono">{entry.value === null ? "—" : String(entry.value)}</span>
-              {entry.label && <span className="shrink-0 text-zinc-500">{entry.label}</span>}
+              {entry.label && <span className="shrink-0 text-ink-faint">{entry.label}</span>}
             </div>
           ))}
         </div>
@@ -551,7 +569,7 @@ function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => v
 
   if (paired) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">
+      <div className="flex items-center gap-2 rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
         <span>Vinculado con tu cuenta.</span>
         <button
           className="btn"
@@ -561,17 +579,17 @@ function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => v
         >
           {syncState === "syncing" ? "Sincronizando…" : "Sincronizar configuración"}
         </button>
-        {syncState === "done" && <span className="text-xs text-emerald-400">Listo.</span>}
-        {syncState === "error" && <span className="text-xs text-red-400">No se pudo sincronizar.</span>}
+        {syncState === "done" && <span className="text-xs text-success">Listo.</span>}
+        {syncState === "error" && <span className="text-xs text-danger">No se pudo sincronizar.</span>}
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2">
-      <span className="text-sm text-zinc-400">Vincular con tu cuenta:</span>
+    <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2">
+      <span className="text-sm text-ink-muted">Vincular con tu cuenta:</span>
       <input
-        className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm uppercase tracking-widest"
+        className={`${INPUT_CLASSES} uppercase tracking-widest`}
         placeholder="Código de 8 caracteres"
         value={code}
         onChange={(e) => setCode(e.target.value)}
@@ -580,7 +598,7 @@ function PairingPanel({ paired, onPaired }: { paired: boolean; onPaired: () => v
       <button className="btn" disabled={pending || code.trim().length === 0} onClick={submit}>
         {pending ? "Vinculando…" : "Vincular"}
       </button>
-      {error && <span className="text-sm text-red-400">{error}</span>}
+      {error && <span className="text-sm text-danger">{error}</span>}
     </div>
   );
 }
@@ -624,13 +642,13 @@ function PluginsPanel({
   if (catalog.length === 0 && installed.length === 0) return null;
 
   return (
-    <section className="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-lg border border-zinc-800 p-4">
-      <h2 className="text-sm font-medium text-zinc-400">Plugins sidecar — instalables bajo demanda (ADR-056)</h2>
+    <section className="flex max-h-64 flex-col gap-2 overflow-y-auto rounded-lg border border-line p-4">
+      <h2 className="text-sm font-medium text-ink-muted">Plugins sidecar — instalables bajo demanda (ADR-056)</h2>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <h3 className="mb-1 text-xs font-medium text-zinc-500">Catálogo</h3>
+          <h3 className="mb-1 text-xs font-medium text-ink-faint">Catálogo</h3>
           <div className="flex flex-col gap-1.5">
-            {catalog.length === 0 && <p className="text-xs text-zinc-600">Sin plugins en el catálogo.</p>}
+            {catalog.length === 0 && <p className="text-xs text-ink-faint">Sin plugins en el catálogo.</p>}
             {catalog.map((entry) => {
               const pluginId = entry.manifest.id;
               const step = progress[pluginId];
@@ -639,13 +657,13 @@ function PluginsPanel({
               return (
                 <div
                   key={pluginId}
-                  className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5 text-xs"
+                  className="flex items-center justify-between gap-3 rounded border border-line px-2 py-1.5 text-xs"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium text-zinc-200">{entry.manifest.displayName}</div>
-                    {entry.description && <div className="truncate text-zinc-500">{entry.description}</div>}
-                    {step && <div className="text-sky-400">Instalando: {step}…</div>}
-                    {error && <div className="text-red-400">{error}</div>}
+                    <div className="font-medium text-ink">{entry.manifest.displayName}</div>
+                    {entry.description && <div className="truncate text-ink-faint">{entry.description}</div>}
+                    {step && <div className="text-accent">Instalando: {step}…</div>}
+                    {error && <div className="text-danger">{error}</div>}
                   </div>
                   <button
                     className="btn shrink-0"
@@ -661,17 +679,17 @@ function PluginsPanel({
         </div>
 
         <div>
-          <h3 className="mb-1 text-xs font-medium text-zinc-500">Instalados</h3>
+          <h3 className="mb-1 text-xs font-medium text-ink-faint">Instalados</h3>
           <div className="flex flex-col gap-1.5">
-            {installed.length === 0 && <p className="text-xs text-zinc-600">Ningún plugin sidecar instalado todavía.</p>}
+            {installed.length === 0 && <p className="text-xs text-ink-faint">Ningún plugin sidecar instalado todavía.</p>}
             {installed.map((plugin) => (
               <div
                 key={plugin.pluginId}
-                className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5 text-xs"
+                className="flex items-center justify-between gap-3 rounded border border-line px-2 py-1.5 text-xs"
               >
                 <div className="min-w-0">
-                  <div className="font-medium text-zinc-200">{plugin.manifest.displayName}</div>
-                  <div className="text-zinc-500">
+                  <div className="font-medium text-ink">{plugin.manifest.displayName}</div>
+                  <div className="text-ink-faint">
                     v{plugin.version} · instalado el {new Date(plugin.installedAt).toLocaleDateString()}
                   </div>
                 </div>
@@ -736,26 +754,26 @@ function VidPidCatalogPanel({
   const canSubmit = name.trim().length > 0 && vendorId.trim().length > 0 && productId.trim().length > 0;
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-zinc-800 p-4">
+    <section className="flex flex-col gap-3 rounded-lg border border-line p-4">
       <div>
-        <h2 className="text-sm font-medium text-zinc-400">Dispositivos que agregaste vos</h2>
-        <p className="text-xs text-zinc-500">
+        <h2 className="text-sm font-medium text-ink-muted">Dispositivos que agregaste vos</h2>
+        <p className="text-xs text-ink-faint">
           Si KAN no reconoce un dispositivo por su nombre cuando lo conectás, agregalo acá una vez y la próxima vez ya lo va a identificar solo.
         </p>
       </div>
 
       {entries.length === 0 ? (
-        <p className="text-xs text-zinc-600">Todavía no agregaste ningún dispositivo.</p>
+        <p className="text-xs text-ink-faint">Todavía no agregaste ningún dispositivo.</p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {entries.map((entry) => (
             <div
               key={`${entry.vendorId}-${entry.productId}`}
-              className="flex items-center justify-between gap-3 rounded border border-zinc-800 px-2 py-1.5 text-xs"
+              className="flex items-center justify-between gap-3 rounded border border-line px-2 py-1.5 text-xs"
             >
               <div className="min-w-0">
-                <div className="truncate font-medium text-zinc-200">{entry.name}</div>
-                <div className="text-zinc-500">
+                <div className="truncate font-medium text-ink">{entry.name}</div>
+                <div className="text-ink-faint">
                   VID {entry.vendorId} · PID {entry.productId}
                 </div>
               </div>
@@ -767,32 +785,32 @@ function VidPidCatalogPanel({
         </div>
       )}
 
-      <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+      <div className="flex flex-col gap-2 border-t border-line pt-3">
         <div className="grid grid-cols-3 gap-2">
           <input
-            className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm"
+            className={INPUT_CLASSES}
             placeholder='Nombre (ej: "Mi PLC Siemens custom")'
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <input
-            className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm"
+            className={INPUT_CLASSES}
             placeholder="VID (ej: 0x1234)"
             value={vendorId}
             onChange={(e) => setVendorId(e.target.value)}
           />
           <input
-            className="rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm"
+            className={INPUT_CLASSES}
             placeholder="PID (ej: 0x5678)"
             value={productId}
             onChange={(e) => setProductId(e.target.value)}
           />
         </div>
-        <p className="text-xs text-zinc-600">
+        <p className="text-xs text-ink-faint">
           ¿No sabés estos números? Los encontrás en el Administrador de dispositivos de Windows, bajo Propiedades del
           dispositivo.
         </p>
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
         <button className="btn self-start" disabled={submitting || !canSubmit} onClick={submit}>
           {submitting ? "Agregando…" : "Agregar dispositivo"}
         </button>
@@ -811,23 +829,23 @@ function VidPidCatalogPanel({
 function PluginPermissionModal({ plugin }: { plugin: PendingPluginPermission }) {
   const { permissions } = plugin;
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-sm rounded-lg border border-sky-800 bg-zinc-900 p-5">
-        <h3 className="mb-1 text-base font-semibold text-sky-300">Nuevo plugin: {plugin.displayName}</h3>
-        <p className="mb-3 text-sm text-zinc-400">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="glass hud-panel w-full max-w-sm p-6 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.55)]">
+        <h3 className="mb-1 text-sm font-semibold text-ink">Nuevo plugin: {plugin.displayName}</h3>
+        <p className="mb-3 text-sm text-ink-muted">
           Este plugin pide los siguientes permisos. No se habilita ni descubre dispositivos hasta que lo apruebes.
         </p>
-        <div className="mb-4 flex flex-col gap-1.5 rounded bg-zinc-950 p-2 text-xs text-zinc-300">
+        <div className="mb-4 flex flex-col gap-1.5 rounded bg-surface-3 p-2 text-xs text-ink-muted">
           <div>
-            <span className="text-zinc-500">Dispositivos: </span>
+            <span className="text-ink-faint">Dispositivos: </span>
             {permissions.devices.length > 0 ? permissions.devices.join(", ") : "ninguno"}
           </div>
           <div>
-            <span className="text-zinc-500">Red: </span>
+            <span className="text-ink-faint">Red: </span>
             {permissions.network ? "sí" : "no"}
           </div>
           <div>
-            <span className="text-zinc-500">Filesystem: </span>
+            <span className="text-ink-faint">Filesystem: </span>
             {permissions.filesystem.length > 0 ? permissions.filesystem.join(", ") : "ninguno"}
           </div>
         </div>
@@ -835,10 +853,7 @@ function PluginPermissionModal({ plugin }: { plugin: PendingPluginPermission }) 
           <button className="btn" onClick={() => window.kan.rejectPluginPermissions(plugin.pluginId)}>
             Rechazar
           </button>
-          <button
-            className="rounded bg-sky-600 px-3 py-1.5 text-sm font-medium text-black hover:bg-sky-500"
-            onClick={() => window.kan.approvePluginPermissions(plugin.pluginId)}
-          >
+          <button className={PRIMARY_BUTTON_CLASSES} onClick={() => window.kan.approvePluginPermissions(plugin.pluginId)}>
             Aprobar
           </button>
         </div>
@@ -852,30 +867,29 @@ function PluginPermissionModal({ plugin }: { plugin: PendingPluginPermission }) 
  * FirstRunWelcome.tsx en apps/web — no menciona "chat" a propósito, sirve
  * igual para este panel de hardware local). Reemplaza el panel completo
  * hasta que el usuario hace clic en "Empezar" — gate en `App()`, ver
- * `WELCOME_SEEN_KEY`.
+ * `WELCOME_SEEN_KEY`. Mismo tratamiento visual que su equivalente en
+ * apps/web (glass hud-panel = Card padding="lg", badge numerado en
+ * bg-gradient-accent, botón primario).
  */
 function FirstRunWelcome({ onStart }: { onStart: () => void }) {
   return (
-    <div className="flex h-screen items-center justify-center bg-zinc-950 p-4 text-zinc-50">
-      <div className="w-full max-w-md rounded-lg border border-zinc-800 bg-zinc-900 p-6 text-center">
+    <div className="flex h-screen items-center justify-center bg-surface p-4 text-ink">
+      <div className="glass hud-panel w-full max-w-md p-6 text-center shadow-[0_20px_50px_-24px_rgba(0,0,0,0.55)]">
         <p className="text-xl font-medium tracking-tight">Hola, soy KAN.</p>
-        <p className="mt-1 text-sm text-zinc-400">Puedo controlar y monitorear tu hardware desde acá.</p>
+        <p className="mt-1 text-sm text-ink-faint">Puedo controlar y monitorear tu hardware desde acá.</p>
 
         <ul className="mt-6 flex flex-col gap-3 text-left">
           {WELCOME_EXAMPLES.map((example, index) => (
             <li key={example} className="flex items-start gap-3">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-600 text-xs font-bold text-black">
+              <span className="bg-gradient-accent flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white">
                 {index + 1}
               </span>
-              <span className="pt-0.5 text-sm text-zinc-300">{example}</span>
+              <span className="pt-0.5 text-sm text-ink-muted">{example}</span>
             </li>
           ))}
         </ul>
 
-        <button
-          className="mt-7 w-full rounded bg-sky-600 px-4 py-2 text-sm font-medium text-black hover:bg-sky-500"
-          onClick={onStart}
-        >
+        <button className={`mt-7 w-full ${PRIMARY_BUTTON_CLASSES}`} onClick={onStart}>
           Empezar
         </button>
       </div>
@@ -885,10 +899,10 @@ function FirstRunWelcome({ onStart }: { onStart: () => void }) {
 
 function ConfirmationModal({ confirmation }: { confirmation: PendingConfirmation }) {
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-sm rounded-lg border border-amber-800 bg-zinc-900 p-5">
-        <h3 className="mb-1 text-base font-semibold text-amber-300">¿Confirmás esta acción?</h3>
-        <p className="mb-4 text-sm text-zinc-400">{describeConfirmationConsequence(confirmation.severity)}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="glass hud-panel w-full max-w-sm p-6 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.55)]">
+        <h3 className="mb-1 text-sm font-semibold text-ink">¿Confirmás esta acción?</h3>
+        <p className="mb-4 text-sm text-ink-muted">{describeConfirmationConsequence(confirmation.severity)}</p>
         <div className="flex justify-end gap-2">
           <button
             className="btn"
@@ -897,7 +911,7 @@ function ConfirmationModal({ confirmation }: { confirmation: PendingConfirmation
             No, cancelar
           </button>
           <button
-            className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-black hover:bg-amber-500"
+            className="rounded-md bg-warning px-3 py-1.5 text-sm font-medium text-black transition-opacity hover:opacity-90"
             onClick={() => window.kan.resolveConfirmation(confirmation.id, true)}
           >
             Sí, hacelo

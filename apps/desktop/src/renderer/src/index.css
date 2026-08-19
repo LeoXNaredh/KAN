@@ -1,24 +1,103 @@
 @import "tailwindcss";
 
+/*
+ * Mismos tokens semánticos que apps/web/app/globals.css (valores dark,
+ * los que ya usa la web en la práctica) — apps/desktop no tiene selector de
+ * tema ni de acento, así que van directo en :root en vez de repartidos entre
+ * :root/:root.dark. Sin puente real entre ambos temas (paquetes separados,
+ * sin librería de UI compartida) — son los mismos valores copiados a mano,
+ * a mantener en sync si algún día cambia el acento default de la web.
+ */
 :root {
   --background: #0a0a0a;
   --foreground: #ededed;
+
+  --color-surface: #0f0f15;
+  --color-surface-2: #151520;
+  --color-surface-3: #1a1a25;
+  --color-line: #26262f;
+  --color-line-strong: #34343f;
+  --color-ink: #e8e8f0;
+  --color-ink-muted: #a8a8b8;
+  --color-ink-faint: #888899;
+  --color-accent: #8b5cf6;
+  --color-accent-2: var(--color-accent);
+  --color-success: #22c97a;
+  --color-warning: #e0a020;
+  --color-danger: #e5484d;
+
+  --gradient-accent: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 45%, black));
+}
+
+@theme inline {
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-surface-3: var(--color-surface-3);
+  --color-line: var(--color-line);
+  --color-line-strong: var(--color-line-strong);
+  --color-ink: var(--color-ink);
+  --color-ink-muted: var(--color-ink-muted);
+  --color-ink-faint: var(--color-ink-faint);
+  --color-accent: var(--color-accent);
+  --color-accent-2: var(--color-accent-2);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  /* Geist Sans (Google Fonts, <link> en index.html) — mismo tipo que
+     apps/web (next/font/google), con fallback real por si no hay red. */
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+ * Copiadas tal cual de apps/web/app/globals.css — las dos únicas utilidades
+ * hechas a mano que hacen falta para que un modal se vea como `Card` de la
+ * web (`glass hud-panel`, ver PendingConfirmationModal.tsx). El resto del
+ * sistema de la web (glow/gradiente de marca, animaciones de KANAvatar) no
+ * aplica acá: este panel no tiene identidad KAN, solo comparte paleta.
+ */
+.bg-gradient-accent {
+  background-image: var(--gradient-accent);
+}
+
+.glass {
+  background: color-mix(in srgb, var(--color-surface-2) 55%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--color-line);
+}
+
+.hud-panel {
+  border-radius: 16px;
+  position: relative;
+}
+
+.hud-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  border: 1px solid var(--color-line);
 }
 
 .btn {
   border-radius: 0.25rem;
-  border: 1px solid #3f3f46;
+  border: 1px solid var(--color-line);
   padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
-  background: #18181b;
+  background: var(--color-surface-2);
+  color: var(--color-ink);
 }
 
 .btn:hover {
-  background: #27272a;
+  background: var(--color-surface-3);
+}
+
+.btn:disabled {
+  opacity: 0.5;
 }

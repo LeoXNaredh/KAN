@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Bell, Clock, Loader2, Plus, Repeat, Trash2, TriangleAlert, X } from "lucide-react";
+import { Bell, Clock, Plus, Repeat, Trash2, TriangleAlert, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Reveal } from "@/components/ui/Reveal";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
+import { SkeletonText } from "@/components/ui/Skeleton";
 import type { ScheduledJobView } from "@/lib/jobs/types";
 
 interface ToolOption {
@@ -330,9 +331,11 @@ export function AutomatizacionesClient() {
       <Card>
         <h2 className="mb-3 text-sm font-medium text-ink-muted">Jobs programados</h2>
         {loading ? (
-          <p className="flex items-center gap-2 text-sm text-ink-faint">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Cargando...
-          </p>
+          <div className="flex flex-col gap-2">
+            <SkeletonText className="h-9" />
+            <SkeletonText className="h-9" />
+            <SkeletonText className="h-9" />
+          </div>
         ) : jobs.length === 0 ? (
           <p className="text-sm text-ink-faint">No hay automatizaciones programadas todavía.</p>
         ) : (

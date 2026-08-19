@@ -1,5 +1,7 @@
+import { Activity } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Reveal } from "@/components/ui/Reveal";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { fetchAuditLog } from "@/lib/status/fetchAuditLog";
 import { translateAuditEntry } from "@/lib/status/translateAuditEntry";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
@@ -24,7 +26,11 @@ export default async function LogsPage() {
             No se pudo conectar con KAN — el historial no está disponible en este momento.
           </p>
         ) : entries.length === 0 ? (
-          <p className="text-sm text-ink-faint">Sin actividad todavía.</p>
+          <EmptyState
+            icon={Activity}
+            title="Sin actividad todavía"
+            description="Acá vas a ver el historial de lo que KAN hizo y por qué."
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {entries

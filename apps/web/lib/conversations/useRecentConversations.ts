@@ -13,8 +13,14 @@ const POLL_INTERVAL_MS = 15_000;
  * esto es la forma más simple de que el sidebar no quede desactualizado
  * mientras el usuario chatea en `/conversacion` sin navegar.
  */
-export function useRecentConversations(limit = 5): { conversations: ConversationSummary[]; refresh: () => void } {
+export function useRecentConversations(
+  limit = 5,
+): { conversations: ConversationSummary[]; loading: boolean; refresh: () => void } {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  // Arranca en `true` — sin esto, una lista vacía real ("sin chats
+  // todavía") es indistinguible de "la primera carga todavía no volvió",
+  // que es justo lo que necesita el skeleton del Sidebar.
+  const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -29,6 +35,8 @@ export function useRecentConversations(limit = 5): { conversations: Conversation
         if (!cancelled) setConversations(data.conversations ?? []);
       } catch {
         // Sin sesión o Supabase caído — el sidebar sigue funcionando sin la lista.
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -44,5 +52,5 @@ export function useRecentConversations(limit = 5): { conversations: Conversation
     };
   }, [limit, reloadKey]);
 
-  return { conversations, refresh: () => setReloadKey((key) => key + 1) };
+  return { conversations, loading, refresh: () => setReloadKey((key) => key + 1) };
 }

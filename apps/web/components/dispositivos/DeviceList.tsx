@@ -6,6 +6,8 @@ import { useSystemStatusContext } from "@/lib/status/SystemStatusProvider";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 import { Card } from "@/components/ui/Card";
 import { Reveal } from "@/components/ui/Reveal";
+import { SkeletonCard } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { useDeviceDisplayNames } from "@/lib/devices/useDeviceDisplayNames";
 
 /**
@@ -29,15 +31,23 @@ export function DeviceList() {
   const [searchQuery, setSearchQuery] = useState("");
 
   if (loading && !status) {
-    return <p className="text-sm text-ink-faint">Buscando dispositivos vinculados…</p>;
+    return (
+      <div className="flex flex-col gap-3" aria-label="Buscando dispositivos vinculados…">
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
   }
   const agents = status?.edgeAgents ?? [];
 
   if (agents.length === 0) {
     return (
-      <p className="text-sm text-ink-faint">
-        Todavía no vinculaste ningún equipo — generá un código más abajo y pegalo en la app de escritorio de KAN.
-      </p>
+      <EmptyState
+        icon={Cpu}
+        title="Ningún dispositivo conectado"
+        description="Todavía no vinculaste ningún equipo — generá un código más abajo y pegalo en la app de escritorio de KAN."
+      />
     );
   }
 

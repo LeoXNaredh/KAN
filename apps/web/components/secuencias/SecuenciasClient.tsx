@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Loader2, Play, Plus, TriangleAlert, Trash2, X } from "lucide-react";
+import { Bell, Play, Plus, TriangleAlert, Trash2, Workflow, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES, SECONDARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
+import { SkeletonText } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import type { JsonSchema } from "@kan/plugin-contract";
 import type {
   AlertView,
@@ -438,6 +440,7 @@ export function SecuenciasClient() {
 
           <div className="flex flex-col gap-2">
             <span className="text-sm text-ink-muted">Pasos (se ejecutan en orden; se detiene si uno falla o necesita confirmación)</span>
+            {loading && <SkeletonText className="h-9 max-w-xs" />}
             {steps.map((step, index) => {
               const device = devices.find((d) => d.deviceId === step.deviceId);
               const capability = capabilityByRef.get(step.capabilityRef)?.capability;
@@ -630,7 +633,11 @@ export function SecuenciasClient() {
       <Card>
         <h2 className="mb-3 text-sm font-medium text-ink-muted">Mis secuencias guardadas</h2>
         {savedSequences.length === 0 ? (
-          <p className="text-sm text-ink-faint">No guardaste ninguna secuencia todavía.</p>
+          <EmptyState
+            icon={Workflow}
+            title="Todavía no creaste ninguna secuencia"
+            description="Armá una arriba y guardala para volver a ejecutarla cuando quieras."
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {savedSequences.map((saved) => (
@@ -665,11 +672,16 @@ export function SecuenciasClient() {
       <Card>
         <h2 className="mb-3 text-sm font-medium text-ink-muted">Mis alertas</h2>
         {alertsLoading ? (
-          <p className="flex items-center gap-2 text-sm text-ink-faint">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Cargando...
-          </p>
+          <div className="flex flex-col gap-2">
+            <SkeletonText className="h-9" />
+            <SkeletonText className="h-9" />
+          </div>
         ) : alerts.length === 0 ? (
-          <p className="text-sm text-ink-faint">No tenés alertas activas todavía.</p>
+          <EmptyState
+            icon={Bell}
+            title="No tenés alertas activas"
+            description="Creá una secuencia con condición para que KAN te avise solo."
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {alerts.map((alert) => (
