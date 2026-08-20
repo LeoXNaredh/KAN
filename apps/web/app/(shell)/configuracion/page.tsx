@@ -1,15 +1,15 @@
 import Link from "next/link";
-import { User, Brain, Sparkles, Volume2, Puzzle, Palette, Bell } from "lucide-react";
+import { User, Brain, Sparkles, Volume2, Puzzle, Palette, Bell, Cpu, LogOut } from "lucide-react";
 import { GEMINI_TTS_VOICES, DEFAULT_VOICE } from "@kan/voice-abstraction";
 import { Card } from "@/components/ui/Card";
 import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
-import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
+import { INPUT_CLASSES, PRIMARY_BUTTON_CLASSES, SECONDARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 import { MemoryManager } from "@/components/configuracion/MemoryManager";
 import { PluginConfigManager } from "@/components/configuracion/PluginConfigManager";
 import { ThemeAccentPicker } from "@/components/configuracion/ThemeAccentPicker";
 import { PushNotificationToggle } from "@/components/configuracion/PushNotificationToggle";
 import { buildAuthUseCases } from "@/lib/auth/composition";
-import { updateDisplayNameAction } from "@/lib/auth/actions";
+import { updateDisplayNameAction, signOutAction } from "@/lib/auth/actions";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 import { buildMemoryUseCases } from "@/lib/memory/composition";
 import { buildPreferencesUseCases } from "@/lib/preferences/composition";
@@ -87,6 +87,24 @@ export default async function ConfiguracionPage({
               </button>
             </div>
             <p className="text-xs text-ink-faint">Sin nombre, KAN te va a saludar sin usar ninguno — nunca inventa uno.</p>
+          </form>
+        </Card>
+      )}
+
+      {user && (
+        <Card className="fade-in flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            Cuenta
+          </h2>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-ink-faint">Sesión iniciada como</span>
+            <span className="text-sm text-ink">{user.email}</span>
+          </div>
+          <form action={signOutAction}>
+            <button type="submit" className={`self-start ${SECONDARY_BUTTON_CLASSES}`}>
+              Cerrar sesión
+            </button>
           </form>
         </Card>
       )}
@@ -183,6 +201,21 @@ export default async function ConfiguracionPage({
           </p>
           <PluginConfigManager values={pluginConfigValues} />
         </div>
+      )}
+
+      {user && (
+        <Card className="fade-in flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+            <Cpu className="h-4 w-4" aria-hidden="true" />
+            Dispositivos
+          </h2>
+          <p className="text-xs text-ink-faint">
+            Ver el estado de tus equipos y sensores conectados, y compartir acceso con otros usuarios.
+          </p>
+          <Link href="/dispositivos" className={`self-start ${SECONDARY_BUTTON_CLASSES}`}>
+            Ir a Dispositivos
+          </Link>
+        </Card>
       )}
 
       {user && (

@@ -2,12 +2,11 @@ import { Activity } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Reveal } from "@/components/ui/Reveal";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ExportLogsButton } from "@/components/logs/ExportLogsButton";
 import { fetchAuditLog } from "@/lib/status/fetchAuditLog";
-import { translateAuditEntry } from "@/lib/status/translateAuditEntry";
+import { ACTOR_LABEL, translateAuditEntry } from "@/lib/status/translateAuditEntry";
 import { formatRelativeTime } from "@/lib/status/formatRelativeTime";
 import { getCurrentUserTokenCached } from "@/lib/auth/getCurrentUserTokenCached";
-
-const ACTOR_LABEL: Record<string, string> = { llm: "KAN", user: "Vos", system: "Sistema" };
 
 export default async function LogsPage() {
   const token = await getCurrentUserTokenCached();
@@ -15,9 +14,12 @@ export default async function LogsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold text-ink">Logs</h1>
-        <p className="text-sm text-ink-faint">Historial de actividad y auditoría de KAN (docs/12 §9).</p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-ink">Logs</h1>
+          <p className="text-sm text-ink-faint">Historial de actividad y auditoría de KAN (docs/12 §9).</p>
+        </div>
+        {entries && entries.length > 0 && <ExportLogsButton entries={entries} />}
       </div>
 
       <Card className="fade-in">
