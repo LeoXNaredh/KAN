@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { access, constants, readFile } from "node:fs/promises";
 import { platform } from "node:os";
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from "electron";
 import {
   EdgeAgent,
   EdgeAgentBus,
@@ -47,6 +47,7 @@ import { OpcuaDevicePlugin } from "@kan/plugin-opcua";
 import { MqttDevicePlugin } from "@kan/plugin-mqtt";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let edgeAgent: EdgeAgent | undefined;
 let configStore: JsonFileConfigStore | undefined;
 let edgeAgentId: string | undefined;
@@ -609,6 +610,12 @@ async function syncPluginConfig(): Promise<{ ok: true } | { ok: false; error: st
 }
 
 function createWindow(): void {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
   mainWindow = new BrowserWindow({
     width: 1080,
     height: 760,
@@ -629,9 +636,36 @@ function createWindow(): void {
   }
 }
 
+/**
+ * Reemplaza la ventana visible al arrancar (requisito: correr KAN sin abrir
+ * ninguna pestaña, control 100% desde apps/web vía Gateway/Core — el mismo
+ * canal que ya resuelve confirmaciones en la nube, ver
+ * `EdgeAgent.handleConfirmationResolve`). El panel local sigue existiendo
+ * (`createWindow()` arriba, sin tocar) por si hace falta abrirlo a mano
+ * (ej. primer pairing) — "Abrir KAN" en el menú del tray.
+ */
+function createTray(): void {
+  tray = new Tray(nativeImage.createFromPath(join(__dirname, "../../build/icon.ico")));
+  tray.setToolTip("K.A.N — Edge Agent");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Abrir KAN", click: () => createWindow() },
+      { type: "separator" },
+      {
+        label: "Salir",
+        click: () => {
+          void edgeAgent?.shutdown();
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on("click", () => createWindow());
+}
+
 app.whenReady().then(async () => {
   registerIpcHandlers();
-  createWindow();
+  createTray();
   edgeAgent = await createEdgeAgent();
 
   app.on("activate", () => {
@@ -639,7 +673,11 @@ app.whenReady().then(async () => {
   });
 });
 
+// Sin esto, cerrar la única ventana (abierta a mano desde el tray) mataría
+// el proceso entero — con la ventana ya no siendo el modo normal de
+// arranque, el Edge Agent tiene que seguir corriendo en segundo plano
+// después de que se cierre. Solo `app.quit()` desde "Salir" en el tray
+// termina el proceso ahora.
 app.on("window-all-closed", () => {
-  void edgeAgent?.shutdown();
-  if (process.platform !== "darwin") app.quit();
+  // No-op a propósito.
 });
