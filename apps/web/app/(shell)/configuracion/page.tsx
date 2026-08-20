@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { User, Brain, Sparkles, Volume2, Puzzle, Palette, Bell, Cpu, LogOut } from "lucide-react";
+import { User, Brain, Sparkles, Volume2, Puzzle, Palette, Bell, Cpu, LogOut, Mail } from "lucide-react";
 import { GEMINI_TTS_VOICES, DEFAULT_VOICE } from "@kan/voice-abstraction";
 import { Card } from "@/components/ui/Card";
 import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
@@ -13,7 +13,7 @@ import { updateDisplayNameAction, signOutAction } from "@/lib/auth/actions";
 import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 import { buildMemoryUseCases } from "@/lib/memory/composition";
 import { buildPreferencesUseCases } from "@/lib/preferences/composition";
-import { updatePersonalityAction, updateVoiceAction } from "@/lib/preferences/actions";
+import { updatePersonalityAction, updateVoiceAction, updateDailyReportAction } from "@/lib/preferences/actions";
 
 const PLUGIN_CONFIG_KEY_PREFIX = "plugin_config:";
 
@@ -31,6 +31,9 @@ export default async function ConfiguracionPage({
   const personality = typeof personalityPreference === "string" ? personalityPreference : "";
   const voicePreference = preferences.find((preference) => preference.key === "ttsVoice")?.value;
   const voice = typeof voicePreference === "string" ? voicePreference : DEFAULT_VOICE;
+  const dailyReportEnabled = preferences.find((preference) => preference.key === "dailyReportEnabled")?.value === true;
+  const dailyReportHourPreference = preferences.find((preference) => preference.key === "dailyReportHour")?.value;
+  const dailyReportHour = typeof dailyReportHourPreference === "number" ? dailyReportHourPreference : 9;
   // Mismo `preferences` ya cargado arriba — sin fetch extra. `plugin_config:*`
   // conviven con el resto de las preferencias en la misma tabla
   // (user_preferences), namespaced por prefijo (ver
@@ -228,6 +231,39 @@ export default async function ConfiguracionPage({
             Recibí un aviso en tu celular cuando se dispare una alerta, aunque KAN esté cerrado.
           </p>
           <PushNotificationToggle />
+        </Card>
+      )}
+
+      {user && (
+        <Card className="fade-in flex flex-col gap-4">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+            <Mail className="h-4 w-4" aria-hidden="true" />
+            Reporte diario por email
+          </h2>
+          <p className="text-xs text-ink-faint">
+            Un resumen de las últimas 24 horas (alertas disparadas, acciones ejecutadas, sensores fuera de rango) a
+            tu email, todos los días a la hora que elijas.
+          </p>
+
+          <form action={updateDailyReportAction} className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm text-ink-muted">
+              <input type="checkbox" name="dailyReportEnabled" defaultChecked={dailyReportEnabled} />
+              Activar reporte diario
+            </label>
+            <label className="flex max-w-[10rem] flex-col gap-1 text-xs text-ink-faint">
+              Hora (UTC)
+              <select name="dailyReportHour" defaultValue={dailyReportHour} className={INPUT_CLASSES}>
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <option key={hour} value={hour}>
+                    {String(hour).padStart(2, "0")}:00
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className={`self-start ${PRIMARY_BUTTON_CLASSES}`}>
+              Guardar
+            </button>
+          </form>
         </Card>
       )}
 

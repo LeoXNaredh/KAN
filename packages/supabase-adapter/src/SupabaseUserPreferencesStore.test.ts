@@ -78,4 +78,29 @@ describe("SupabaseUserPreferencesStore", () => {
 
     await expect(store.remove("u1", "personality")).rejects.toThrow("no encontrado");
   });
+
+  it("listAllForKey() cruza usuarios (DailyReportService, service_role) — traduce todas las filas de esa key", async () => {
+    const client = createFakeFromClient({
+      user_preferences: {
+        data: [
+          { user_id: "u1", key: "dailyReportEnabled", value: true, updated_at: "2026-01-01T00:00:00.000Z" },
+          { user_id: "u2", key: "dailyReportEnabled", value: true, updated_at: "2026-01-02T00:00:00.000Z" },
+        ],
+        error: null,
+      },
+    });
+    const store = new SupabaseUserPreferencesStore(client);
+
+    expect(await store.listAllForKey("dailyReportEnabled")).toEqual([
+      { userId: "u1", key: "dailyReportEnabled", value: true, updatedAt: "2026-01-01T00:00:00.000Z" },
+      { userId: "u2", key: "dailyReportEnabled", value: true, updatedAt: "2026-01-02T00:00:00.000Z" },
+    ]);
+  });
+
+  it("listAllForKey() lanza si Supabase devuelve error", async () => {
+    const client = createFakeFromClient({ user_preferences: { data: null, error: { message: "db caída" } } });
+    const store = new SupabaseUserPreferencesStore(client);
+
+    await expect(store.listAllForKey("dailyReportEnabled")).rejects.toThrow("db caída");
+  });
 });

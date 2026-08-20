@@ -329,9 +329,11 @@ describe("Gateway (integración, transporte simulado)", () => {
     const result = await executePromise;
     expect(result).toEqual({ success: true, data: { temperatureC: 22.5 }, error: undefined });
 
-    // Toda ejecución de tool queda auditada (docs/12 §6).
-    expect(auditStore.entries).toHaveLength(1);
+    // Toda ejecución de tool queda auditada (docs/12 §6) — la propuesta
+    // (antes de ejecutar) más el resultado real (aditivo, DailyReportService).
+    expect(auditStore.entries).toHaveLength(2);
     expect(auditStore.entries[0]).toMatchObject({ actor: "llm", action: "tool.execute" });
+    expect(auditStore.entries[1]).toMatchObject({ actor: "system", action: "tool.execute.result", metadata: { success: true } });
   });
 
   it("ejecutar una tool con nombre inventado por el LLM se rechaza antes de tocar el Edge Agent", async () => {
@@ -389,7 +391,11 @@ describe("Gateway (integración, transporte simulado)", () => {
 
     const result = await executePromise;
     expect(result).toEqual({ success: false, data: undefined, error: "el driver explotó" });
-    expect(auditStore.entries).toHaveLength(1);
+    expect(auditStore.entries).toHaveLength(2);
+    expect(auditStore.entries[1]).toMatchObject({
+      action: "tool.execute.result",
+      metadata: { success: false, error: "el driver explotó" },
+    });
   });
 
   it("bootstrap() arranca el scheduler; un job de un paso se somete al Task Orchestrator y queda auditado (P6)", async () => {

@@ -47,4 +47,10 @@ export class SupabaseUserPreferencesStore implements UserPreferencesPort {
     const { error } = await this.client.from("user_preferences").delete().eq("user_id", userId).eq("key", key);
     if (error) throw new Error(error.message);
   }
+
+  async listAllForKey(key: string): Promise<UserPreference[]> {
+    const { data, error } = await this.client.from("user_preferences").select("*").eq("key", key);
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as PreferenceRow[]).map(toUserPreference);
+  }
 }

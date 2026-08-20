@@ -12,6 +12,7 @@ import {
   SupabasePushTokenStore,
   SupabaseAgentGrantStore,
   SupabaseWebPushSubscriptionStore,
+  SupabaseUserPreferencesStore,
 } from "@kan/supabase-adapter";
 import {
   Gateway,
@@ -32,6 +33,7 @@ import {
   DeviceEnrichmentService,
   InMemoryPluginPackageTicketStore,
   InMemoryEdgeTicketStore,
+  ResendEmailService,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
 import { createPairingRoutes } from "./http/pairingRoutes";
@@ -79,6 +81,18 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
 const VAPID_SUBJECT = process.env.VAPID_SUBJECT;
+// Reporte diario por email (DailyReportService) — opcional, mismo criterio
+// que VAPID_*: sin RESEND_API_KEY, el Gateway sigue funcionando igual,
+// simplemente sin este reporte. RESEND_FROM_EMAIL cae al sandbox de Resend
+// (onboarding@resend.dev) si no está configurada — alcance limitado hasta
+// verificar un dominio propio en el dashboard de Resend (resend.com/domains).
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "KAN <onboarding@resend.dev>";
+// URL pública de apps/web para el link "Ver en KAN" del reporte — cae al
+// primer origin de KAN_WEB_ORIGIN si no está seteada aparte (mismo host,
+// distinto propósito: KAN_WEB_ORIGIN es un allowlist de CORS, esto es un
+// link de verdad para un humano).
+const KAN_APP_URL = process.env.KAN_APP_URL || ALLOWED_WEB_ORIGINS[0] || "http://localhost:3000";
 
 const logger = new ConsoleLogger();
 const bus = new GatewayBus();
@@ -182,6 +196,24 @@ const deviceEnrichmentService = deviceResearchAdapter
   ? new DeviceEnrichmentService(memoryStore, deviceResearchAdapter, notificationService, bus, logger)
   : undefined;
 
+// Reporte diario por email (DailyReportService) — mismo cliente
+// service_role otra vez, misma tabla que ya usa /configuracion
+// (personality/ttsVoice/plugin_config:*), namespaced con dos keys nuevas
+// (dailyReportEnabled/dailyReportHour).
+const userPreferencesStore = new SupabaseUserPreferencesStore(supabaseClient);
+const emailService = RESEND_API_KEY ? new ResendEmailService(RESEND_API_KEY, RESEND_FROM_EMAIL, logger) : undefined;
+if (!emailService) {
+  logger.warn("[gateway] RESEND_API_KEY no configurada — el reporte diario por email queda deshabilitado.");
+}
+// Admin API real de Supabase (no el workaround de listUsers() paginado que
+// usa SupabaseAgentGrantStore para email->userId — acá es al revés,
+// userId->email, sí tiene endpoint directo).
+async function resolveUserEmail(userId: string): Promise<string | undefined> {
+  const { data, error } = await supabaseClient.auth.admin.getUserById(userId);
+  if (error || !data?.user?.email) return undefined;
+  return data.user.email;
+}
+
 const gateway = new Gateway({
   bus,
   connectionManager,
@@ -195,6 +227,10 @@ const gateway = new Gateway({
   // Sin voz en tiempo real configurada (sin GEMINI_API_KEY), las alertas
   // siguen avisando igual por push/app — solo sin este canal extra.
   speakToUser: geminiLiveProxy ? (userId, text) => geminiLiveProxy.speak(userId, text) : undefined,
+  emailService,
+  userPreferences: userPreferencesStore,
+  resolveUserEmail,
+  appUrl: KAN_APP_URL,
 });
 
 // Hidratación de acceso multi-usuario al arrancar (cubre un restart del

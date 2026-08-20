@@ -46,6 +46,22 @@ export class OrchestratorToolExecutor implements ToolExecutorPort {
         ? this.buildPendingConfirmationResult(result.confirmationId!, call, capability)
         : { success: result.status === "done", data: result.data, error: result.error };
 
+    // Segunda entrada aditiva (DailyReportService, reporte diario por
+    // email): "tool.execute" arriba se audita ANTES de ejecutar (es la
+    // propuesta, no el resultado) — sin esto no hay forma de saber
+    // exitosas/fallidas después. `pending_confirmation` no genera esta
+    // entrada: su resultado final (si se aprueba) no se audita hoy tampoco
+    // (límite preexistente de ConfirmationOrchestrator, fuera de alcance acá).
+    if (result.status !== "pending_confirmation") {
+      this.audit.record({
+        actor: "system",
+        action: "tool.execute.result",
+        subject: call.ref,
+        userId: requestingUserId,
+        metadata: { success: execResult.success, error: execResult.error },
+      });
+    }
+
     this.bus.emit("tool.executed", { name: call.ref, result: execResult });
     return execResult;
   }

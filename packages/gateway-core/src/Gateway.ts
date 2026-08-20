@@ -20,6 +20,9 @@ import { OrchestratorToolExecutor } from "./application/ToolExecutor";
 import { SCHEDULER_TOOL_DESCRIPTORS, isSchedulerToolName, executeSchedulerTool } from "./application/schedulerTools";
 import { ALERT_TOOL_DESCRIPTORS, isAlertToolName, executeAlertTool } from "./application/alertTools";
 import { AlertMonitor } from "./application/AlertMonitor";
+import { DailyReportService } from "./application/DailyReportService";
+import type { EmailServicePort } from "./domain/ports/EmailServicePort";
+import type { UserPreferencesPort } from "@kan/core";
 import { describeAlertTriggered } from "./application/alertMessage";
 import { SEQUENCE_TOOL_DESCRIPTORS, isSequenceToolName, parseSequenceSteps, type SequenceStepReport } from "./application/sequenceTools";
 import { TelemetryHistoryStore } from "./application/TelemetryHistoryStore";
@@ -51,6 +54,16 @@ export interface GatewayDeps {
   speakToUser?: (userId: string, text: string) => boolean;
   /** Solo para tests — sin esto, AlertMonitor sondea cada 30s (su default interno). */
   alertPollIntervalMs?: number;
+  /**
+   * Reporte diario por email (DailyReportService) — los 4 quedan atados
+   * entre sí: sin `emailService` (sin RESEND_API_KEY configurada en
+   * server.ts) el servicio directamente no se construye, mismo criterio
+   * condicional que `deviceEnrichmentService`/`geminiLiveProxy`.
+   */
+  emailService?: EmailServicePort;
+  userPreferences?: UserPreferencesPort;
+  resolveUserEmail?: (userId: string) => Promise<string | undefined>;
+  appUrl?: string;
 }
 
 /**
@@ -70,6 +83,7 @@ export class Gateway {
   readonly auditService: AuditService;
   readonly scheduler: SchedulerPort;
   readonly alertMonitor: AlertMonitor;
+  readonly dailyReportService?: DailyReportService;
   readonly toolRegistry: ToolRegistry;
   private readonly toolResolver: RegistryToolResolver;
   private readonly toolExecutor: OrchestratorToolExecutor;
@@ -103,6 +117,20 @@ export class Gateway {
       undefined,
       deps.alertPollIntervalMs,
     );
+    // Reporte diario por email — solo si las 4 deps están completas (sin
+    // RESEND_API_KEY, server.ts no arma ninguna, mismo criterio condicional
+    // que deviceEnrichmentService/geminiLiveProxy).
+    this.dailyReportService =
+      deps.emailService && deps.userPreferences && deps.resolveUserEmail
+        ? new DailyReportService(
+            this.auditService,
+            this.agentRegistry,
+            deps.emailService,
+            deps.userPreferences,
+            deps.resolveUserEmail,
+            deps.appUrl ?? "",
+          )
+        : undefined;
     this.confirmationOrchestrator = new ConfirmationOrchestrator(deps.connectionManager, this.agentRegistry);
     this.toolRegistry = new CapabilityBackedToolRegistry(this.capabilityRegistry);
     this.toolResolver = new RegistryToolResolver(this.toolRegistry);
@@ -338,6 +366,8 @@ export class Gateway {
       // ni hace fallar el resto del dispatch.
       if (userId) this.deps.speakToUser?.(userId, message);
     });
+
+    this.dailyReportService?.start();
   }
 
   /**
@@ -363,6 +393,7 @@ export class Gateway {
     this.deps.connectionManager.stop();
     this.deps.scheduler.stop();
     this.alertMonitor.stop();
+    this.dailyReportService?.stop();
   }
 
   listTools(requestingUserId?: string): ToolDescriptor[] {
