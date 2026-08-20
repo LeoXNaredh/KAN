@@ -97,6 +97,11 @@ export class AgentRegistry {
     this.grantedUserIds.set(edgeAgentId, new Set(userIds));
   }
 
+  /** Invitados con acceso a este Edge Agent (sin el dueño) — usado para el fan-out de notificaciones de alertas (AlertMonitor). */
+  getGrantedUserIds(edgeAgentId: string): string[] {
+    return Array.from(this.grantedUserIds.get(edgeAgentId) ?? []);
+  }
+
   /**
    * Única fuente de verdad de "¿puede este usuario ver/operar este Edge
    * Agent?" — reemplaza el chequeo `ownerId === undefined || ownerId ===

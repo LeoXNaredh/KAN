@@ -6,6 +6,7 @@ import type { NotificationServicePort } from "./domain/ports/NotificationService
 import type { AgentRegistryStorePort } from "./domain/ports/AgentRegistryStorePort";
 import type { TaskStorePort } from "./domain/ports/TaskStorePort";
 import type { AlertRuleStorePort } from "./domain/ports/AlertRuleStorePort";
+import type { AlertRule } from "./domain/entities/AlertRule";
 import type { GatewayBus } from "./application/GatewayBus";
 import type { DeviceEnrichmentService } from "./application/DeviceEnrichmentService";
 import { AgentRegistry } from "./application/AgentRegistry";
@@ -312,19 +313,50 @@ export class Gateway {
         },
       });
 
-      await this.deps.notificationService.notify({
-        userId: userId ?? "system",
-        channel: "push",
-        title: "Alerta de KAN",
-        body: message,
-        severity: "warning",
-      });
+      // Multi-usuario (edge_agent_grants, P2 incremento 4): avisa al dueño +
+      // todos los invitados del Edge Agent involucrado, no solo a quien creó
+      // la alerta — mismo criterio de acceso que ya usa `hasAccess()`. Sin
+      // dueño resoluble (agente sin vincular, o capabilityRef ya no
+      // resuelve a ningún Edge Agent) cae a `createdBy`, igual que antes de
+      // este incremento. `Promise.allSettled` (nunca `all`): que falle
+      // notificar a un invitado no debe impedir que le llegue a los demás.
+      const recipientIds = this.resolveAlertRecipients(rule);
+      await Promise.allSettled(
+        recipientIds.map((recipientId) =>
+          this.deps.notificationService.notify({
+            userId: recipientId,
+            channel: "push",
+            title: "Alerta de KAN",
+            body: message,
+            severity: "warning",
+          }),
+        ),
+      );
 
       // Best-effort: sin userId, o sin sesión Live activa para ese usuario
       // ahora mismo, el aviso ya llegó por push/app arriba — nunca bloquea
       // ni hace fallar el resto del dispatch.
       if (userId) this.deps.speakToUser?.(userId, message);
     });
+  }
+
+  /**
+   * A quién avisarle cuando dispara una alerta: el dueño del Edge Agent
+   * involucrado + todos sus invitados (`AgentRegistry.getGrantedUserIds()`).
+   * Sin dueño resoluble (agente sin vincular, o `capabilityRef` que ya no
+   * resuelve a ningún Edge Agent — ej. plugin desinstalado), cae a quien
+   * creó la alerta, igual que el comportamiento de antes de este incremento.
+   */
+  private resolveAlertRecipients(rule: AlertRule): string[] {
+    const edgeAgentId = this.capabilityRegistry.resolve(rule.capabilityRef)?.edgeAgentId;
+    const ownerId = edgeAgentId ? this.agentRegistry.get(edgeAgentId)?.ownerId : undefined;
+    const grantedUserIds = edgeAgentId ? this.agentRegistry.getGrantedUserIds(edgeAgentId) : [];
+
+    const recipients = new Set<string>();
+    if (ownerId) recipients.add(ownerId);
+    for (const grantedUserId of grantedUserIds) recipients.add(grantedUserId);
+    if (recipients.size === 0) recipients.add(rule.createdBy ?? "system");
+    return Array.from(recipients);
   }
 
   shutdown(): void {

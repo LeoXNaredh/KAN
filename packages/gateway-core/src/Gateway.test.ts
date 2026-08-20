@@ -964,6 +964,73 @@ describe("Gateway (integración, transporte simulado)", () => {
       gateway.shutdown();
     });
 
+    it("multi-usuario (edge_agent_grants): notifica al dueño + todos los invitados del Edge Agent, no solo a quien creó la alerta", async () => {
+      const { gateway, connectionManager, notificationService } = buildGateway({
+        alertPollIntervalMs: ALERT_POLL_INTERVAL_MS,
+      });
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+      gateway.agentRegistry.setGrantedUserIds(edgeAgentId, ["user-2", "user-3"]);
+      const [readSensorTool] = gateway.listTools();
+
+      await gateway.executeTool(
+        "kan_set_alert",
+        { capabilityRef: readSensorTool.name, field: "temperatureC", comparator: "above", threshold: 40, label: "la temperatura", unit: "grados" },
+        "user-1",
+      );
+
+      await vi.waitFor(() => expect(connectionManager.dispatched.length).toBeGreaterThan(0));
+      const taskId = (connectionManager.dispatched.at(-1) as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "done",
+        data: { temperatureC: 43 },
+        at: new Date().toISOString(),
+      });
+
+      await vi.waitFor(() => expect(notificationService.sent).toHaveLength(3));
+
+      const message = "La temperatura llegó a 43 grados, superó el límite que definiste de 40.";
+      expect(notificationService.sent).toEqual([
+        { userId: "user-1", channel: "push", title: "Alerta de KAN", body: message, severity: "warning" },
+        { userId: "user-2", channel: "push", title: "Alerta de KAN", body: message, severity: "warning" },
+        { userId: "user-3", channel: "push", title: "Alerta de KAN", body: message, severity: "warning" },
+      ]);
+
+      gateway.shutdown();
+    });
+
+    it("sin invitados (Edge Agent sin edge_agent_grants), notifica solo al dueño — mismo comportamiento que antes de multi-usuario", async () => {
+      const { gateway, connectionManager, notificationService } = buildGateway({
+        alertPollIntervalMs: ALERT_POLL_INTERVAL_MS,
+      });
+      const edgeAgentId = randomUUID();
+      connectionManager.simulateAgentConnect(helloFor(edgeAgentId), "user-1");
+      const [readSensorTool] = gateway.listTools();
+
+      await gateway.executeTool(
+        "kan_set_alert",
+        { capabilityRef: readSensorTool.name, field: "temperatureC", comparator: "above", threshold: 40, label: "la temperatura", unit: "grados" },
+        "user-1",
+      );
+
+      await vi.waitFor(() => expect(connectionManager.dispatched.length).toBeGreaterThan(0));
+      const taskId = (connectionManager.dispatched.at(-1) as { taskId: string }).taskId;
+      connectionManager.simulateTelemetry(edgeAgentId, {
+        type: "telemetry",
+        taskId,
+        status: "done",
+        data: { temperatureC: 43 },
+        at: new Date().toISOString(),
+      });
+
+      await vi.waitFor(() => expect(notificationService.sent).toHaveLength(1));
+      expect(notificationService.sent[0].userId).toBe("user-1");
+
+      gateway.shutdown();
+    });
+
     it("sin sesión Live activa (speakToUser ausente), sigue avisando por push sin fallar", async () => {
       const { gateway, connectionManager, notificationService } = buildGateway({
         alertPollIntervalMs: ALERT_POLL_INTERVAL_MS,

@@ -183,6 +183,16 @@ describe("AgentRegistry", () => {
       expect(registry.hasAccess("compartido", "user-2")).toBe(false);
     });
 
+    it("getGrantedUserIds() devuelve la lista de invitados (usada para el fan-out de notificaciones de alertas)", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "compartido", ownerId: "user-1" }));
+
+      expect(registry.getGrantedUserIds("compartido")).toEqual([]);
+
+      registry.setGrantedUserIds("compartido", ["user-2", "user-3"]);
+      expect(registry.getGrantedUserIds("compartido")).toEqual(["user-2", "user-3"]);
+    });
+
     it("list(requestingUserId) incluye agentes con grant, además de propios y sin owner", () => {
       const registry = new AgentRegistry(new GatewayBus());
       registry.upsert(record({ edgeAgentId: "sin-owner" }));
