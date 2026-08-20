@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PAGE_PATHS = ["/login", "/signup", "/auth/callback"];
+const PUBLIC_PAGE_PATHS = ["/login", "/signup", "/auth/callback", "/docs"];
 
 /**
  * Refresca la sesión de Supabase en cada request y protege las páginas del

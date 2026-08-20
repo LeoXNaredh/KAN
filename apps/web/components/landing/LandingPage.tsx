@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Cpu, Sliders, Bell, Factory } from "lucide-react";
 import { Card } from "@/components/ui/Card";
-import { PRIMARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
+import { PRIMARY_BUTTON_CLASSES, SECONDARY_BUTTON_CLASSES } from "@/components/ui/formStyles";
 
 const BENEFITS = [
   {
@@ -52,9 +52,14 @@ export function LandingPage() {
           ))}
         </div>
 
-        <Link href="/login" className={PRIMARY_BUTTON_CLASSES}>
-          Empezar gratis
-        </Link>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link href="/login" className={PRIMARY_BUTTON_CLASSES}>
+            Empezar gratis
+          </Link>
+          <Link href="/docs" className={SECONDARY_BUTTON_CLASSES}>
+            Ver documentación
+          </Link>
+        </div>
       </div>
     </div>
   );
