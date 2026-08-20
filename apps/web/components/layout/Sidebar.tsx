@@ -14,7 +14,7 @@ import { SkeletonText } from "@/components/ui/Skeleton";
 // como sección de producto (sigue accesible desde Configuración).
 const NAV_ITEMS: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: "/conversacion", label: "Conversación", icon: MessageSquareText },
-  { href: "/", label: "Inicio", icon: Home },
+  { href: "/inicio", label: "Inicio", icon: Home },
   { href: "/dispositivos", label: "Dispositivos", icon: Cpu },
   { href: "/sensores", label: "Sensores", icon: Activity },
   { href: "/control", label: "Control", icon: Sliders },

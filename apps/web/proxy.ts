@@ -44,14 +44,16 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isApiPath = pathname.startsWith("/api/");
-  const isPublicPagePath = PUBLIC_PAGE_PATHS.some((path) => pathname.startsWith(path));
+  // "/" es la landing pública (app/page.tsx, fuera del route group (shell))
+  // — match exacto, no startsWith("/") (eso volvería público todo).
+  const isPublicPagePath = pathname === "/" || PUBLIC_PAGE_PATHS.some((path) => pathname.startsWith(path));
 
   if (!user && !isApiPath && !isPublicPagePath) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
   if (user && (pathname === "/login" || pathname === "/signup")) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/inicio", request.url));
   }
 
   return response;

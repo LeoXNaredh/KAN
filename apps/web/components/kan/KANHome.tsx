@@ -15,7 +15,7 @@ import { useKANState } from "@/lib/kan/useKANState";
 import { useWakeWord } from "@/lib/kan/useWakeWord";
 
 const SIDE_NAV_ITEMS = [
-  { href: "/", label: "Inicio", icon: HomeIcon },
+  { href: "/inicio", label: "Inicio", icon: HomeIcon },
   { href: "/dispositivos", label: "Dispositivos", icon: Cpu },
   { href: "/automatizaciones", label: "Recordatorios", icon: Workflow },
   { href: "/proyectos", label: "Proyectos", icon: FolderKanban },

@@ -10,7 +10,7 @@ export default function RootNotFound() {
         <SearchX className="h-6 w-6 text-ink-faint" aria-hidden="true" />
         <h1 className="text-lg font-semibold text-ink">Página no encontrada</h1>
         <p className="text-sm text-ink-muted">Esta sección no existe o se movió.</p>
-        <Link href="/" className={PRIMARY_BUTTON_CLASSES}>
+        <Link href="/inicio" className={PRIMARY_BUTTON_CLASSES}>
           Volver al Dashboard
         </Link>
       </Card>

@@ -15,7 +15,7 @@ export async function signInWithPasswordAction(formData: FormData) {
   } catch (error) {
     redirect(`/login?error=${encodeURIComponent(toMessage(error))}`);
   }
-  redirect("/");
+  redirect("/inicio");
 }
 
 export async function sendMagicLinkAction(formData: FormData) {
