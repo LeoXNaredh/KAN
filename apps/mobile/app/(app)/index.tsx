@@ -1,10 +1,12 @@
 import { useRef, useState } from "react";
 import { fetch } from "expo/fetch";
-import type { ChatStreamEvent, Conversation } from "@kan/core";
+import type { ChatStreamEvent, Conversation, ConversationSummary } from "@kan/core";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -18,6 +20,8 @@ import { readSseStream, type ExpoFetchResponse } from "../../lib/chat/parseSseSt
 import { useVoiceInput } from "../../lib/voice/useVoiceInput";
 import { useSpeechSynthesis } from "../../lib/voice/useSpeechSynthesis";
 import { pickFromCamera, pickFromLibrary, type PickedImage } from "../../lib/image/pickImage";
+import { getConversation, listConversations } from "../../lib/conversations/conversationsApi";
+import { formatRelativeTime } from "../../lib/status/formatRelativeTime";
 import { VoiceButton } from "../../components/VoiceButton";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
@@ -56,8 +60,31 @@ export default function ChatScreen() {
   const [isSending, setIsSending] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const { speak } = useSpeechSynthesis();
+
+  async function openHistory() {
+    setHistoryVisible(true);
+    setHistoryLoading(true);
+    const list = await listConversations();
+    setConversations(list);
+    setHistoryLoading(false);
+  }
+
+  async function loadConversation(id: string) {
+    setHistoryVisible(false);
+    setError(null);
+    const conversation = await getConversation(id);
+    if (!conversation) {
+      setError("No se pudo cargar esa conversación.");
+      return;
+    }
+    setMessages(conversation.messages.map((m) => ({ role: m.role, content: m.content, image: m.image })));
+    setConversationId(conversation.id);
+  }
 
   async function sendMessage(overrideMessage?: string) {
     const trimmed = (overrideMessage ?? input).trim();
@@ -147,15 +174,21 @@ export default function ChatScreen() {
   }
 
   return (
+    <>
     <KeyboardAvoidingView
       className="flex-1 bg-surface"
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View className="flex-row items-center justify-between border-b border-line px-4 py-3">
         <Text className="text-sm font-semibold text-ink">KAN</Text>
-        <Pressable onPress={() => useCases.signOut.execute()}>
-          <Text className="text-sm text-ink-faint">Salir ({session?.email})</Text>
-        </Pressable>
+        <View className="flex-row items-center gap-3">
+          <Pressable onPress={() => void openHistory()} accessibilityLabel="Ver historial de conversaciones">
+            <Text className="text-sm text-ink-faint">🕘 Historial</Text>
+          </Pressable>
+          <Pressable onPress={() => useCases.signOut.execute()}>
+            <Text className="text-sm text-ink-faint">Salir ({session?.email})</Text>
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -219,6 +252,40 @@ export default function ChatScreen() {
         </Pressable>
       </View>
     </KeyboardAvoidingView>
+
+    <Modal visible={historyVisible} animationType="slide" onRequestClose={() => setHistoryVisible(false)}>
+      <View className="flex-1 bg-surface">
+        <View className="flex-row items-center justify-between border-b border-line px-4 py-3">
+          <Text className="text-sm font-semibold text-ink">Historial de conversaciones</Text>
+          <Pressable onPress={() => setHistoryVisible(false)}>
+            <Text className="text-sm text-ink-faint">Cerrar</Text>
+          </Pressable>
+        </View>
+        <ScrollView className="flex-1 px-4" contentContainerClassName="gap-2 py-3">
+          {historyLoading && (
+            <View className="items-center py-8">
+              <ActivityIndicator color="#0ea5e9" />
+            </View>
+          )}
+          {!historyLoading && conversations.length === 0 && (
+            <Text className="text-sm text-ink-faint">Todavía no tenés conversaciones guardadas.</Text>
+          )}
+          {conversations.map((conversation) => (
+            <Pressable
+              key={conversation.id}
+              onPress={() => void loadConversation(conversation.id)}
+              className="rounded-lg border border-line bg-surface-2 px-3 py-2 active:opacity-80"
+            >
+              <Text className="text-sm text-ink" numberOfLines={1}>
+                {conversation.title}
+              </Text>
+              <Text className="text-xs text-ink-faint">{formatRelativeTime(conversation.updatedAt)}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+    </>
   );
 }
 

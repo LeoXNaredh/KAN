@@ -30,6 +30,8 @@ export default function AppLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Chat" }} />
       <Tabs.Screen name="dashboard" options={{ title: "Dashboard" }} />
+      <Tabs.Screen name="sensores" options={{ title: "Sensores" }} />
+      <Tabs.Screen name="control" options={{ title: "Control" }} />
       <Tabs.Screen name="dispositivos" options={{ title: "Dispositivos" }} />
       <Tabs.Screen name="alertas" options={{ title: "Alertas" }} />
       <Tabs.Screen name="automatizaciones" options={{ title: "Automatización" }} />
