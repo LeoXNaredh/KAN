@@ -10,6 +10,8 @@ export interface EdgeAgentStatus {
   lastSeenAt: string;
   devices: Array<{ id: string; name: string; kind: string }>;
   installedPlugins: Array<{ id: string; displayName: string }>;
+  /** Presente solo si el usuario actual es el dueño real (nunca el de otro) — habilita la UI de compartir acceso (`ShareAccessPanel`). */
+  ownerId?: string;
 }
 
 /** Entrada de auditoría del Gateway ya traducida a texto legible (P4) — la traducción vive server-side, ver app/api/status/route.ts. */

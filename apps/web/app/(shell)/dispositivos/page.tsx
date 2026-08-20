@@ -20,7 +20,7 @@ export default async function DispositivosPage({
         <p className="text-sm text-ink-faint">Tu entorno físico — todo lo que KAN puede tocar por vos.</p>
       </div>
 
-      {user && <DeviceList />}
+      {user && <DeviceList currentUserId={user.userId} />}
 
       {user && (
         <Card className="fade-in flex flex-col gap-4">

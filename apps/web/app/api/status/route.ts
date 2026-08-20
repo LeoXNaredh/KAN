@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { ToolDescriptor } from "@kan/plugin-contract";
 import { gatewayFetch } from "@/lib/gateway/gatewayFetch";
 import { resolveUserToken } from "@/lib/auth/resolveUserToken";
+import { getCurrentUserCached } from "@/lib/auth/getCurrentUserCached";
 import { translateAuditEntry, type RawAuditEntry } from "@/lib/status/translateAuditEntry";
 import type { ActivityEntry, SystemStatusResponse, EdgeAgentStatus } from "@/lib/status/types";
 import packageJson from "../../../package.json";
@@ -16,6 +17,7 @@ interface RawAgentRecord {
   lastSeenAt: string;
   devices: Array<{ id: string; name: string; kind: string }>;
   installedPlugins: Array<{ id: string; displayName: string }>;
+  ownerId?: string;
 }
 
 /**
@@ -53,11 +55,12 @@ async function fetchGateway<T>(path: string, userToken?: string): Promise<T | un
  */
 export async function GET(request: Request) {
   const userToken = await resolveUserToken(request);
-  const [agentsBody, toolsBody, auditBody, jobsBody] = await Promise.all([
+  const [agentsBody, toolsBody, auditBody, jobsBody, currentUser] = await Promise.all([
     fetchGateway<{ agents: RawAgentRecord[] }>("/v1/agents", userToken),
     fetchGateway<{ tools: ToolDescriptor[] }>("/v1/tools", userToken),
     fetchGateway<{ entries: RawAuditEntry[] }>("/v1/audit", userToken),
     fetchGateway<{ jobs: unknown[] }>("/v1/jobs", userToken),
+    getCurrentUserCached(),
   ]);
 
   const edgeAgents: EdgeAgentStatus[] = (agentsBody?.agents ?? []).map((agent) => ({
@@ -67,6 +70,10 @@ export async function GET(request: Request) {
     lastSeenAt: agent.lastSeenAt,
     devices: agent.devices,
     installedPlugins: agent.installedPlugins,
+    // Nunca el ownerId de otro usuario (aunque el agente ya venga filtrado a
+    // "visibles para mí" por el Gateway, un invitado no necesita saber el id
+    // interno del dueño) — solo sirve como señal "¿esto es mío?" para la UI.
+    ownerId: agent.ownerId === currentUser?.userId ? agent.ownerId : undefined,
   }));
 
   const recentActivity: ActivityEntry[] = (auditBody?.entries ?? [])

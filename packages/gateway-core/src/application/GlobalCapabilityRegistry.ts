@@ -66,14 +66,11 @@ export class GlobalCapabilityRegistry {
     this.byAgent.delete(edgeAgentId);
   }
 
-  /** Mismo criterio que `AgentRegistry.list()`: sin `agentRegistry` inyectado o sin `requestingUserId`, no filtra. */
+  /** Mismo criterio que `AgentRegistry.list()`: sin `agentRegistry` inyectado o sin `requestingUserId`, no filtra. Delega en `AgentRegistry.hasAccess()` (única fuente de verdad de acceso, incluye multi-usuario). */
   list(requestingUserId?: string): GlobalCapability[] {
     const all = Array.from(this.byRef.values());
     if (!this.agentRegistry || requestingUserId === undefined) return all;
-    return all.filter((c) => {
-      const ownerId = this.agentRegistry!.get(c.edgeAgentId)?.ownerId;
-      return ownerId === undefined || ownerId === requestingUserId;
-    });
+    return all.filter((c) => this.agentRegistry!.hasAccess(c.edgeAgentId, requestingUserId));
   }
 
   /** Sin filtro de ownership a propósito, igual que antes — `Gateway.executeTool()` ya hace su propio chequeo de dueño después de resolver. */

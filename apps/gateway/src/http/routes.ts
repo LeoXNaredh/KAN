@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { extractPrimaryNumericValue, type EdgeTicketPort, type Gateway, type LiveVoiceSessionStore } from "@kan/gateway-core";
-import type { AuthPort } from "@kan/core";
+import type { AuthPort, AgentGrantPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
 import { createUserAuthMiddleware } from "./userAuthMiddleware";
 import { rateLimitKey } from "./rateLimitKey";
@@ -29,6 +29,7 @@ export function createRoutes(
   authPort?: AuthPort,
   liveVoiceSessionStore?: LiveVoiceSessionStore,
   edgeTicketStore?: EdgeTicketPort,
+  agentGrantStore?: AgentGrantPort,
 ): Router {
   const router = Router();
 
@@ -187,6 +188,65 @@ export function createRoutes(
 
   router.get("/v1/agents", (req, res) => {
     res.json({ agents: gateway.agentRegistry.list(req.userId) });
+  });
+
+  // Acceso multi-usuario (invitar/revocar/listar) — siempre dueño-only,
+  // nunca delegable: es la única diferencia real de permisos entre el
+  // dueño y un usuario invitado (ver plan). `agentGrantStore` opcional
+  // (retrocompatible con tests que arman `createRoutes()` sin él) — sin
+  // configurar, las 3 rutas responden 501.
+  router.post("/v1/agents/:edgeAgentId/grants", async (req, res) => {
+    if (!agentGrantStore) {
+      res.status(501).json({ error: "Acceso multi-usuario no configurado." });
+      return;
+    }
+    if (!req.userId) {
+      res.status(401).json({ error: "Sesión requerida." });
+      return;
+    }
+    const email = req.body?.email;
+    if (typeof email !== "string" || !email.trim()) {
+      res.status(400).json({ error: "Se requiere 'email'." });
+      return;
+    }
+    const result = await agentGrantStore.grant(req.params.edgeAgentId, req.userId, email.trim());
+    if ("error" in result) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    // Efecto inmediato — sin esperar a que el Edge Agent se reconecte (ver AgentRegistry.setGrantedUserIds).
+    const grants = await agentGrantStore.list(req.params.edgeAgentId, req.userId);
+    gateway.agentRegistry.setGrantedUserIds(req.params.edgeAgentId, grants.map((grant) => grant.userId));
+    res.status(201).json(result);
+  });
+
+  router.get("/v1/agents/:edgeAgentId/grants", async (req, res) => {
+    if (!agentGrantStore) {
+      res.status(501).json({ error: "Acceso multi-usuario no configurado." });
+      return;
+    }
+    if (!req.userId) {
+      res.status(401).json({ error: "Sesión requerida." });
+      return;
+    }
+    const grants = await agentGrantStore.list(req.params.edgeAgentId, req.userId);
+    res.json({ grants });
+  });
+
+  router.delete("/v1/agents/:edgeAgentId/grants/:userId", async (req, res) => {
+    if (!agentGrantStore) {
+      res.status(501).json({ error: "Acceso multi-usuario no configurado." });
+      return;
+    }
+    if (!req.userId) {
+      res.status(401).json({ error: "Sesión requerida." });
+      return;
+    }
+    await agentGrantStore.revoke(req.params.edgeAgentId, req.userId, req.params.userId);
+    // Revocar es inmediato — mismo criterio que arriba.
+    const grants = await agentGrantStore.list(req.params.edgeAgentId, req.userId);
+    gateway.agentRegistry.setGrantedUserIds(req.params.edgeAgentId, grants.map((grant) => grant.userId));
+    res.status(204).end();
   });
 
   router.get("/v1/audit", async (req, res) => {

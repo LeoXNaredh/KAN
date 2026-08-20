@@ -26,6 +26,16 @@ const STALE_OFFLINE_MS = 90 * 24 * 60 * 60 * 1000;
  */
 export class AgentRegistry {
   private readonly agents = new Map<string, AgentRecord>();
+  /**
+   * Acceso multi-usuario (capa aditiva sobre `ownerId`) — vive solo en
+   * memoria, nunca en `AgentRecord`/el store local: la fuente de verdad es
+   * Supabase (`edge_agent_grants`), esto es un cache re-hidratado al
+   * arrancar el Gateway (`setGrantedUserIds`, llamado desde `server.ts`) y
+   * actualizado al toque por las rutas de invitar/revocar — nunca depende
+   * de que el Edge Agent se reconecte para que un cambio de acceso surta
+   * efecto.
+   */
+  private readonly grantedUserIds = new Map<string, Set<string>>();
 
   constructor(
     private readonly bus: GatewayBus,
@@ -80,7 +90,26 @@ export class AgentRegistry {
   list(requestingUserId?: string): AgentRecord[] {
     const all = Array.from(this.agents.values());
     if (requestingUserId === undefined) return all;
-    return all.filter((record) => record.ownerId === undefined || record.ownerId === requestingUserId);
+    return all.filter((record) => this.hasAccess(record.edgeAgentId, requestingUserId));
+  }
+
+  setGrantedUserIds(edgeAgentId: string, userIds: string[]): void {
+    this.grantedUserIds.set(edgeAgentId, new Set(userIds));
+  }
+
+  /**
+   * Única fuente de verdad de "¿puede este usuario ver/operar este Edge
+   * Agent?" — reemplaza el chequeo `ownerId === undefined || ownerId ===
+   * requestingUserId` que antes vivía copiado en `GlobalCapabilityRegistry`,
+   * `TelemetryHistoryStore`, `ConfirmationOrchestrator` y
+   * `Gateway.executeSingleCapability()`. Sin dueño (agente sin vincular
+   * todavía), sigue abierto para cualquiera — mismo criterio de siempre.
+   */
+  hasAccess(edgeAgentId: string, requestingUserId?: string): boolean {
+    if (requestingUserId === undefined) return true;
+    const ownerId = this.agents.get(edgeAgentId)?.ownerId;
+    if (ownerId === undefined || ownerId === requestingUserId) return true;
+    return this.grantedUserIds.get(edgeAgentId)?.has(requestingUserId) ?? false;
   }
 
   private pruneStaleOffline(): void {

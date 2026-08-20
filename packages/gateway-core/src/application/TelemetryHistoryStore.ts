@@ -50,9 +50,8 @@ export class TelemetryHistoryStore {
   }
 
   private canSee(edgeAgentId: string, requestingUserId?: string): boolean {
-    if (!this.agentRegistry || requestingUserId === undefined) return true;
-    const ownerId = this.agentRegistry.get(edgeAgentId)?.ownerId;
-    return ownerId === undefined || ownerId === requestingUserId;
+    if (!this.agentRegistry) return true;
+    return this.agentRegistry.hasAccess(edgeAgentId, requestingUserId);
   }
 
   history(ref: string, requestingUserId?: string): TelemetryReading[] {

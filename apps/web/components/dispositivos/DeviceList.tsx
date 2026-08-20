@@ -9,6 +9,7 @@ import { Reveal } from "@/components/ui/Reveal";
 import { SkeletonCard } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useDeviceDisplayNames } from "@/lib/devices/useDeviceDisplayNames";
+import { ShareAccessPanel } from "@/components/dispositivos/ShareAccessPanel";
 
 /**
  * Lista real de equipos vinculados y lo que cada uno descubrió — antes
@@ -25,7 +26,7 @@ import { useDeviceDisplayNames } from "@/lib/devices/useDeviceDisplayNames";
  * Agrupar por equipo (que sí es un dato real) más un punto de estado con
  * pulso en vivo es la mejora real disponible sin tocar el Gateway.
  */
-export function DeviceList() {
+export function DeviceList({ currentUserId }: { currentUserId?: string } = {}) {
   const { status, loading } = useSystemStatusContext();
   const displayName = useDeviceDisplayNames();
   const [searchQuery, setSearchQuery] = useState("");
@@ -124,6 +125,8 @@ export function DeviceList() {
                 ))}
               </ul>
             )}
+
+            {currentUserId && agent.ownerId === currentUserId && <ShareAccessPanel edgeAgentId={agent.id} />}
           </Card>
         </Reveal>
       ))}

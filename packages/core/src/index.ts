@@ -19,6 +19,8 @@ export * from "./domain/ports/PersonalityContextPort";
 export * from "./domain/ports/SessionContextPort";
 export * from "./domain/ports/VoiceProviderPort";
 export * from "./domain/ports/PairingPort";
+export * from "./domain/ports/AgentGrantPort";
+export * from "./domain/ports/WebPushSubscriptionStorePort";
 export * from "./domain/ports/PushTokenStorePort";
 export * from "./domain/ports/LiveSessionPort";
 export * from "./application/translateToolCall";

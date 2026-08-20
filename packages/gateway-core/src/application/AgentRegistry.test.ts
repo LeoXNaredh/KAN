@@ -140,6 +140,62 @@ describe("AgentRegistry", () => {
     });
   });
 
+  describe("hasAccess()/setGrantedUserIds() — acceso multi-usuario", () => {
+    it("sin ownerId (agente sin vincular), cualquiera tiene acceso", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "sin-owner" }));
+
+      expect(registry.hasAccess("sin-owner", "cualquiera")).toBe(true);
+    });
+
+    it("el dueño siempre tiene acceso, sin necesidad de un grant", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "mio", ownerId: "user-1" }));
+
+      expect(registry.hasAccess("mio", "user-1")).toBe(true);
+    });
+
+    it("sin grant, un usuario que no es el dueño no tiene acceso", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "de-otro", ownerId: "user-1" }));
+
+      expect(registry.hasAccess("de-otro", "user-2")).toBe(false);
+    });
+
+    it("setGrantedUserIds() da acceso a un usuario invitado, sin tocar el ownerId", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "compartido", ownerId: "user-1" }));
+
+      registry.setGrantedUserIds("compartido", ["user-2"]);
+
+      expect(registry.hasAccess("compartido", "user-2")).toBe(true);
+      expect(registry.hasAccess("compartido", "user-3")).toBe(false);
+      expect(registry.get("compartido")?.ownerId).toBe("user-1");
+    });
+
+    it("volver a llamar setGrantedUserIds() reemplaza la lista anterior (revocar es inmediato)", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "compartido", ownerId: "user-1" }));
+      registry.setGrantedUserIds("compartido", ["user-2"]);
+
+      registry.setGrantedUserIds("compartido", []);
+
+      expect(registry.hasAccess("compartido", "user-2")).toBe(false);
+    });
+
+    it("list(requestingUserId) incluye agentes con grant, además de propios y sin owner", () => {
+      const registry = new AgentRegistry(new GatewayBus());
+      registry.upsert(record({ edgeAgentId: "sin-owner" }));
+      registry.upsert(record({ edgeAgentId: "mio", ownerId: "user-1" }));
+      registry.upsert(record({ edgeAgentId: "compartido-conmigo", ownerId: "user-2" }));
+      registry.upsert(record({ edgeAgentId: "de-otro", ownerId: "user-3" }));
+      registry.setGrantedUserIds("compartido-conmigo", ["user-1"]);
+
+      const ids = registry.list("user-1").map((r) => r.edgeAgentId).sort();
+      expect(ids).toEqual(["compartido-conmigo", "mio", "sin-owner"]);
+    });
+  });
+
   describe("con store (fix de auditoría de backend #2)", () => {
     it("hidrata desde store.load() al construirse", () => {
       const store = new FakeAgentRegistryStore();

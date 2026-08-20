@@ -399,14 +399,13 @@ export class Gateway {
       return { success: false, error: `Capability desconocida: ${resolution.call.ref}` };
     }
 
-    const ownerId = this.agentRegistry.get(capability.edgeAgentId)?.ownerId;
-    if (ownerId !== undefined && ownerId !== requestingUserId) {
+    if (!this.agentRegistry.hasAccess(capability.edgeAgentId, requestingUserId)) {
       this.auditService.record({
         actor: "user",
         action: "tool.execute.denied",
         subject: resolution.call.ref,
         userId: requestingUserId,
-        metadata: { requestingUserId, ownerId },
+        metadata: { requestingUserId, ownerId: this.agentRegistry.get(capability.edgeAgentId)?.ownerId },
       });
       return { success: false, error: "No autorizado: este dispositivo pertenece a otro usuario." };
     }

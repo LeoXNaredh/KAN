@@ -10,6 +10,8 @@ import {
   SupabasePairingStore,
   SupabasePluginRegistry,
   SupabasePushTokenStore,
+  SupabaseAgentGrantStore,
+  SupabaseWebPushSubscriptionStore,
 } from "@kan/supabase-adapter";
 import {
   Gateway,
@@ -21,6 +23,8 @@ import {
   JsonFileTaskStore,
   JsonFileAlertRuleStore,
   ExpoNotificationService,
+  WebPushNotificationService,
+  CompositeNotificationService,
   ConsoleLogger,
   LiveVoiceSessionStore,
   GeminiLiveProxy,
@@ -68,6 +72,13 @@ const ALLOWED_WEB_ORIGINS = (process.env.KAN_WEB_ORIGIN ?? "")
 // sigue andando igual. Nunca sale de este proceso: GeminiLiveProxy es el
 // único lugar que la usa, para abrir el WS saliente hacia Gemini.
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// Web Push (VAPID) — opcional, mismo criterio que GEMINI_API_KEY: sin esto,
+// las alertas siguen avisando igual por Expo/app, solo sin este canal extra.
+// Se generan una vez con `npx web-push generate-vapid-keys` (ver
+// apps/gateway/.env.example) — nunca se generan acá.
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT;
 
 const logger = new ConsoleLogger();
 const bus = new GatewayBus();
@@ -82,6 +93,9 @@ const authPort = new SupabaseAuthAdapter(supabaseClient);
 // P2 incremento 3 (docs/19): mismo cliente otra vez — resuelve el ownerId de
 // un Edge Agent ya vinculado a partir del pairingToken de su hello.
 const pairingPort = new SupabasePairingStore(supabaseClient);
+// Acceso multi-usuario (capa aditiva sobre el pairing 1:1) — mismo cliente
+// service_role, sin credenciales nuevas.
+const agentGrantStore = new SupabaseAgentGrantStore(supabaseClient);
 // ADR-056 (Fase 4): mismo cliente service_role otra vez, sin credenciales
 // nuevas — catálogo cerrado de plugins sidecar oficiales + bucket privado
 // de Storage. Ticket de descarga en memoria (mismo criterio que
@@ -118,7 +132,26 @@ const alertRuleStore = new JsonFileAlertRuleStore(fileURLToPath(new URL("../data
 // del dueño del job al dispararle su notificación (best-effort, ver
 // ExpoNotificationService).
 const pushTokenStore = new SupabasePushTokenStore(supabaseClient);
-const notificationService = new ExpoNotificationService(pushTokenStore, logger);
+// Web Push (mismo cliente service_role) — tabla separada de push_tokens
+// (shape distinto: endpoint + par de claves, no un token simple). Fan-out
+// con Expo vía CompositeNotificationService: Gateway.ts/AlertMonitor.ts
+// siguen llamando a un único notificationService.notify(...), sin saber
+// que hay más de un canal.
+const webPushSubscriptionStore = new SupabaseWebPushSubscriptionStore(supabaseClient);
+const webPushService =
+  VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT
+    ? new WebPushNotificationService(
+        webPushSubscriptionStore,
+        { publicKey: VAPID_PUBLIC_KEY, privateKey: VAPID_PRIVATE_KEY, subject: VAPID_SUBJECT },
+        logger,
+      )
+    : undefined;
+if (!webPushService) {
+  logger.warn("[gateway] VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY/VAPID_SUBJECT no configuradas — el push al celular vía Web Push queda deshabilitado (Expo sigue funcionando igual).");
+}
+const notificationService = new CompositeNotificationService(
+  [new ExpoNotificationService(pushTokenStore, logger), webPushService].filter((service) => service !== undefined),
+);
 const liveVoiceSessionStore = GEMINI_API_KEY ? new LiveVoiceSessionStore() : undefined;
 const geminiLiveProxy =
   GEMINI_API_KEY && liveVoiceSessionStore
@@ -164,6 +197,25 @@ const gateway = new Gateway({
   speakToUser: geminiLiveProxy ? (userId, text) => geminiLiveProxy.speak(userId, text) : undefined,
 });
 
+// Hidratación de acceso multi-usuario al arrancar (cubre un restart del
+// Gateway) — fire-and-forget, best-effort: hasta que resuelva, un usuario
+// invitado simplemente no ve el equipo compartido todavía (se corrige solo
+// en cuanto termina, nunca bloquea el arranque del servidor HTTP/WS).
+agentGrantStore
+  .listAll()
+  .then((grants) => {
+    const byAgent = new Map<string, string[]>();
+    for (const grant of grants) {
+      const userIds = byAgent.get(grant.edgeAgentId) ?? [];
+      userIds.push(grant.userId);
+      byAgent.set(grant.edgeAgentId, userIds);
+    }
+    for (const [edgeAgentId, userIds] of byAgent) {
+      gateway.agentRegistry.setGrantedUserIds(edgeAgentId, userIds);
+    }
+  })
+  .catch((error) => logger.warn("[gateway] no se pudieron hidratar los accesos multi-usuario", { error }));
+
 bus.on("agent.connected", ({ edgeAgentId }) => logger.info(`[gateway] Edge Agent conectado: ${edgeAgentId}`));
 bus.on("agent.disconnected", ({ edgeAgentId }) => logger.info(`[gateway] Edge Agent desconectado: ${edgeAgentId}`));
 bus.on("capability.synced", ({ edgeAgentId, count }) =>
@@ -201,6 +253,7 @@ app.use(
     authPort,
     liveVoiceSessionStore,
     edgeTicketStore,
+    agentGrantStore,
   ),
 );
 

@@ -63,10 +63,7 @@ export class ConfirmationOrchestrator {
     const visible =
       requestingUserId === undefined
         ? entries
-        : entries.filter(([, record]) => {
-            const ownerId = this.agentRegistry.get(record.edgeAgentId)?.ownerId;
-            return ownerId === undefined || ownerId === requestingUserId;
-          });
+        : entries.filter(([, record]) => this.agentRegistry.hasAccess(record.edgeAgentId, requestingUserId));
     return visible.map(([confirmationId, { edgeAgentId: _edgeAgentId, ...details }]) => ({ confirmationId, ...details }));
   }
 
@@ -84,8 +81,7 @@ export class ConfirmationOrchestrator {
     // que TaskOrchestrator ya documenta para sus propias tasks en vuelo).
     if (!record) return undefined;
 
-    const ownerId = this.agentRegistry.get(record.edgeAgentId)?.ownerId;
-    if (ownerId !== undefined && ownerId !== requestingUserId) {
+    if (!this.agentRegistry.hasAccess(record.edgeAgentId, requestingUserId)) {
       return { success: false, error: "No autorizado: esta confirmación pertenece a otro usuario." };
     }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
+import type { AgentGrantPort } from "@kan/core";
 import type { EdgeTicketPort, Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { createRoutes, type RateLimitOptions } from "./routes";
@@ -13,7 +14,7 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
     executeTool: async () => ({ success: true, data: { ok: true } }),
     resolveConfirmation: async () => ({ success: true, data: { ok: true } }),
     listPendingConfirmations: () => [],
-    agentRegistry: { list: () => [] } as unknown as Gateway["agentRegistry"],
+    agentRegistry: { list: () => [], setGrantedUserIds: () => {} } as unknown as Gateway["agentRegistry"],
     capabilityRegistry: { list: () => [], resolve: () => undefined } as unknown as Gateway["capabilityRegistry"],
     telemetryHistory: { list: () => [], history: () => [] } as unknown as Gateway["telemetryHistory"],
     auditService: { list: () => [] } as unknown as Gateway["auditService"],
@@ -32,11 +33,22 @@ function appWith(
   authPort?: AuthPort,
   liveVoiceSessionStore?: LiveVoiceSessionStore,
   edgeTicketStore?: EdgeTicketPort,
+  agentGrantStore?: AgentGrantPort,
 ) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, liveVoiceSessionStore, edgeTicketStore));
+  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, liveVoiceSessionStore, edgeTicketStore, agentGrantStore));
   return app;
+}
+
+function fakeAgentGrantStore(overrides: Partial<AgentGrantPort> = {}): AgentGrantPort {
+  return {
+    grant: async () => ({ userId: "invited-1", email: "invited@example.com" }),
+    revoke: async () => undefined,
+    list: async () => [],
+    listAll: async () => [],
+    ...overrides,
+  };
 }
 
 function fakeEdgeTicketStore(mint: (ownerId: string) => { ticket: string; expiresAt: string }): EdgeTicketPort {
@@ -338,6 +350,144 @@ describe("Gateway HTTP routes", () => {
       expect(response.status).toBe(200);
       expect(response.body.readings).toEqual([{ value: 23.4, at: "2026-01-01T00:00:00.000Z" }]);
       expect(received?.ref).toBe("c_read_temp");
+    });
+  });
+
+  describe("Acceso multi-usuario — /v1/agents/:edgeAgentId/grants", () => {
+    describe("POST — invitar", () => {
+      it("sin agentGrantStore configurado, responde 501", async () => {
+        const app = appWith(fakeGateway(), undefined, undefined, undefined, undefined, undefined);
+        const response = await request(app)
+          .post("/v1/agents/agent-1/grants")
+          .set("Authorization", `Bearer ${TOKEN}`)
+          .send({ email: "nuevo@example.com" });
+        expect(response.status).toBe(501);
+      });
+
+      it("rechaza sin sesión (sin req.userId) con 401", async () => {
+        const app = appWith(fakeGateway(), undefined, undefined, undefined, undefined, fakeAgentGrantStore());
+        const response = await request(app)
+          .post("/v1/agents/agent-1/grants")
+          .set("Authorization", `Bearer ${TOKEN}`)
+          .send({ email: "nuevo@example.com" });
+        expect(response.status).toBe(401);
+      });
+
+      it("rechaza sin 'email' con 400", async () => {
+        const authPort = fakeAuthPort(async () => ({ userId: "owner-1", email: "owner@example.com" }));
+        const app = appWith(fakeGateway(), undefined, authPort, undefined, undefined, fakeAgentGrantStore());
+        const response = await request(app)
+          .post("/v1/agents/agent-1/grants")
+          .set("Authorization", `Bearer ${TOKEN}`)
+          .set("X-User-Token", "valid-jwt")
+          .send({});
+        expect(response.status).toBe(400);
+      });
+
+      it("con email válido, invita y actualiza el cache de AgentRegistry al toque (201)", async () => {
+        const authPort = fakeAuthPort(async () => ({ userId: "owner-1", email: "owner@example.com" }));
+        let receivedGrantArgs: unknown;
+        let receivedSetGrantedUserIds: unknown;
+        const grantStore = fakeAgentGrantStore({
+          grant: async (edgeAgentId, ownerId, email) => {
+            receivedGrantArgs = { edgeAgentId, ownerId, email };
+            return { userId: "invited-1", email };
+          },
+          list: async () => [{ userId: "invited-1", email: "nuevo@example.com" }],
+        });
+        const gateway = fakeGateway({
+          agentRegistry: {
+            list: () => [],
+            setGrantedUserIds: (edgeAgentId: string, userIds: string[]) => {
+              receivedSetGrantedUserIds = { edgeAgentId, userIds };
+            },
+          } as unknown as Gateway["agentRegistry"],
+        });
+        const app = appWith(gateway, undefined, authPort, undefined, undefined, grantStore);
+
+        const response = await request(app)
+          .post("/v1/agents/agent-1/grants")
+          .set("Authorization", `Bearer ${TOKEN}`)
+          .set("X-User-Token", "valid-jwt")
+          .send({ email: "nuevo@example.com" });
+
+        expect(response.status).toBe(201);
+        expect(response.body).toEqual({ userId: "invited-1", email: "nuevo@example.com" });
+        expect(receivedGrantArgs).toEqual({ edgeAgentId: "agent-1", ownerId: "owner-1", email: "nuevo@example.com" });
+        expect(receivedSetGrantedUserIds).toEqual({ edgeAgentId: "agent-1", userIds: ["invited-1"] });
+      });
+
+      it("si el store devuelve { error }, responde 400 con ese mensaje", async () => {
+        const authPort = fakeAuthPort(async () => ({ userId: "owner-1", email: "owner@example.com" }));
+        const grantStore = fakeAgentGrantStore({
+          grant: async () => ({ error: "No encontramos ningún usuario con ese email." }),
+        });
+        const app = appWith(fakeGateway(), undefined, authPort, undefined, undefined, grantStore);
+
+        const response = await request(app)
+          .post("/v1/agents/agent-1/grants")
+          .set("Authorization", `Bearer ${TOKEN}`)
+          .set("X-User-Token", "valid-jwt")
+          .send({ email: "nadie@example.com" });
+
+        expect(response.status).toBe(400);
+        expect(response.body).toEqual({ error: "No encontramos ningún usuario con ese email." });
+      });
+    });
+
+    describe("GET — listar", () => {
+      it("pasa edgeAgentId y el userId (dueño) al store", async () => {
+        const authPort = fakeAuthPort(async () => ({ userId: "owner-1", email: "owner@example.com" }));
+        let received: { edgeAgentId: string; ownerId: string } | undefined;
+        const grantStore = fakeAgentGrantStore({
+          list: async (edgeAgentId, ownerId) => {
+            received = { edgeAgentId, ownerId };
+            return [{ userId: "invited-1", email: "nuevo@example.com" }];
+          },
+        });
+        const app = appWith(fakeGateway(), undefined, authPort, undefined, undefined, grantStore);
+
+        const response = await request(app)
+          .get("/v1/agents/agent-1/grants")
+          .set("Authorization", `Bearer ${TOKEN}`)
+          .set("X-User-Token", "valid-jwt");
+
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ grants: [{ userId: "invited-1", email: "nuevo@example.com" }] });
+        expect(received).toEqual({ edgeAgentId: "agent-1", ownerId: "owner-1" });
+      });
+    });
+
+    describe("DELETE — revocar", () => {
+      it("pasa edgeAgentId, el ownerId (quien pide) y el userId a revocar — efecto inmediato en el cache (204)", async () => {
+        const authPort = fakeAuthPort(async () => ({ userId: "owner-1", email: "owner@example.com" }));
+        let receivedRevokeArgs: unknown;
+        let receivedSetGrantedUserIds: unknown;
+        const grantStore = fakeAgentGrantStore({
+          revoke: async (edgeAgentId, ownerId, userId) => {
+            receivedRevokeArgs = { edgeAgentId, ownerId, userId };
+          },
+          list: async () => [],
+        });
+        const gateway = fakeGateway({
+          agentRegistry: {
+            list: () => [],
+            setGrantedUserIds: (edgeAgentId: string, userIds: string[]) => {
+              receivedSetGrantedUserIds = { edgeAgentId, userIds };
+            },
+          } as unknown as Gateway["agentRegistry"],
+        });
+        const app = appWith(gateway, undefined, authPort, undefined, undefined, grantStore);
+
+        const response = await request(app)
+          .delete("/v1/agents/agent-1/grants/invited-1")
+          .set("Authorization", `Bearer ${TOKEN}`)
+          .set("X-User-Token", "valid-jwt");
+
+        expect(response.status).toBe(204);
+        expect(receivedRevokeArgs).toEqual({ edgeAgentId: "agent-1", ownerId: "owner-1", userId: "invited-1" });
+        expect(receivedSetGrantedUserIds).toEqual({ edgeAgentId: "agent-1", userIds: [] });
+      });
     });
   });
 

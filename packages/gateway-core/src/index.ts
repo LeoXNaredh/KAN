@@ -46,5 +46,7 @@ export * from "./infra/InMemoryEdgeTicketStore";
 export * from "./infra/NodeCronScheduler";
 export * from "./infra/ConsoleNotificationService";
 export * from "./infra/ExpoNotificationService";
+export * from "./infra/WebPushNotificationService";
+export * from "./infra/CompositeNotificationService";
 export * from "./infra/ConsoleLogger";
 export * from "./Gateway";

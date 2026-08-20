@@ -8,3 +8,5 @@ export * from "./SupabaseAuditStore";
 export * from "./SupabasePairingStore";
 export * from "./SupabasePushTokenStore";
 export * from "./SupabasePluginRegistry";
+export * from "./SupabaseAgentGrantStore";
+export * from "./SupabaseWebPushSubscriptionStore";
