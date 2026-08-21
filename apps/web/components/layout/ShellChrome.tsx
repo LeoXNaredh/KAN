@@ -9,6 +9,8 @@ import { InfoPanel } from "@/components/layout/InfoPanel";
 import { BootSequence } from "@/components/kan/BootSequence";
 import { useBrowserEdgeAgent } from "@/lib/edgeAgent/useBrowserEdgeAgent";
 import { SystemStatusProvider } from "@/lib/status/SystemStatusProvider";
+import { LiveModeProvider } from "@/lib/live/LiveModeContext";
+import { DeviceDiscoveryModal } from "@/components/layout/DeviceDiscoveryModal";
 
 // sessionStorage (no localStorage): el boot es "por sesión de browser", no
 // "una vez en la vida" — reabrir KAN mañana en una pestaña nueva vuelve a
@@ -78,47 +80,50 @@ export function ShellChrome({
 
   return (
     <SystemStatusProvider>
-      <div className="relative flex min-h-screen w-full bg-surface text-ink">
-        <Sidebar open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} entering={!panelsRevealed} />
-        <div
-          className={`flex min-w-0 flex-1 flex-col transition-all duration-slow delay-150 ${
-            panelsRevealed ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
-          }`}
-        >
-          <TopBar onOpenMenu={() => setMobileNavOpen(true)} onOpenInfo={() => setInfoPanelOpen(true)} user={user} />
-          <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">{children}</main>
-        </div>
+      <LiveModeProvider>
+        <div className="relative flex min-h-screen w-full bg-surface text-ink">
+          <Sidebar open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} entering={!panelsRevealed} />
+          <div
+            className={`flex min-w-0 flex-1 flex-col transition-all duration-slow delay-150 ${
+              panelsRevealed ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+            }`}
+          >
+            <TopBar onOpenMenu={() => setMobileNavOpen(true)} onOpenInfo={() => setInfoPanelOpen(true)} user={user} />
+            <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">{children}</main>
+          </div>
 
-        {/* Panel lateral de info — colapsado por defecto, se abre con el ícono del TopBar, en cualquier tamaño de pantalla (no una columna que solo aparece en desktop). */}
-        {infoPanelOpen && (
-          <button
-            type="button"
-            aria-label="Cerrar panel de información"
-            className="fixed inset-0 z-40 bg-black/40"
-            onClick={() => setInfoPanelOpen(false)}
-          />
-        )}
-        <div
-          className={`fixed inset-y-0 right-0 z-50 flex w-80 max-w-[90vw] flex-col bg-surface-2 shadow-2xl transition-transform duration-base ${
-            infoPanelOpen ? "translate-x-0" : "translate-x-full"
-          }`}
-        >
-          <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-3">
-            <p className="text-sm font-medium text-ink">Información</p>
+          {/* Panel lateral de info — colapsado por defecto, se abre con el ícono del TopBar, en cualquier tamaño de pantalla (no una columna que solo aparece en desktop). */}
+          {infoPanelOpen && (
             <button
               type="button"
               aria-label="Cerrar panel de información"
+              className="fixed inset-0 z-40 bg-black/40"
               onClick={() => setInfoPanelOpen(false)}
-              className="press rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-3 hover:text-ink"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
+            />
+          )}
+          <div
+            className={`fixed inset-y-0 right-0 z-50 flex w-80 max-w-[90vw] flex-col bg-surface-2 shadow-2xl transition-transform duration-base ${
+              infoPanelOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-line bg-surface-2 px-4 py-3">
+              <p className="text-sm font-medium text-ink">Información</p>
+              <button
+                type="button"
+                aria-label="Cerrar panel de información"
+                onClick={() => setInfoPanelOpen(false)}
+                className="press rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-3 hover:text-ink"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <InfoPanel summary={summary} />
           </div>
-          <InfoPanel summary={summary} />
-        </div>
 
-        {booting && <BootSequence onPanelsReveal={handleBootPanelsReveal} onDone={handleBootDone} />}
-      </div>
+          {booting && <BootSequence onPanelsReveal={handleBootPanelsReveal} onDone={handleBootDone} />}
+          <DeviceDiscoveryModal />
+        </div>
+      </LiveModeProvider>
     </SystemStatusProvider>
   );
 }

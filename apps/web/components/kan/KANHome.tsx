@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { Cpu, FolderKanban, Home as HomeIcon, ImagePlus, Send, Volume2, Workflow, X } from "lucide-react";
 import { KANLayout } from "@/components/kan/KANLayout";
@@ -13,6 +13,7 @@ import { PendingConfirmationModal } from "@/components/dashboard/PendingConfirma
 import { useConversation } from "@/lib/chat/useConversation";
 import { useKANState } from "@/lib/kan/useKANState";
 import { useWakeWord } from "@/lib/kan/useWakeWord";
+import { useLiveModeContext } from "@/lib/live/LiveModeContext";
 
 const SIDE_NAV_ITEMS = [
   { href: "/inicio", label: "Inicio", icon: HomeIcon },
@@ -43,6 +44,16 @@ export function KANHome({
   const conv = useConversation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasMessages = conv.messages.length > 0;
+
+  // Publica si el modo Live está prendido en el contexto global del shell —
+  // `DeviceDiscoveryModal` (montado en `ShellChrome`, cualquier ruta) lo usa
+  // para decidir si anuncia por voz un dispositivo nuevo. La sesión Live en
+  // sí sigue viviendo acá (vía useConversation/useLiveSession), esto solo
+  // republica su status.
+  const { setLiveActive } = useLiveModeContext();
+  useEffect(() => {
+    setLiveActive(conv.live.status === "active");
+  }, [conv.live.status, setLiveActive]);
 
   const { phase, activity } = useKANState({
     hasMessages,
