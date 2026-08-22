@@ -85,6 +85,36 @@ describe("AlertMonitor — create/cancel/list", () => {
     const monitor = new AlertMonitor(vi.fn());
     expect(() => monitor.create(input)).toThrow();
   });
+
+  it("restore() re-inserta una regla con su id/createdAt originales, sin generar uno nuevo", () => {
+    const store = new FakeAlertRuleStore();
+    const monitor = new AlertMonitor(vi.fn(), store);
+    const rule: AlertRule = { ...baseInput(), id: "rule-original", createdAt: "2026-01-01T00:00:00.000Z" };
+
+    monitor.restore(rule);
+
+    expect(monitor.list()).toEqual([rule]);
+    expect(store.rules).toEqual([rule]);
+  });
+
+  it("restore() sobrescribe una regla existente con el mismo id (restaurar dos veces no duplica)", () => {
+    const store = new FakeAlertRuleStore();
+    const monitor = new AlertMonitor(vi.fn(), store);
+    const rule: AlertRule = { ...baseInput(), id: "rule-original", createdAt: "2026-01-01T00:00:00.000Z" };
+
+    monitor.restore(rule);
+    monitor.restore(rule);
+
+    expect(monitor.list()).toHaveLength(1);
+  });
+
+  it("restore() no cuenta contra MAX_ALERTS_PER_USER (a diferencia de create())", () => {
+    const monitor = new AlertMonitor(vi.fn());
+    for (let i = 0; i < 25; i++) {
+      monitor.restore({ ...baseInput(), id: `rule-${i}`, createdAt: "2026-01-01T00:00:00.000Z", createdBy: "user-1" });
+    }
+    expect(monitor.list()).toHaveLength(25);
+  });
 });
 
 describe("AlertMonitor — límite de alertas activas por usuario", () => {

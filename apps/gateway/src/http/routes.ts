@@ -1,6 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
-import { extractPrimaryNumericValue, type EdgeTicketPort, type Gateway, type LiveVoiceSessionStore } from "@kan/gateway-core";
+import {
+  buildDeviceConfigBundle,
+  extractPrimaryNumericValue,
+  parseDeviceConfigBundle,
+  type DeviceSnapshotStorePort,
+  type EdgeTicketPort,
+  type Gateway,
+  type LiveVoiceSessionStore,
+} from "@kan/gateway-core";
 import type { AuthPort, AgentGrantPort } from "@kan/core";
 import { safeCompareToken } from "@kan/plugin-contract";
 import { createUserAuthMiddleware } from "./userAuthMiddleware";
@@ -30,6 +39,7 @@ export function createRoutes(
   liveVoiceSessionStore?: LiveVoiceSessionStore,
   edgeTicketStore?: EdgeTicketPort,
   agentGrantStore?: AgentGrantPort,
+  deviceSnapshotStore?: DeviceSnapshotStorePort,
 ): Router {
   const router = Router();
 
@@ -251,6 +261,154 @@ export function createRoutes(
 
   router.get("/v1/audit", async (req, res) => {
     res.json({ entries: await gateway.auditService.list({ userId: req.userId }) });
+  });
+
+  // Backup/restore de proyecto (docs/06): lectura/borrado autenticados por
+  // sesión de usuario, mismo criterio que /v1/audit. Subir un snapshot nuevo
+  // (signed URL + confirmación) es responsabilidad del Edge Agent, no de
+  // apps/web — ver snapshotRoutes.ts (auth por secreto de pairing).
+  router.get("/v1/snapshots", async (req, res) => {
+    if (!deviceSnapshotStore || !req.userId) {
+      res.json({ snapshots: [] });
+      return;
+    }
+    const snapshots = await deviceSnapshotStore.listByUser(req.userId);
+    res.json({ snapshots });
+  });
+
+  router.get("/v1/devices/:deviceId/snapshots", async (req, res) => {
+    if (!deviceSnapshotStore || !req.userId) {
+      res.json({ snapshots: [] });
+      return;
+    }
+    const snapshots = await deviceSnapshotStore.listByUser(req.userId, req.params.deviceId);
+    res.json({ snapshots });
+  });
+
+  router.delete("/v1/snapshots/:id", async (req, res) => {
+    if (!deviceSnapshotStore || !req.userId) {
+      res.status(501).json({ error: "Backups de dispositivo no configurados." });
+      return;
+    }
+    const existing = await deviceSnapshotStore.get(req.params.id);
+    if (!existing || existing.userId !== req.userId) {
+      res.status(404).json({ error: "Snapshot no encontrado." });
+      return;
+    }
+    await deviceSnapshotStore.delete(req.params.id);
+    res.status(204).end();
+  });
+
+  // Solo para "Ver contenido" en apps/web (docs/06) — nunca para restore: el
+  // Edge Agent usa la signed URL de snapshotRoutes.ts para eso. Un snapshot
+  // "source"/"config" es un JSON chico, devolverlo tal cual en la respuesta
+  // es más simple que armar una signed URL para algo que el usuario solo
+  // quiere leer. "binary" se rechaza a propósito — no tiene sentido mostrar
+  // un dump de flash como texto, y evita mandar potencialmente varios MB por
+  // esta ruta.
+  router.get("/v1/snapshots/:id/content", async (req, res) => {
+    if (!deviceSnapshotStore || !req.userId) {
+      res.status(501).json({ error: "Backups de dispositivo no configurados." });
+      return;
+    }
+    const record = await deviceSnapshotStore.get(req.params.id);
+    if (!record || record.userId !== req.userId) {
+      res.status(404).json({ error: "Snapshot no encontrado." });
+      return;
+    }
+    if (record.backupType === "binary") {
+      res.status(400).json({ error: "Los snapshots binarios no se pueden ver como texto — solo restaurar." });
+      return;
+    }
+
+    try {
+      const raw = await deviceSnapshotStore.downloadContent(record.storageObjectPath);
+      const content = JSON.parse(raw.toString("utf-8"));
+      res.json({ backupType: record.backupType, content });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Error desconocido" });
+    }
+  });
+
+  // Plataforma C (docs/06, PLC/Modbus/OPC-UA): a diferencia de
+  // source/binary, un snapshot "config" nunca pasa por el Edge Agent — no
+  // hay programa que leer del dispositivo, solo lo que KAN ya sabe sobre él
+  // (reglas de alerta). El Gateway arma y sube el contenido él mismo (ya
+  // tiene service_role), sin el intercambio de signed URL/ticket que sí
+  // necesita el Edge Agent en snapshotRoutes.ts.
+  router.post("/v1/devices/:deviceId/snapshots/config", async (req, res) => {
+    if (!deviceSnapshotStore) {
+      res.status(501).json({ error: "Backups de dispositivo no configurados." });
+      return;
+    }
+    if (!req.userId) {
+      res.status(401).json({ error: "Se requiere sesión activa." });
+      return;
+    }
+
+    const { deviceKind, deviceName, edgeAgentId, label } = req.body ?? {};
+    if (typeof deviceKind !== "string" || typeof edgeAgentId !== "string") {
+      res.status(400).json({ error: "Se requieren 'deviceKind' y 'edgeAgentId'." });
+      return;
+    }
+
+    const deviceId = req.params.deviceId;
+    const bundle = buildDeviceConfigBundle(deviceId, deviceKind, gateway.alertMonitor.list());
+    const content = Buffer.from(JSON.stringify(bundle), "utf-8");
+    const storageObjectPath = `${req.userId}/${deviceId}/${randomUUID()}.json`;
+
+    try {
+      await deviceSnapshotStore.uploadContent(storageObjectPath, content);
+      const record = await deviceSnapshotStore.create({
+        userId: req.userId,
+        edgeAgentId,
+        deviceId,
+        deviceName: typeof deviceName === "string" ? deviceName : undefined,
+        deviceKind,
+        backupType: "config",
+        label: typeof label === "string" ? label : undefined,
+        storageObjectPath,
+        sizeBytes: content.byteLength,
+        fileCount: bundle.alertRules.length,
+      });
+      res.status(201).json({ snapshot: record });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Error desconocido" });
+    }
+  });
+
+  router.post("/v1/snapshots/:id/restore-config", async (req, res) => {
+    if (!deviceSnapshotStore) {
+      res.status(501).json({ error: "Backups de dispositivo no configurados." });
+      return;
+    }
+    if (!req.userId) {
+      res.status(401).json({ error: "Se requiere sesión activa." });
+      return;
+    }
+
+    const record = await deviceSnapshotStore.get(req.params.id);
+    if (!record || record.userId !== req.userId) {
+      res.status(404).json({ error: "Snapshot no encontrado." });
+      return;
+    }
+    if (record.backupType !== "config") {
+      res.status(400).json({ error: "Este snapshot no es de tipo 'config'." });
+      return;
+    }
+
+    try {
+      const content = await deviceSnapshotStore.downloadContent(record.storageObjectPath);
+      const bundle = parseDeviceConfigBundle(content);
+      // Upsert por id original (AlertMonitor.restore()) — nunca borra reglas
+      // que no estén en el snapshot, solo trae de vuelta las que sí.
+      for (const rule of bundle.alertRules) {
+        gateway.alertMonitor.restore(rule);
+      }
+      res.json({ restored: { alertRules: bundle.alertRules.length } });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Error desconocido" });
+    }
   });
 
   router.get("/v1/jobs", (req, res) => {

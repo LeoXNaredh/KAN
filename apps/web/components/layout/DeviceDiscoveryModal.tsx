@@ -10,6 +10,7 @@ import { useLiveModeContext } from "@/lib/live/LiveModeContext";
 import { useSpeechSynthesis } from "@/lib/voice/useSpeechSynthesis";
 import type { DeviceCapabilitiesView } from "@/lib/secuencias/types";
 import type { TelemetryPollResult } from "@/lib/sensores/types";
+import { isConfigOnlyDeviceKind } from "@/lib/respaldos/types";
 
 interface FoundSensor {
   ref: string;
@@ -21,6 +22,8 @@ interface FoundActuator {
   ref: string;
   description: string;
 }
+
+const PROJECT_SAVE_SNAPSHOT = "project_save_snapshot";
 
 /**
  * Panel automático que se abre solo cuando `useDeviceDiscovery()` detecta un
@@ -39,6 +42,11 @@ export function DeviceDiscoveryModal() {
   const [loading, setLoading] = useState(true);
   const [sensors, setSensors] = useState<FoundSensor[]>([]);
   const [actuators, setActuators] = useState<FoundActuator[]>([]);
+  const [saveCapabilityRef, setSaveCapabilityRef] = useState<string | null>(null);
+  const [backupCapable, setBackupCapable] = useState(false);
+  const [snapshotCount, setSnapshotCount] = useState<number | null>(null);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!newDevice) return;
@@ -47,6 +55,7 @@ export function DeviceDiscoveryModal() {
 
     async function load() {
       setLoading(true);
+      setSaveMessage(null);
       try {
         const capabilitiesRes = await fetch("/api/capabilities", { cache: "no-store" });
         const capabilitiesData = await capabilitiesRes.json();
@@ -54,9 +63,30 @@ export function DeviceDiscoveryModal() {
         const device = devices.find((d) => d.deviceId === newDevice!.deviceId);
         if (cancelled) return;
 
-        const sensorCaps = (device?.capabilities ?? []).filter((c) => c.severity === "read-only");
-        const actuatorCaps = (device?.capabilities ?? []).filter((c) => c.severity !== "read-only");
+        // Backup/restore de proyecto (docs/06) — project_list_files/
+        // project_save_snapshot son severity "read-only" (no tocan el
+        // dispositivo físico), pero no son sensores: se excluyen acá para
+        // que no aparezcan como una lectura rara en "Sensores".
+        const isBackupCapabilityName = (name: string) => name.startsWith("project_") || name === "compile_and_upload";
+        const sensorCaps = (device?.capabilities ?? []).filter((c) => c.severity === "read-only" && !isBackupCapabilityName(c.name));
+        const actuatorCaps = (device?.capabilities ?? []).filter((c) => c.severity !== "read-only" && !isBackupCapabilityName(c.name));
         setActuators(actuatorCaps.map((c) => ({ ref: c.ref, description: c.description })));
+
+        const saveCap = (device?.capabilities ?? []).find((c) => c.name === PROJECT_SAVE_SNAPSHOT);
+        const isBackupCapable = Boolean(saveCap) || isConfigOnlyDeviceKind(newDevice!.kind);
+        setSaveCapabilityRef(saveCap?.ref ?? null);
+        setBackupCapable(isBackupCapable);
+        if (isBackupCapable) {
+          try {
+            const snapshotsRes = await fetch(`/api/respaldos?deviceId=${encodeURIComponent(newDevice!.deviceId)}`, { cache: "no-store" });
+            const snapshotsData = await snapshotsRes.json();
+            if (!cancelled) setSnapshotCount((snapshotsData.snapshots ?? []).length);
+          } catch {
+            if (!cancelled) setSnapshotCount(null);
+          }
+        } else {
+          setSnapshotCount(null);
+        }
 
         if (sensorCaps.length === 0) {
           setSensors([]);
@@ -78,6 +108,9 @@ export function DeviceDiscoveryModal() {
         if (!cancelled) {
           setSensors([]);
           setActuators([]);
+          setBackupCapable(false);
+          setSaveCapabilityRef(null);
+          setSnapshotCount(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -97,6 +130,49 @@ export function DeviceDiscoveryModal() {
       `Encontré un dispositivo nuevo: ${newDevice.deviceName}, con ${sensors.length} ${sensors.length === 1 ? "sensor" : "sensores"} y ${actuators.length} ${actuators.length === 1 ? "actuador" : "actuadores"}.`,
     );
   }, [newDevice, loading, isLiveActive, sensors.length, actuators.length, speak]);
+
+  async function saveSnapshotNow() {
+    if (!newDevice) return;
+    setSavingSnapshot(true);
+    setSaveMessage(null);
+    try {
+      if (saveCapabilityRef) {
+        const response = await fetch("/api/tools/kan_run_sequence/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ args: { steps: [{ capabilityRef: saveCapabilityRef, input: {} }] } }),
+        });
+        const data = await response.json();
+        const step = data?.data?.steps?.[0];
+        if (step?.outcome !== "done") {
+          setSaveMessage(step?.error ?? data?.error ?? "No se pudo guardar el snapshot.");
+          return;
+        }
+      } else {
+        const response = await fetch("/api/respaldos/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: newDevice.deviceId,
+            deviceKind: newDevice.kind,
+            deviceName: newDevice.deviceName,
+            edgeAgentId: newDevice.edgeAgentId,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          setSaveMessage(data.error ?? "No se pudo guardar el snapshot.");
+          return;
+        }
+      }
+      setSnapshotCount((count) => (count ?? 0) + 1);
+      setSaveMessage("Snapshot guardado.");
+    } catch {
+      setSaveMessage("KAN no está disponible en este momento.");
+    } finally {
+      setSavingSnapshot(false);
+    }
+  }
 
   if (!newDevice) return null;
 
@@ -155,6 +231,30 @@ export function DeviceDiscoveryModal() {
                 </ul>
               )}
             </div>
+
+            {backupCapable && (
+              <div className="border-t border-line/60 pt-3">
+                <p className="mb-1 text-xs font-medium text-ink-faint">Respaldos</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-ink">
+                    {snapshotCount === null
+                      ? "…"
+                      : snapshotCount === 0
+                        ? "Sin snapshots guardados todavía."
+                        : `${snapshotCount} snapshot${snapshotCount === 1 ? "" : "s"} guardado${snapshotCount === 1 ? "" : "s"}.`}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={savingSnapshot}
+                    onClick={() => void saveSnapshotNow()}
+                    className="press shrink-0 rounded-md bg-surface-3 px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+                  >
+                    {savingSnapshot ? "Guardando…" : "Guardar snapshot ahora"}
+                  </button>
+                </div>
+                {saveMessage && <p className="mt-1 text-xs text-ink-faint">{saveMessage}</p>}
+              </div>
+            )}
           </div>
         )}
 

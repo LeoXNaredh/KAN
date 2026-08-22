@@ -90,6 +90,19 @@ export class AlertMonitor {
     }
   }
 
+  /**
+   * Re-inserta una regla ya existente tal cual (id/createdAt originales) —
+   * a diferencia de `create()`, no genera un id nuevo ni cuenta contra
+   * `MAX_ALERTS_PER_USER` (docs/06, restore de snapshot de configuración de
+   * PLC/Modbus/OPC-UA): restaurar un backup propio es un upsert explícito
+   * del usuario sobre lo que YA tenía, no la creación de algo nuevo. Nunca
+   * borra reglas que no estén en el snapshot — solo trae de vuelta las que sí.
+   */
+  restore(rule: AlertRule): void {
+    this.rules.set(rule.id, rule);
+    this.store?.save(rule);
+  }
+
   cancel(ruleId: string): void {
     if (!this.rules.has(ruleId)) return;
     this.rules.delete(ruleId);

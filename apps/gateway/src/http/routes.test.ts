@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import express from "express";
 import request from "supertest";
 import type { AgentGrantPort } from "@kan/core";
-import type { EdgeTicketPort, Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
+import type { DeviceSnapshotRecord, DeviceSnapshotStorePort, EdgeTicketPort, Gateway, LiveVoiceSessionStore } from "@kan/gateway-core";
 import type { AuthPort } from "@kan/core";
 import { createRoutes, type RateLimitOptions } from "./routes";
 
@@ -23,6 +23,7 @@ function fakeGateway(overrides: Partial<Gateway> = {}): Gateway {
       schedule: () => "job-1",
       cancel: () => {},
     } as unknown as Gateway["scheduler"],
+    alertMonitor: { list: () => [], restore: () => {} } as unknown as Gateway["alertMonitor"],
     ...overrides,
   } as Gateway;
 }
@@ -34,11 +35,48 @@ function appWith(
   liveVoiceSessionStore?: LiveVoiceSessionStore,
   edgeTicketStore?: EdgeTicketPort,
   agentGrantStore?: AgentGrantPort,
+  deviceSnapshotStore?: DeviceSnapshotStorePort,
 ) {
   const app = express();
   app.use(express.json());
-  app.use(createRoutes(gateway, TOKEN, rateLimitOptions, authPort, liveVoiceSessionStore, edgeTicketStore, agentGrantStore));
+  app.use(
+    createRoutes(
+      gateway,
+      TOKEN,
+      rateLimitOptions,
+      authPort,
+      liveVoiceSessionStore,
+      edgeTicketStore,
+      agentGrantStore,
+      deviceSnapshotStore,
+    ),
+  );
   return app;
+}
+
+const SNAPSHOT_RECORD: DeviceSnapshotRecord = {
+  id: "snap-1",
+  userId: "user-1",
+  edgeAgentId: "agent-1",
+  deviceId: "device-1",
+  deviceKind: "micropython",
+  backupType: "source",
+  storageObjectPath: "user-1/device-1/snap-1.json",
+  createdAt: "2026-08-01T00:00:00.000Z",
+};
+
+function fakeDeviceSnapshotStore(overrides: Partial<DeviceSnapshotStorePort> = {}): DeviceSnapshotStorePort {
+  return {
+    create: async () => SNAPSHOT_RECORD,
+    listByUser: async () => [SNAPSHOT_RECORD],
+    get: async () => SNAPSHOT_RECORD,
+    delete: async () => {},
+    createSignedUploadUrl: async () => ({ signedUrl: "", token: "" }),
+    createSignedDownloadUrl: async () => "",
+    uploadContent: async () => {},
+    downloadContent: async () => Buffer.alloc(0),
+    ...overrides,
+  };
 }
 
 function fakeAgentGrantStore(overrides: Partial<AgentGrantPort> = {}): AgentGrantPort {
@@ -1128,6 +1166,330 @@ describe("Gateway HTTP routes", () => {
       expect(response.status).toBe(201);
       expect(response.body).toEqual({ ticket: "ticket-abc", expiresAt: "2026-01-01T00:01:00.000Z" });
       expect(mintedFor).toBe("user-1");
+    });
+  });
+
+  describe("GET /v1/snapshots (docs/06, backup/restore de proyecto)", () => {
+    it("sin deviceSnapshotStore configurado, devuelve lista vacía", async () => {
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      const response = await request(app).get("/v1/snapshots").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ snapshots: [] });
+    });
+
+    it("sin sesión de usuario, devuelve lista vacía aunque el store esté configurado", async () => {
+      const app = appWith(fakeGateway(), undefined, undefined, undefined, undefined, undefined, fakeDeviceSnapshotStore());
+
+      const response = await request(app).get("/v1/snapshots").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.body).toEqual({ snapshots: [] });
+    });
+
+    it("filtra por el userId verificado", async () => {
+      let receivedUserId: string | undefined;
+      const store = fakeDeviceSnapshotStore({
+        listByUser: async (userId) => {
+          receivedUserId = userId;
+          return [SNAPSHOT_RECORD];
+        },
+      });
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        undefined,
+        undefined,
+        undefined,
+        store,
+      );
+
+      const response = await request(app).get("/v1/snapshots").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "jwt-valido");
+
+      expect(response.body).toEqual({ snapshots: [SNAPSHOT_RECORD] });
+      expect(receivedUserId).toBe("user-1");
+    });
+  });
+
+  describe("GET /v1/devices/:deviceId/snapshots", () => {
+    it("filtra por userId y deviceId", async () => {
+      let received: { userId?: string; deviceId?: string } = {};
+      const store = fakeDeviceSnapshotStore({
+        listByUser: async (userId, deviceId) => {
+          received = { userId, deviceId };
+          return [SNAPSHOT_RECORD];
+        },
+      });
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        undefined,
+        undefined,
+        undefined,
+        store,
+      );
+
+      await request(app).get("/v1/devices/device-1/snapshots").set("Authorization", `Bearer ${TOKEN}`).set("X-User-Token", "jwt-valido");
+
+      expect(received).toEqual({ userId: "user-1", deviceId: "device-1" });
+    });
+  });
+
+  describe("DELETE /v1/snapshots/:id", () => {
+    it("borra un snapshot del dueño y devuelve 204", async () => {
+      let deletedId: string | undefined;
+      const store = fakeDeviceSnapshotStore({ delete: async (id) => void (deletedId = id) });
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        undefined,
+        undefined,
+        undefined,
+        store,
+      );
+
+      const response = await request(app)
+        .delete("/v1/snapshots/snap-1")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(204);
+      expect(deletedId).toBe("snap-1");
+    });
+
+    it("rechaza con 404 si el snapshot pertenece a otro usuario", async () => {
+      const store = fakeDeviceSnapshotStore({ get: async () => ({ ...SNAPSHOT_RECORD, userId: "otro-user" }) });
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        undefined,
+        undefined,
+        undefined,
+        store,
+      );
+
+      const response = await request(app)
+        .delete("/v1/snapshots/snap-1")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(404);
+    });
+
+    it("sin sesión de usuario, responde 501", async () => {
+      const app = appWith(fakeGateway(), undefined, undefined, undefined, undefined, undefined, fakeDeviceSnapshotStore());
+
+      const response = await request(app).delete("/v1/snapshots/snap-1").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(501);
+    });
+  });
+
+  describe("GET /v1/snapshots/:id/content", () => {
+    it("devuelve el contenido parseado de un snapshot 'source'", async () => {
+      const bundleContent = Buffer.from(JSON.stringify({ files: [{ path: "main.py", content: "print(1)" }] }), "utf-8");
+      const store = fakeDeviceSnapshotStore({ get: async () => SNAPSHOT_RECORD, downloadContent: async () => bundleContent });
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .get("/v1/snapshots/snap-1/content")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ backupType: "source", content: { files: [{ path: "main.py", content: "print(1)" }] } });
+    });
+
+    it("rechaza con 400 un snapshot 'binary'", async () => {
+      const store = fakeDeviceSnapshotStore({ get: async () => ({ ...SNAPSHOT_RECORD, backupType: "binary" }) });
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .get("/v1/snapshots/snap-1/content")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(400);
+    });
+
+    it("rechaza con 404 si el snapshot pertenece a otro usuario", async () => {
+      const store = fakeDeviceSnapshotStore({ get: async () => ({ ...SNAPSHOT_RECORD, userId: "otro-user" }) });
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .get("/v1/snapshots/snap-1/content")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(404);
+    });
+
+    it("sin sesión de usuario, responde 501", async () => {
+      const app = appWith(fakeGateway(), undefined, undefined, undefined, undefined, undefined, fakeDeviceSnapshotStore());
+
+      const response = await request(app).get("/v1/snapshots/snap-1/content").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(501);
+    });
+  });
+
+  describe("POST /v1/devices/:deviceId/snapshots/config (docs/06, Plataforma C)", () => {
+    const validBody = { deviceKind: "modbus", edgeAgentId: "agent-1", deviceName: "PLC del taller" };
+
+    it("arma el bundle desde las alertas del dispositivo y lo sube, sin pasar por el Edge Agent", async () => {
+      const alertRules = [
+        { id: "r1", capabilityRef: "c_a1_modbus_plc1_read_temp", comparator: "above" as const, threshold: 40, label: "la temperatura", createdAt: "2026-01-01T00:00:00.000Z" },
+        { id: "r2", capabilityRef: "c_a1_otro_dispositivo_read_x", comparator: "above" as const, threshold: 1, label: "x", createdAt: "2026-01-01T00:00:00.000Z" },
+      ];
+      const gateway = fakeGateway({ alertMonitor: { list: () => alertRules, restore: () => {} } as unknown as Gateway["alertMonitor"] });
+      let uploadedContent: Buffer | undefined;
+      const store = fakeDeviceSnapshotStore({
+        uploadContent: async (_path, content) => {
+          uploadedContent = content;
+        },
+        create: async (input) => ({ ...SNAPSHOT_RECORD, backupType: input.backupType, fileCount: input.fileCount }),
+      });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .post("/v1/devices/modbus_plc1/snapshots/config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido")
+        .send(validBody);
+
+      expect(response.status).toBe(201);
+      expect(response.body.snapshot).toMatchObject({ backupType: "config", fileCount: 1 });
+      const bundle = JSON.parse(uploadedContent!.toString("utf-8"));
+      expect(bundle.alertRules).toEqual([alertRules[0]]);
+    });
+
+    it("rechaza con 400 si faltan 'deviceKind'/'edgeAgentId'", async () => {
+      const app = appWith(
+        fakeGateway(),
+        undefined,
+        fakeAuthPort(async () => ({ userId: "user-1", email: "" })),
+        undefined,
+        undefined,
+        undefined,
+        fakeDeviceSnapshotStore(),
+      );
+
+      const response = await request(app)
+        .post("/v1/devices/modbus_plc1/snapshots/config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido")
+        .send({});
+
+      expect(response.status).toBe(400);
+    });
+
+    it("sin sesión de usuario, responde 401", async () => {
+      const app = appWith(fakeGateway(), undefined, undefined, undefined, undefined, undefined, fakeDeviceSnapshotStore());
+
+      const response = await request(app).post("/v1/devices/modbus_plc1/snapshots/config").set("Authorization", `Bearer ${TOKEN}`).send(validBody);
+
+      expect(response.status).toBe(401);
+    });
+
+    it("sin deviceSnapshotStore configurado, responde 501", async () => {
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })));
+
+      const response = await request(app)
+        .post("/v1/devices/modbus_plc1/snapshots/config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido")
+        .send(validBody);
+
+      expect(response.status).toBe(501);
+    });
+
+    it("rechaza con 500 si uploadContent() lanza", async () => {
+      const store = fakeDeviceSnapshotStore({
+        uploadContent: async () => {
+          throw new Error("bucket lleno");
+        },
+      });
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .post("/v1/devices/modbus_plc1/snapshots/config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido")
+        .send(validBody);
+
+      expect(response.status).toBe(500);
+    });
+  });
+
+  describe("POST /v1/snapshots/:id/restore-config", () => {
+    const configRecord: DeviceSnapshotRecord = { ...SNAPSHOT_RECORD, backupType: "config" };
+    const rule = { id: "r1", capabilityRef: "c_a1_modbus_plc1_read_temp", comparator: "above" as const, threshold: 40, label: "la temperatura", createdAt: "2026-01-01T00:00:00.000Z" };
+    const bundleContent = Buffer.from(JSON.stringify({ deviceId: "modbus_plc1", deviceKind: "modbus", generatedAt: "2026-01-01T00:00:00.000Z", alertRules: [rule] }), "utf-8");
+
+    it("restaura las alertas del snapshot vía AlertMonitor.restore()", async () => {
+      const restored: unknown[] = [];
+      const gateway = fakeGateway({
+        alertMonitor: { list: () => [], restore: (r: unknown) => void restored.push(r) } as unknown as Gateway["alertMonitor"],
+      });
+      const store = fakeDeviceSnapshotStore({ get: async () => configRecord, downloadContent: async () => bundleContent });
+      const app = appWith(gateway, undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .post("/v1/snapshots/snap-1/restore-config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ restored: { alertRules: 1 } });
+      expect(restored).toEqual([rule]);
+    });
+
+    it("rechaza con 400 si el snapshot no es de tipo 'config'", async () => {
+      const store = fakeDeviceSnapshotStore({ get: async () => ({ ...SNAPSHOT_RECORD, backupType: "source" }) });
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .post("/v1/snapshots/snap-1/restore-config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(400);
+    });
+
+    it("rechaza con 404 si el snapshot pertenece a otro usuario", async () => {
+      const store = fakeDeviceSnapshotStore({ get: async () => ({ ...configRecord, userId: "otro-user" }) });
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .post("/v1/snapshots/snap-1/restore-config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(404);
+    });
+
+    it("sin sesión de usuario, responde 401", async () => {
+      const app = appWith(fakeGateway(), undefined, undefined, undefined, undefined, undefined, fakeDeviceSnapshotStore());
+
+      const response = await request(app).post("/v1/snapshots/snap-1/restore-config").set("Authorization", `Bearer ${TOKEN}`);
+
+      expect(response.status).toBe(401);
+    });
+
+    it("rechaza con 500 si el contenido descargado está corrupto", async () => {
+      const store = fakeDeviceSnapshotStore({ get: async () => configRecord, downloadContent: async () => Buffer.from("no es json") });
+      const app = appWith(fakeGateway(), undefined, fakeAuthPort(async () => ({ userId: "user-1", email: "" })), undefined, undefined, undefined, store);
+
+      const response = await request(app)
+        .post("/v1/snapshots/snap-1/restore-config")
+        .set("Authorization", `Bearer ${TOKEN}`)
+        .set("X-User-Token", "jwt-valido");
+
+      expect(response.status).toBe(500);
     });
   });
 });

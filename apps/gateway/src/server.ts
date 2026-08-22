@@ -13,6 +13,7 @@ import {
   SupabaseAgentGrantStore,
   SupabaseWebPushSubscriptionStore,
   SupabaseUserPreferencesStore,
+  SupabaseDeviceSnapshotStore,
 } from "@kan/supabase-adapter";
 import {
   Gateway,
@@ -33,11 +34,13 @@ import {
   DeviceEnrichmentService,
   InMemoryPluginPackageTicketStore,
   InMemoryEdgeTicketStore,
+  InMemoryDeviceSnapshotTicketStore,
   ResendEmailService,
 } from "@kan/gateway-core";
 import { createRoutes } from "./http/routes";
 import { createPairingRoutes } from "./http/pairingRoutes";
 import { createPluginRoutes } from "./http/pluginRoutes";
+import { createSnapshotRoutes } from "./http/snapshotRoutes";
 
 // Carga explícita del .env propio del Gateway, sin depender del cwd desde el
 // que Turbo/pnpm invoquen el script (evita "Falta KAN_SUPABASE_URL" cuando el
@@ -116,6 +119,12 @@ const agentGrantStore = new SupabaseAgentGrantStore(supabaseClient);
 // InMemoryEdgeTicketStore): mint y consume ocurren en la misma request.
 const pluginRegistry = new SupabasePluginRegistry(supabaseClient);
 const pluginPackageTicketStore = new InMemoryPluginPackageTicketStore();
+// Backup/restore de proyecto (docs/06) — mismo cliente service_role otra
+// vez, bucket privado de Storage propio (`device-snapshots`); ticket de
+// subida/descarga en memoria, mismo criterio que pluginPackageTicketStore
+// (mint+consume en la misma request del Gateway).
+const deviceSnapshotStore = new SupabaseDeviceSnapshotStore(supabaseClient);
+const deviceSnapshotTicketStore = new InMemoryDeviceSnapshotTicketStore();
 // Sin persistencia a propósito (ver EdgeTicketPort/InMemoryEdgeTicketStore):
 // un ticket vive segundos, el mismo proceso que lo emite es el que lo
 // consume en el handshake del WS.
@@ -281,6 +290,10 @@ app.use(createPairingRoutes(pairingPort));
 // Mismo criterio que createPairingRoutes (ADR-056, Fase 4): sin token
 // interno, autenticado por el secreto de pairing que ya usa /v1/pairing/config.
 app.use(createPluginRoutes(pairingPort, pluginRegistry, pluginPackageTicketStore));
+// Mismo criterio que createPluginRoutes: sin token interno, autenticado por
+// el secreto de pairing — es el Edge Agent quien sube/baja snapshots, no
+// apps/web (que lee/borra vía /v1/snapshots en createRoutes(), abajo).
+app.use(createSnapshotRoutes(pairingPort, deviceSnapshotStore, deviceSnapshotTicketStore));
 app.use(
   createRoutes(
     gateway,
@@ -290,6 +303,7 @@ app.use(
     liveVoiceSessionStore,
     edgeTicketStore,
     agentGrantStore,
+    deviceSnapshotStore,
   ),
 );
 

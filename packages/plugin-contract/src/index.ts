@@ -3,6 +3,7 @@ export * from "./confirmationCopy";
 export * from "./jsonSchema";
 export * from "./capability";
 export * from "./deviceDriverPort";
+export * from "./projectDriverPort";
 export * from "./manifest";
 export * from "./targetDescriptor";
 export * from "./ioMap";

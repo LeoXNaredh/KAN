@@ -1,7 +1,32 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import type { SnapshotTransportPort, UploadSnapshotInput } from "@kan/plugin-contract";
 import { Esp32ArduinoPlugin } from "./index";
 import { FakeSerialTransport, type FakeDevice } from "./infra/FakeSerialTransport";
 import { FakeNetworkTransport, type FakeNetworkDevice } from "./infra/FakeNetworkTransport";
+import { FakeExternalProcess } from "./infra/FakeExternalProcess";
+
+function fakeSnapshotTransport(): SnapshotTransportPort & { uploads: UploadSnapshotInput[] } {
+  const uploads: UploadSnapshotInput[] = [];
+  const stored = new Map<string, { content: Buffer; backupType: UploadSnapshotInput["backupType"] }>();
+  let nextId = 0;
+  return {
+    uploads,
+    upload: async (input) => {
+      uploads.push(input);
+      const snapshotId = `snap-${nextId++}`;
+      stored.set(snapshotId, { content: input.content, backupType: input.backupType });
+      return { snapshotId };
+    },
+    download: async (_deviceId, snapshotId) => {
+      const entry = stored.get(snapshotId);
+      if (!entry) throw new Error(`Snapshot desconocido: ${snapshotId}`);
+      return entry;
+    },
+  };
+}
 
 function createEsp32Device(path: string): FakeDevice {
   const digitalState = new Map<number, boolean>();
@@ -305,6 +330,224 @@ describe("Esp32ArduinoPlugin", () => {
       expect(devices).toHaveLength(2);
       expect(devices.some((d) => d.name.includes("Serial COM3"))).toBe(true);
       expect(devices.some((d) => d.name.includes("WiFi 192.168.1.50"))).toBe(true);
+    });
+  });
+
+  describe("docs/06 — backup/restore de proyecto (Plataforma B)", () => {
+    let sketchesDir: string;
+
+    beforeEach(async () => {
+      delete process.env.KAN_ESP32_PORT;
+      delete process.env.KAN_ESP32_FQBN;
+      sketchesDir = await mkdtemp(join(tmpdir(), "kan-esp32-sketches-test-"));
+    });
+
+    afterEach(async () => {
+      await rm(sketchesDir, { recursive: true, force: true });
+    });
+
+    it("sin snapshotTransport, getCapabilities() no cambia (compatibilidad hacia atrás)", () => {
+      const plugin = new Esp32ArduinoPlugin(new FakeSerialTransport([]));
+      expect(plugin.getCapabilities("whatever").map((c) => c.name)).toEqual([
+        "read_digital_pin",
+        "read_analog_pin",
+        "write_digital_pin",
+        "write_analog_pin",
+        "discover_io_map",
+      ]);
+    });
+
+    it("discover() con KAN_ESP32_PORT y snapshotTransport configurado registra un board sin bridge", async () => {
+      process.env.KAN_ESP32_PORT = "COM3";
+      const foreignDevice: FakeDevice = { path: "COM3", handle: () => undefined };
+      const transport = new FakeSerialTransport([foreignDevice]);
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, fakeSnapshotTransport(), sketchesDir);
+
+      const devices = await plugin.discover();
+
+      expect(devices).toHaveLength(1);
+      expect(devices[0].name).toMatch(/sin firmware KAN/);
+    });
+
+    it("discover() con KAN_ESP32_PORT sin snapshotTransport NO registra un board sin bridge (comportamiento preexistente)", async () => {
+      process.env.KAN_ESP32_PORT = "COM3";
+      const foreignDevice: FakeDevice = { path: "COM3", handle: () => undefined };
+      const transport = new FakeSerialTransport([foreignDevice]);
+      const plugin = new Esp32ArduinoPlugin(transport);
+
+      expect(await plugin.discover()).toHaveLength(0);
+    });
+
+    it("getCapabilities() de un board sin bridge expone solo project_*/compile_and_upload, nunca GPIO", async () => {
+      process.env.KAN_ESP32_PORT = "COM3";
+      const foreignDevice: FakeDevice = { path: "COM3", handle: () => undefined };
+      const transport = new FakeSerialTransport([foreignDevice]);
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, fakeSnapshotTransport(), sketchesDir);
+      const [device] = await plugin.discover();
+
+      const names = plugin.getCapabilities(device.id).map((c) => c.name);
+      expect(names).toEqual(["project_list_files", "project_read_file", "project_save_snapshot", "project_restore_snapshot", "compile_and_upload"]);
+    });
+
+    it("getCapabilities() de un board CON bridge expone GPIO + project_*/compile_and_upload", async () => {
+      delete process.env.KAN_ESP32_PORT;
+      const transport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, fakeSnapshotTransport(), sketchesDir);
+      const [device] = await plugin.discover();
+
+      const names = plugin.getCapabilities(device.id).map((c) => c.name);
+      expect(names).toEqual([
+        "read_digital_pin",
+        "read_analog_pin",
+        "write_digital_pin",
+        "write_analog_pin",
+        "discover_io_map",
+        "project_list_files",
+        "project_read_file",
+        "project_save_snapshot",
+        "project_restore_snapshot",
+        "compile_and_upload",
+      ]);
+    });
+
+    it("getCapabilities() de un dispositivo WiFi nunca expone project_*/compile_and_upload, aunque haya snapshotTransport", async () => {
+      process.env.KAN_ESP32_WIFI_HOSTS = "192.168.1.50:8266";
+      const networkTransport = new FakeNetworkTransport([createEsp32NetworkDevice("192.168.1.50", 8266)]);
+      const plugin = new Esp32ArduinoPlugin(new FakeSerialTransport([]), networkTransport, fakeSnapshotTransport(), sketchesDir);
+      const [device] = await plugin.discover();
+      delete process.env.KAN_ESP32_WIFI_HOSTS;
+
+      expect(plugin.getCapabilities(device.id).map((c) => c.name)).toEqual([
+        "read_digital_pin",
+        "read_analog_pin",
+        "write_digital_pin",
+        "write_analog_pin",
+        "discover_io_map",
+      ]);
+    });
+
+    it("project_restore_snapshot guarda el .ino localmente, y project_save_snapshot lo empaqueta de vuelta", async () => {
+      const transport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const snapshotTransport = fakeSnapshotTransport();
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, snapshotTransport, sketchesDir);
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+
+      // "El usuario sube su .ino" — se modela como restaurar un snapshot 'source' guardado directo (docs/06, sin ida y vuelta al chip).
+      const uploaded = await snapshotTransport.upload({
+        deviceId: device.id,
+        deviceKind: "esp32-arduino",
+        backupType: "source",
+        content: Buffer.from(JSON.stringify({ files: [{ path: "sketch.ino", content: "void setup(){}\nvoid loop(){}" }] }), "utf-8"),
+      });
+
+      const restoreResult = await plugin.invoke(device.id, "project_restore_snapshot", { snapshotId: uploaded.snapshotId });
+      expect(restoreResult.success).toBe(true);
+
+      const saveResult = await plugin.invoke(device.id, "project_save_snapshot", {});
+      expect(saveResult.success).toBe(true);
+      const bundle = JSON.parse(snapshotTransport.uploads.at(-1)!.content.toString("utf-8"));
+      expect(bundle.files).toEqual([{ path: `${device.id}.ino`, content: "void setup(){}\nvoid loop(){}" }]);
+    });
+
+    it("compile_and_upload sin sketch guardado devuelve un error claro", async () => {
+      const transport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, fakeSnapshotTransport(), sketchesDir);
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+
+      const result = await plugin.invoke(device.id, "compile_and_upload", { fqbn: "esp32:esp32:esp32" });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/No hay un sketch/);
+    });
+
+    it("compile_and_upload sin 'fqbn' ni KAN_ESP32_FQBN devuelve un error claro", async () => {
+      const transport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, fakeSnapshotTransport(), sketchesDir);
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+      await plugin.writeFile(device.id, "sketch.ino", "void setup(){}");
+
+      const result = await plugin.invoke(device.id, "compile_and_upload", {});
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/fqbn/);
+    });
+
+    it("compile_and_upload compila y sube con arduino-cli, y el bridge sigue funcionando después", async () => {
+      const transport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const externalProcess = new FakeExternalProcess(() => ({ exitCode: 0, stderr: "" }));
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, fakeSnapshotTransport(), sketchesDir, externalProcess);
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+      await plugin.writeFile(device.id, "sketch.ino", "void setup(){}");
+
+      const result = await plugin.invoke(device.id, "compile_and_upload", { fqbn: "esp32:esp32:esp32" });
+
+      expect(result).toEqual({ success: true, data: { fqbn: "esp32:esp32:esp32" } });
+      expect(externalProcess.calls).toHaveLength(2);
+      expect(externalProcess.calls[0]).toMatchObject({ command: "arduino-cli", args: ["compile", "--fqbn", "esp32:esp32:esp32", join(sketchesDir, device.id)] });
+      expect(externalProcess.calls[1]).toMatchObject({
+        command: "arduino-cli",
+        args: ["upload", "--fqbn", "esp32:esp32:esp32", "--port", "COM3", join(sketchesDir, device.id)],
+      });
+
+      // El puerto se soltó para arduino-cli y se reabrió después (había bridge) — GPIO sigue andando.
+      const gpioResult = await plugin.invoke(device.id, "write_digital_pin", { pin: 5, value: true });
+      expect(gpioResult.success).toBe(true);
+    });
+
+    it("compile_and_upload propaga el error de arduino-cli si el compile falla", async () => {
+      const transport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const externalProcess = new FakeExternalProcess(() => ({ exitCode: 1, stderr: "sketch.ino:1:1: error: expected..." }));
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, fakeSnapshotTransport(), sketchesDir, externalProcess);
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+      await plugin.writeFile(device.id, "sketch.ino", "esto no compila");
+
+      const result = await plugin.invoke(device.id, "compile_and_upload", { fqbn: "esp32:esp32:esp32" });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/expected/);
+      expect(externalProcess.calls).toHaveLength(1); // nunca llega a "upload" si "compile" falló
+    });
+
+    it("compile_and_upload rechaza un dispositivo conectado por WiFi (arduino-cli necesita un puerto serial real)", async () => {
+      process.env.KAN_ESP32_WIFI_HOSTS = "192.168.1.50:8266";
+      const networkTransport = new FakeNetworkTransport([createEsp32NetworkDevice("192.168.1.50", 8266)]);
+      const plugin = new Esp32ArduinoPlugin(new FakeSerialTransport([]), networkTransport, fakeSnapshotTransport(), sketchesDir);
+      const [device] = await plugin.discover();
+      delete process.env.KAN_ESP32_WIFI_HOSTS;
+      await plugin.connect(device.id);
+      await plugin.writeFile(device.id, "sketch.ino", "void setup(){}");
+
+      const result = await plugin.invoke(device.id, "compile_and_upload", { fqbn: "esp32:esp32:esp32" });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/serial/);
+    });
+
+    it("project_save_snapshot con backupType 'binary' lee el flash vía esptool.py", async () => {
+      const transport = new FakeSerialTransport([createEsp32Device("COM3")]);
+      const flashBytes = Buffer.from([1, 2, 3, 4]);
+      const externalProcess = new FakeExternalProcess(async (call) => {
+        const { writeFile } = await import("node:fs/promises");
+        await writeFile(call.args[call.args.length - 1], flashBytes);
+        return { exitCode: 0, stderr: "" };
+      });
+      const snapshotTransport = fakeSnapshotTransport();
+      const plugin = new Esp32ArduinoPlugin(transport, undefined, snapshotTransport, sketchesDir, externalProcess);
+      const [device] = await plugin.discover();
+      await plugin.connect(device.id);
+
+      const result = await plugin.invoke(device.id, "project_save_snapshot", { backupType: "binary" });
+
+      expect(result.success).toBe(true);
+      expect(externalProcess.calls[0].command).toBe("esptool.py");
+      expect(snapshotTransport.uploads[0].content.equals(flashBytes)).toBe(true);
+      expect(snapshotTransport.uploads[0]).toMatchObject({ backupType: "binary" });
+
+      // El puerto se soltó para esptool y se reabrió después — GPIO sigue andando.
+      const gpioResult = await plugin.invoke(device.id, "read_digital_pin", { pin: 5 });
+      expect(gpioResult.success).toBe(true);
     });
   });
 });

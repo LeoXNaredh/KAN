@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PendingConfirmationModal } from "@/components/dashboard/PendingConfirmationModal";
 import { ActuatorControl } from "@/components/control/ActuatorControl";
 import { SensorChart } from "@/components/sensores/SensorChart";
+import { RespaldosSection } from "@/components/dispositivo/RespaldosSection";
 import { useDeviceState } from "@/lib/dispositivo/useDeviceState";
 import type { PendingConfirmation } from "@/lib/chat/useConversation";
 import type { TelemetryReadingView } from "@/lib/sensores/types";
@@ -249,6 +250,8 @@ export function DispositivoClient({ deviceId }: { deviceId: string }) {
           </div>
         </div>
       )}
+
+      <RespaldosSection deviceId={deviceId} deviceName={deviceName} />
 
       {selectedSensor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

@@ -24,6 +24,7 @@
     "@kan/plugin-gcode": "workspace:*",
     "@kan/plugin-home-assistant": "workspace:*",
     "@kan/plugin-http-generic": "workspace:*",
+    "@kan/plugin-micropython": "workspace:*",
     "@kan/plugin-modbus": "workspace:*",
     "@kan/plugin-mqtt": "workspace:*",
     "@kan/plugin-network-tools": "workspace:*",

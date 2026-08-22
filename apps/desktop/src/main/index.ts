@@ -37,6 +37,7 @@ import {
 } from "@kan/edge-agent-core";
 import { validatePluginManifest, type ActionSeverity } from "@kan/plugin-contract";
 import { GatewayPluginPackageFetcher } from "./GatewayPluginPackageFetcher";
+import { GatewaySnapshotTransport } from "./GatewaySnapshotTransport";
 import { DeviceSimulatorPlugin } from "@kan/plugin-device-simulator";
 import { HttpDevicePlugin } from "@kan/plugin-http-generic";
 import { WsDevicePlugin } from "@kan/plugin-ws-generic";
@@ -341,9 +342,31 @@ async function createEdgeAgent(): Promise<EdgeAgent> {
   // Agent si falla.
   try {
     const { Esp32ArduinoPlugin } = await import("@kan/plugin-esp32-arduino");
-    await agent.registerPlugin(new Esp32ArduinoPlugin());
+    await agent.registerPlugin(
+      new Esp32ArduinoPlugin(
+        undefined,
+        undefined,
+        // Backup/restore de proyecto (docs/06, Plataforma B) — sketches
+        // guardados en userData (sobreviven reinicios), no en el temp del
+        // SO (default de este plugin sin este argumento).
+        new GatewaySnapshotTransport(configStore, edgeAgentId),
+        join(userDataDir, "sketches"),
+      ),
+    );
   } catch (error) {
     logger.warn(`No se pudo cargar el plugin de ESP32/Arduino: ${error}`);
+  }
+
+  // Plataforma A de backup/restore de proyecto (docs/06): Pico/ESP32 con
+  // MicroPython, vía raw REPL sobre `serialport` directo — mismo criterio
+  // defensivo que ESP32 (ADR-057). `GatewaySnapshotTransport` no depende de
+  // `serialport`, pero se construye acá adentro para no instanciarla si el
+  // resto del plugin no pudo cargar.
+  try {
+    const { MicroPythonPlugin } = await import("@kan/plugin-micropython");
+    await agent.registerPlugin(new MicroPythonPlugin(undefined, new GatewaySnapshotTransport(configStore, edgeAgentId)));
+  } catch (error) {
+    logger.warn(`No se pudo cargar el plugin de MicroPython: ${error}`);
   }
 
   // Mismo criterio que ESP32 (ADR-057) — `modbus-serial` trae `serialport`
